@@ -1,0 +1,115 @@
+domain: kitchen
+requirements: [":strips", ":typing"]
+
+
+types:
+  - name: robot
+  - name: location
+  - name: object
+  - name: container
+    parent: object
+  - name: appliance
+    parent: object
+
+
+predicates:
+  - name: at
+    args: [{name: r, type: robot}, {name: l, type: location}]
+    nl: "{r} is at {l}"
+  - name: obj-at
+    args: [{name: o, type: object}, {name: l, type: location}]
+    nl: "{o} is at {l}"
+  - name: holding
+    args: [{name: r, type: robot}, {name: o, type: object}]
+    nl: "{r} is holding {o}"
+  - name: clear-hand
+    args: [{name: r, type: robot}]
+    nl: "{r} has a free hand"
+  - name: in
+    args: [{name: o, type: object}, {name: c, type: container}]
+    nl: "{o} is in {c}"
+  - name: open
+    args: [{name: c, type: container}]
+    nl: "{c} is open"
+  - name: powered
+    args: [{name: a, type: appliance}]
+    nl: "{a} is powered"
+  - name: boiled
+    args: [{name: a, type: appliance}]
+    nl: "{a} is boiled"
+  - name: has-hot-water
+    args: [{name: m, type: container}]
+    nl: "{m} contains hot water"
+  - name: tea-ready
+    args: [{name: m, type: container}]
+    nl: "Tea is ready in {m}"
+  - name: adjacent
+    args: [{name: l1, type: location}, {name: l2, type: location}]
+    static: true
+    nl: "{l1} is adjacent to {l2}"
+
+actions:
+  - name: move
+    params: [{r: robot}, {from: location}, {to: location}]
+    pre: ["(at ?r ?from)", "(adjacent ?from ?to)"]
+    add: ["(at ?r ?to)"]
+    del: ["(at ?r ?from)"]
+    nl: "Move {r} from {from} to {to}"
+
+  - name: open
+    params: [{r: robot}, {c: container}, {l: location}]
+    pre: ["(at ?r ?l)", "(obj-at ?c ?l)"]
+    add: ["(open ?c)"]
+    nl: "Open {c} at {l}"
+
+  - name: close
+    params: [{r: robot}, {c: container}, {l: location}]
+    pre: ["(at ?r ?l)", "(obj-at ?c ?l)", "(open ?c)"]
+    del: ["(open ?c)"]
+    nl: "Close {c} at {l}"
+
+  - name: pick-up
+    params: [{r: robot}, {o: object}, {l: location}]
+    pre: ["(at ?r ?l)", "(obj-at ?o ?l)", "(clear-hand ?r)"]
+    add: ["(holding ?r ?o)"]
+    del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+    nl: "Pick up {o} at {l}"
+
+  - name: put-down
+    params: [{r: robot}, {o: object}, {l: location}]
+    pre: ["(at ?r ?l)", "(holding ?r ?o)"]
+    add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+    del: ["(holding ?r ?o)"]
+    nl: "Put down {o} at {l}"
+
+  - name: put-in
+    params: [{r: robot}, {o: object}, {c: container}, {l: location}]
+    pre: ["(at ?r ?l)", "(holding ?r ?o)", "(obj-at ?c ?l)", "(open ?c)"]
+    add: ["(in ?o ?c)", "(clear-hand ?r)"]
+    del: ["(holding ?r ?o)"]
+    nl: "Put {o} into {c} at {l}"
+
+  - name: take-out
+    params: [{r: robot}, {o: object}, {c: container}, {l: location}]
+    pre: ["(at ?r ?l)", "(in ?o ?c)", "(open ?c)", "(clear-hand ?r)"]
+    add: ["(holding ?r ?o)"]
+    del: ["(in ?o ?c)", "(clear-hand ?r)"]
+    nl: "Take {o} out of {c} at {l}"
+
+  - name: toggle-kettle
+    params: [{r: robot}, {k: appliance}, {l: location}]
+    pre: ["(at ?r ?l)", "(obj-at ?k ?l)", "(powered ?k)"]
+    add: ["(boiled ?k)"]
+    nl: "Boil {k} at {l}"
+
+  - name: pour
+    params: [{r: robot}, {k: container}, {m: container}, {l: location}]
+    pre: ["(at ?r ?l)", "(obj-at ?k ?l)", "(obj-at ?m ?l)", "(open ?k)", "(open ?m)", "(boiled ?k)"]
+    add: ["(has-hot-water ?m)"]
+    nl: "Pour from {k} into {m} at {l}"
+
+  - name: steep-tea
+    params: [{r: robot}, {tb: object}, {m: container}, {l: location}]
+    pre: ["(at ?r ?l)", "(in ?tb ?m)", "(has-hot-water ?m)"]
+    add: ["(tea-ready ?m)"]
+    nl: "Steep tea using {tb} in {m} at {l}"

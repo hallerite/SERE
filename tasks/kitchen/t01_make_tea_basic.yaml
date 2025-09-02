@@ -1,0 +1,29 @@
+id: t01_make_tea_basic
+name: Make tea and end at table
+
+objects:
+  robot: [r1]
+  location: [hallway, kitchen, pantry, table]
+  container: [kettle1, mug1]
+  appliance: [kettle1]
+  object: [teabag1]
+
+static_facts:
+  - (adjacent hallway kitchen)
+  - (adjacent kitchen hallway)
+  - (adjacent kitchen pantry)
+  - (adjacent pantry kitchen)
+  - (adjacent kitchen table)
+  - (adjacent table kitchen)
+
+init:
+  - (at r1 hallway)
+  - (obj-at kettle1 kitchen)
+  - (powered kettle1)
+  - (obj-at mug1 kitchen)
+  - (obj-at teabag1 pantry)
+  - (clear-hand r1)
+
+goal:
+  - (tea-ready mug1)
+  - (at r1 table)
