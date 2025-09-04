@@ -7,7 +7,7 @@ def main():
     obs, info = env.reset()
     print(f"Task: {meta['id']} — {meta['name']}")
     print(info["problem_pddl"])
-    print("\n" + obs["observation"])
+    print("\n" + obs)
 
     while True:
         try:
@@ -17,7 +17,7 @@ def main():
             return
         obs, r, done, info = env.step(f"<move>{move}</move>")
         print(f"\nReward: {r:.3f} | Outcome: {info.get('outcome','ongoing')}")
-        print(obs["observation"])
+        print(obs)
         if done: break
 
 if __name__ == "__main__":

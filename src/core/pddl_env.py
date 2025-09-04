@@ -43,7 +43,6 @@ def _apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict
     elif op == "decrease":
         world.set_fluent(fname, args, world.get_fluent(fname, args) - delta)
     elif op == "cost":
-        # accumulate total cost in info; if you also model a fluent total-cost, add that too
         info["action_cost"] = info.get("action_cost", 0.0) + delta
 
 def extract_tag(s: str, tag: str) -> Optional[str]:
@@ -68,7 +67,6 @@ class PDDLEnv:
                  show_fluent_deltas: bool = True,
 
                  default_duration: float = 1.0,
-                 
                  seed: Optional[int] = None):
         self.domain, self.world = domain, world
         self.static_facts, self.goal = static_facts, goal
@@ -91,18 +89,24 @@ class PDDLEnv:
 
         self.rng = random.Random(seed)
 
-    def reset(self):
+    def reset(self, *, seed: Optional[int] = None):
+        if seed is not None:
+            self.rng.seed(seed)
         self.steps, self.done = 0, False
         self.time = 0.0
         errs = self.world.validate_invariants()
         for pl in self.plugins: errs += pl.validate(self.world)
         if errs:
             raise ValueError(f"Invariant errors: {errs}")
-        obs = {"observation": self._obs(),
-               "system_prompt": "Provide ONE grounded PDDL action in <move> tags."}
-        info = {"problem_pddl": self.world.to_problem_pddl("instance", self.static_facts, self.goal),
-                "features": dict(numeric=self.enable_numeric, conditional=self.enable_conditional, durations=self.enable_durations)}
-        return obs, info
+
+        obs_text = self._obs()  # PLAIN TEXT ONLY
+        info = {
+            "problem_pddl": self.world.to_problem_pddl("instance", self.static_facts, self.goal),
+            "features": dict(numeric=self.enable_numeric,
+                             conditional=self.enable_conditional,
+                             durations=self.enable_durations)
+        }
+        return obs_text, info
 
     def step(self, text: str):
         if self.done: raise RuntimeError("Episode finished. Call reset().")
@@ -119,7 +123,7 @@ class PDDLEnv:
         except Exception as e:
             return self._illegal(f"Parse error: {e}", info)
 
-        # --- Built-in WAIT (optional): <move>(wait 3)</move> ---
+        # Built-in wait
         if name == "wait":
             dur = float(args[0]) if args else 1.0
             if self.enable_durations:
@@ -138,10 +142,7 @@ class PDDLEnv:
         neg_lits: List[Predicate] = []
         for s in act.pre:
             is_neg, litp = ground_literal(s, bind)
-            if is_neg:
-                neg_lits.append(litp)
-            else:
-                pre_pos.append(litp)
+            (neg_lits if is_neg else pre_pos).append(litp)
 
         # Numeric guards
         if self.enable_numeric and act.num_pre:
@@ -175,21 +176,17 @@ class PDDLEnv:
             for (pred, argtup) in deletes:
                 if any(_is_unbound(a) for a in argtup):
                     for (p, a) in list(facts):
-                        if p != pred:
-                            continue
+                        if p != pred: continue
                         ok = True
                         for i, pat in enumerate(argtup):
-                            if _is_unbound(pat):
-                                continue
+                            if _is_unbound(pat): continue
                             if i >= len(a) or pat != a[i]:
                                 ok = False; break
-                        if ok:
-                            expanded.append((p, a))
+                        if ok: expanded.append((p, a))
                 else:
                     expanded.append((pred, argtup))
             return expanded
 
-        # Find the symbol bound to a robot param (if any)
         def _robot_sym_from_params(act: ActionSpec, arg_tuple: tuple) -> Optional[str]:
             for i, (_, ty) in enumerate(act.params):
                 if ty.lower() == "robot":
@@ -198,8 +195,7 @@ class PDDLEnv:
 
         # Unique robot location (arity-safe)
         def _unique_robot_loc(world: WorldState, r: Optional[str]) -> Optional[str]:
-            if not r:
-                return None
+            if not r: return None
             locs = [a[1] for (pred, a) in world.facts
                     if pred == "at" and len(a) == 2 and a[0] == r]
             return locs[0] if len(locs) == 1 else None
@@ -234,11 +230,9 @@ class PDDLEnv:
                 else:
                     expanded.append((pred, argtup))
             return expanded
-        # ------------------------------------
 
         dele = _expand_delete_patterns(dele, self.world.facts)
         add  = _expand_add_patterns(add, self.world, act, args)
-
 
         self.world.apply(add, dele)
 
@@ -258,14 +252,11 @@ class PDDLEnv:
                             ok = False; break
                 if ok:
                     for a in cb.add:
-                        _, litp = ground_literal(a, bind)
-                        self.world.facts.add(litp)
+                        _, litp = ground_literal(a, bind); self.world.facts.add(litp)
                     for d in cb.delete:
-                        _, litp = ground_literal(d, bind)
-                        self.world.facts.discard(litp)
+                        _, litp = ground_literal(d, bind); self.world.facts.discard(litp)
                     if self.enable_numeric:
-                        for ne in cb.num_eff:
-                            _apply_num_eff(self.world, ne, bind, info)
+                        for ne in cb.num_eff: _apply_num_eff(self.world, ne, bind, info)
 
         # Numeric effects (unconditional)
         if self.enable_numeric and act.num_eff:
@@ -286,7 +277,6 @@ class PDDLEnv:
         # Step bookkeeping and terminal check
         self.steps += 1
         return self._post_apply_success(info)
-
 
     # --- helpers ---
     def _advance_time(self, dur: float, info: Dict[str, Any]):
@@ -315,13 +305,12 @@ class PDDLEnv:
             info["outcome"] = "loss"
         else:
             info["outcome"] = "ongoing"
-        return {"observation": self._obs()}, reward, self.done, info
+        return self._obs(), reward, self.done, info
 
     def _illegal(self, msg: str, info: Dict[str, Any]):
         info.update({"invalid_move": True, "error": msg, "outcome": "invalid"})
         self.done = True
-        return {"observation": f"Invalid: {msg}\nGame Over."}, self.invalid_penalty, True, info
-
+        return f"Invalid: {msg}\nGame Over.", self.invalid_penalty, True, info
 
     def _fluent_visible(self, name: str) -> bool:
         import fnmatch
@@ -354,5 +343,9 @@ class PDDLEnv:
         goals = " ".join(f"({g[0]} {' '.join(g[1])})" for g in self.goal)
         ftxt = self._format_fluents()
         ttxt = f"\nTime: {self.time:.2f}" if self.enable_durations else ""
-        return f"State:\n  {facts}\nSteps: {self.steps}/{self.max_steps}\nGoal: {goals}{ftxt}{ttxt}\nReply with <move>(action args)</move>."
-
+        return (
+            f"State:\n  {facts}\n"
+            f"Steps: {self.steps}/{self.max_steps}\n"
+            f"Goal: {goals}{ftxt}{ttxt}\n"
+            f"Reply with <move>(action args)</move>."
+        )

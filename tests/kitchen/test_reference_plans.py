@@ -30,7 +30,7 @@ def test_t01_reference_plan():
                 raise AssertionError(
                     f"Failed at step {i}: {act}\n"
                     f"outcome={outcome}\nerror={info.get('error')}\n"
-                    f"obs=\n{obs['observation']}"
+                    f"obs=\n{'observation'}"
                 )
 
     assert info.get("outcome") == "win"
