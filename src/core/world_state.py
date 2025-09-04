@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Set, Optional, AbstractSet, List
+from typing import Dict, Set, Optional, AbstractSet, List, Tuple
 from ..pddl.domain_spec import DomainSpec, Predicate
 
 def lit(p: str, *args: str) -> Predicate:
@@ -10,12 +10,19 @@ class WorldState:
     domain: DomainSpec
     objects: Dict[str, str] = field(default_factory=dict)   # symbol -> type
     facts: Set[Predicate] = field(default_factory=set)
+    fluents: Dict[Tuple[str, Tuple[str, ...]], float] = field(default_factory=dict)
 
     def add_object(self, sym: str, typ: str):
         self.objects[sym] = typ
 
     def holds(self, p: Predicate) -> bool:
         return p in self.facts
+
+    def get_fluent(self, name: str, args: Tuple[str, ...]) -> float:
+        return self.fluents.get((name, args), 0.0)
+
+    def set_fluent(self, name: str, args: Tuple[str, ...], value: float):
+        self.fluents[(name, args)] = float(value)
 
     def apply(self, add: List[Predicate], delete: List[Predicate]):
         for d in delete: self.facts.discard(d)
@@ -27,7 +34,6 @@ class WorldState:
 
     def validate_invariants(self) -> List[str]:
         errs = []
-        # Example: object cannot be both at a location and inside a container
         loc_map, in_map = {}, {}
         for (pred,args) in self.facts:
             if pred == "obj-at": loc_map.setdefault(args[0], set()).add(args[1])

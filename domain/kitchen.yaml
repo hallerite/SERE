@@ -1,6 +1,5 @@
 domain: kitchen
-requirements: [":strips", ":typing"]
-
+requirements: [":strips", ":typing"]  # engine toggles features; spec stays superset
 
 types:
   - name: robot
@@ -11,61 +10,106 @@ types:
   - name: appliance
     parent: object
 
-
 predicates:
   - name: at
     args: [{name: r, type: robot}, {name: l, type: location}]
     nl: "{r} is at {l}"
+
   - name: obj-at
     args: [{name: o, type: object}, {name: l, type: location}]
     nl: "{o} is at {l}"
+
   - name: holding
     args: [{name: r, type: robot}, {name: o, type: object}]
     nl: "{r} is holding {o}"
+
   - name: clear-hand
     args: [{name: r, type: robot}]
     nl: "{r} has a free hand"
+
   - name: in
     args: [{name: o, type: object}, {name: c, type: container}]
     nl: "{o} is in {c}"
+
   - name: open
     args: [{name: c, type: container}]
     nl: "{c} is open"
+
   - name: powered
     args: [{name: a, type: appliance}]
     nl: "{a} is powered"
+
   - name: boiled
     args: [{name: a, type: appliance}]
-    nl: "{a} is boiled"
+    nl: "{a} has boiled water"
+
   - name: has-hot-water
     args: [{name: m, type: container}]
     nl: "{m} contains hot water"
+
   - name: tea-ready
     args: [{name: m, type: container}]
     nl: "Tea is ready in {m}"
+
+  - name: spilled
+    args: [{name: m, type: container}]
+    nl: "There was a spill at {m}"
+
+  - name: has-charger
+    args: [{name: l, type: location}]
+    static: true
+    nl: "{l} has a charging station"
+
   - name: adjacent
     args: [{name: l1, type: location}, {name: l2, type: location}]
     static: true
     nl: "{l1} is adjacent to {l2}"
 
+# ---------- Fluents (numeric state) ----------
+fluents:
+  - name: elapsed
+    args: []
+    nl: "Elapsed time"
+
+  - name: total-cost
+    args: []
+    nl: "Accumulated cost"
+
+  - name: energy
+    args: [{name: r, type: robot}]
+    nl: "Energy of {r}"
+
+  - name: water-temp
+    args: [{name: v, type: container}]
+    nl: "Water temperature in {v}"
+
+# ---------- Actions ----------
 actions:
+
   - name: move
     params: [{r: robot}, {from: location}, {to: location}]
     pre: ["(at ?r ?from)", "(adjacent ?from ?to)"]
     add: ["(at ?r ?to)"]
     del: ["(at ?r ?from)"]
+    num_pre: ["(>= (energy ?r) 1)"]
+    num_eff: ["(decrease (energy ?r) 1)", "(increase (elapsed) 1)", "(cost (move ?r ?from ?to) 1)"]
+    duration: 1.0
     nl: "Move {r} from {from} to {to}"
 
   - name: open
     params: [{r: robot}, {c: container}, {l: location}]
-    pre: ["(at ?r ?l)", "(obj-at ?c ?l)"]
+    pre: ["(at ?r ?l)", "(obj-at ?c ?l)", "(not (open ?c))"]
     add: ["(open ?c)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (open ?c) 0.2)"]
+    duration: 0.5
     nl: "Open {c} at {l}"
 
   - name: close
     params: [{r: robot}, {c: container}, {l: location}]
     pre: ["(at ?r ?l)", "(obj-at ?c ?l)", "(open ?c)"]
     del: ["(open ?c)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (close ?c) 0.2)"]
+    duration: 0.5
     nl: "Close {c} at {l}"
 
   - name: pick-up
@@ -73,6 +117,8 @@ actions:
     pre: ["(at ?r ?l)", "(obj-at ?o ?l)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (pick-up ?o) 0.2)"]
+    duration: 0.5
     nl: "Pick up {o} at {l}"
 
   - name: put-down
@@ -80,6 +126,8 @@ actions:
     pre: ["(at ?r ?l)", "(holding ?r ?o)"]
     add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (put-down ?o) 0.2)"]
+    duration: 0.5
     nl: "Put down {o} at {l}"
 
   - name: put-in
@@ -87,6 +135,8 @@ actions:
     pre: ["(at ?r ?l)", "(holding ?r ?o)", "(obj-at ?c ?l)", "(open ?c)"]
     add: ["(in ?o ?c)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (put-in ?o ?c) 0.3)"]
+    duration: 0.5
     nl: "Put {o} into {c} at {l}"
 
   - name: take-out
@@ -94,22 +144,54 @@ actions:
     pre: ["(at ?r ?l)", "(in ?o ?c)", "(open ?c)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(in ?o ?c)", "(clear-hand ?r)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (take-out ?o ?c) 0.3)"]
+    duration: 0.5
     nl: "Take {o} out of {c} at {l}"
+
+  - name: power-on
+    params: [{r: robot}, {a: appliance}, {l: location}]
+    pre: ["(at ?r ?l)", "(obj-at ?a ?l)", "(not (powered ?a))"]
+    add: ["(powered ?a)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (power-on ?a) 0.5)"]
+    duration: 0.5
+    nl: "Provide power to {a} at {l}"
 
   - name: toggle-kettle
     params: [{r: robot}, {k: appliance}, {l: location}]
     pre: ["(at ?r ?l)", "(obj-at ?k ?l)", "(powered ?k)"]
     add: ["(boiled ?k)"]
+    num_eff: ["(increase (water-temp ?k) 30)", "(increase (elapsed) 5)", "(cost (toggle-kettle ?k) 2)"]
+    duration: 5.0
     nl: "Boil {k} at {l}"
 
   - name: pour
     params: [{r: robot}, {k: container}, {m: container}, {l: location}]
-    pre: ["(at ?r ?l)", "(obj-at ?k ?l)", "(obj-at ?m ?l)", "(open ?k)", "(open ?m)", "(boiled ?k)"]
-    add: ["(has-hot-water ?m)"]
+    pre: ["(at ?r ?l)", "(obj-at ?k ?l)", "(obj-at ?m ?l)"]
+    add: []
+    # Conditional effects cover both success and failure
+    cond:
+      - when: ["(open ?k)", "(open ?m)", "(>= (water-temp ?k) 80)"]
+        add: ["(has-hot-water ?m)"]
+        num_eff: ["(assign (water-temp ?m) 100)"]
+      - when: ["(not (open ?m))"]
+        add: ["(spilled ?m)"]
+    num_eff: ["(increase (elapsed) 1)", "(cost (pour ?k ?m) 0.5)"]
+    duration: 1.0
     nl: "Pour from {k} into {m} at {l}"
 
   - name: steep-tea
     params: [{r: robot}, {tb: object}, {m: container}, {l: location}]
-    pre: ["(at ?r ?l)", "(in ?tb ?m)", "(has-hot-water ?m)"]
+    pre: ["(at ?r ?l)", "(in ?tb ?m)"]
     add: ["(tea-ready ?m)"]
+    num_pre: ["(>= (water-temp ?m) 80)", "(has-hot-water ?m) = 1"]  # boolean-as-guard (engine treats via facts; this line is optional sugar)
+    num_eff: ["(increase (elapsed) 2)", "(cost (steep-tea ?m) 0.5)"]
+    duration: 2.0
     nl: "Steep tea using {tb} in {m} at {l}"
+
+  - name: recharge
+    params: [{r: robot}, {l: location}]
+    pre: ["(at ?r ?l)", "(has-charger ?l)"]
+    add: []
+    num_eff: ["(increase (energy ?r) 5)", "(increase (elapsed) 2)", "(cost (recharge ?r ?l) 0.1)"]
+    duration: 2.0
+    nl: "Recharge {r} at {l}"
