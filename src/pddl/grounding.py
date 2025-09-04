@@ -14,9 +14,9 @@ def parse_grounded(expr: str) -> Tuple[str, Tuple[str, ...]]:
     return name, args
 
 def substitute(template: str, bind: Dict[str, str]) -> Predicate:
-    toks = template.replace("("," ").replace(")"," ").split()
+    toks = template.replace("(", " ").replace(")", " ").split()
     name = toks[0]
-    args = tuple(bind[t[1:]] if t.startswith("?") else t for t in toks[1:])
+    args = tuple(bind.get(t[1:], t) if t.startswith("?") else t for t in toks[1:])
     return (name, args)
 
 def ground_literal(template: str, bind: Dict[str, str]) -> Tuple[bool, Predicate]:

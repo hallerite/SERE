@@ -123,7 +123,6 @@ class PDDLEnv:
             self.steps += 1
             return self._post_apply_success(info)
 
-
         if name not in self.domain.actions:
             return self._illegal(f"Unknown action '{name}'", info)
 
@@ -151,24 +150,101 @@ class PDDLEnv:
         if missing:
             return self._illegal(f"Preconditions not satisfied: {missing}", info)
 
-        # Negative preconditions
+        # Negative preconditions (route through world.holds so derived preds work)
         for litp in neg_lits:
-            if (litp in self.world.facts) or (litp in self.static_facts):
-                return self._illegal(f"Negative precondition violated: (not ({litp[0]} {' '.join(litp[1])}))", info)
+            if self.world.holds(litp) or (litp in self.static_facts):
+                return self._illegal(
+                    f"Negative precondition violated: (not ({litp[0]} {' '.join(litp[1])}))",
+                    info
+                )
 
         # Apply base effects
         _, add, dele = instantiate(self.domain, act, args)
+
+        # ---------- Engine niceties (lazy, arity-safe) ----------
+        def _is_unbound(x: Any) -> bool:
+            return isinstance(x, str) and x.startswith("?")
+
+        # Wildcard deletes: unbound vars act as wildcards (delete all matches)
+        def _expand_delete_patterns(deletes: List[Predicate], facts: set) -> List[Predicate]:
+            expanded: List[Predicate] = []
+            for (pred, argtup) in deletes:
+                if any(_is_unbound(a) for a in argtup):
+                    for (p, a) in list(facts):
+                        if p != pred:
+                            continue
+                        ok = True
+                        for i, pat in enumerate(argtup):
+                            if _is_unbound(pat):
+                                continue
+                            if i >= len(a) or pat != a[i]:
+                                ok = False; break
+                        if ok:
+                            expanded.append((p, a))
+                else:
+                    expanded.append((pred, argtup))
+            return expanded
+
+        # Find the symbol bound to a robot param (if any)
+        def _robot_sym_from_params(act: ActionSpec, arg_tuple: tuple) -> Optional[str]:
+            for i, (_, ty) in enumerate(act.params):
+                if ty.lower() == "robot":
+                    return arg_tuple[i] if i < len(arg_tuple) else None
+            return None
+
+        # Unique robot location (arity-safe)
+        def _unique_robot_loc(world: WorldState, r: Optional[str]) -> Optional[str]:
+            if not r:
+                return None
+            locs = [a[1] for (pred, a) in world.facts
+                    if pred == "at" and len(a) == 2 and a[0] == r]
+            return locs[0] if len(locs) == 1 else None
+
+
+        # Add-at-robot-location: only when we actually see an unbound 'obj-at' add
+        def _expand_add_patterns(adds: List[Predicate], world: WorldState,
+                                 act: ActionSpec, arg_tuple: tuple) -> List[Predicate]:
+            expanded: List[Predicate] = []
+            r_cached: Optional[str] = None
+            rloc_cached: Optional[str] = None
+            rloc_computed = False
+
+            def _get_rloc() -> Optional[str]:
+                nonlocal r_cached, rloc_cached, rloc_computed
+                if not rloc_computed:
+                    r_cached = _robot_sym_from_params(act, arg_tuple)
+                    rloc_cached = _unique_robot_loc(world, r_cached)
+                    rloc_computed = True
+                return rloc_cached
+
+            for (pred, argtup) in adds:
+                if any(_is_unbound(a) for a in argtup):
+                    if pred == "obj-at":
+                        rloc = _get_rloc()
+                        if rloc is None:
+                            raise ValueError("Cannot infer location for add; robot has no unique location.")
+                        new_args = tuple(rloc if _is_unbound(a) else a for a in argtup)
+                        expanded.append((pred, new_args))
+                    else:
+                        raise ValueError(f"Unbound variable in add for {pred}; not supported.")
+                else:
+                    expanded.append((pred, argtup))
+            return expanded
+        # ------------------------------------
+
+        dele = _expand_delete_patterns(dele, self.world.facts)
+        add  = _expand_add_patterns(add, self.world, act, args)
+
+
         self.world.apply(add, dele)
 
-        # Conditional effects
+        # Conditional effects (unchanged)
         if self.enable_conditional and act.cond:
             for cb in act.cond:
-                # check WHEN (supports negated literals and numeric guards)
                 ok = True
                 for w in cb.when:
                     w = w.strip()
                     if w.startswith("(") and not w.startswith("(not") and any(w.startswith(f"({op}") for op in ["<", ">", "<=", ">=", "="]):
-                        # numeric guard inside WHEN
                         if not self.enable_numeric or not _eval_num_pre(self.world, w, bind):
                             ok = False; break
                     else:
@@ -177,7 +253,6 @@ class PDDLEnv:
                         if (not is_neg and not h) or (is_neg and h):
                             ok = False; break
                 if ok:
-                    # apply cond add/del/num_eff
                     for a in cb.add:
                         _, litp = ground_literal(a, bind)
                         self.world.facts.add(litp)
@@ -207,6 +282,7 @@ class PDDLEnv:
         # Step bookkeeping and terminal check
         self.steps += 1
         return self._post_apply_success(info)
+
 
     # --- helpers ---
     def _advance_time(self, dur: float, info: Dict[str, Any]):

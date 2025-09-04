@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass, field
+from typing import List, Tuple, Optional, Dict
 import yaml
 
 Predicate = Tuple[str, Tuple[str, ...]]
@@ -32,10 +32,10 @@ class ActionSpec:
     add: List[str]
     delete: List[str]
     nl: str
-    num_pre: List[str] = []       # numeric guards, e.g. "(>= (energy ?r) 1)"
-    num_eff: List[str] = []       # numeric effects "(increase (elapsed) 1)"
-    cond: List[ConditionalBlock] = []
-    duration: Optional[float] = 0
+    num_pre: List[str] = field(default_factory=list)       # numeric guards, e.g. "(>= (energy ?r) 1)"
+    num_eff: List[str] = field(default_factory=list)       # numeric effects "(increase (elapsed) 1)"
+    cond: List[ConditionalBlock] = field(default_factory=list)
+    duration: Optional[float] = None
 
 @dataclass
 class DomainSpec:
