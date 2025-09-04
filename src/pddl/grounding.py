@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 from .domain_spec import ActionSpec, Predicate
 
 SEXPR = re.compile(r"^\(([^()\s]+)(?:\s+([^()]+))?\)$")
@@ -34,3 +34,18 @@ def ground_literal(template: str, bind: Dict[str, str]) -> Tuple[bool, Predicate
     args = tuple(argstr.split()) if argstr else tuple()
     args = tuple(bind.get(t[1:], t) if t.startswith("?") else t for t in args)
     return False, (name, args)
+
+def instantiate(domain, act: ActionSpec, args: Tuple[str, ...]) -> Tuple[Tuple[str, Tuple[str, ...]], List[Predicate], List[Predicate]]:
+    """
+    Ground an action's effects.
+    Returns: ((action-name, grounded-args), add-list, delete-list)
+    """
+    if len(args) != len(act.params):
+        raise ValueError(f"Arity mismatch for action '{act.name}': expected {len(act.params)}, got {len(args)}")
+
+    bind: Dict[str, str] = {var: val for (var, _), val in zip(act.params, args)}
+
+    add: List[Predicate] = [substitute(t, bind) for t in (act.add or [])]
+    dele: List[Predicate] = [substitute(t, bind) for t in (act.delete or [])]
+
+    return (act.name, args), add, dele
