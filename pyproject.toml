@@ -1,0 +1,9 @@
+[project]
+name = "Symbolic Embodied Reasoning Environments"
+version = "0.1.0"
+description = "An easy way to create tasks with different semantics for PDDL-style embodied reasoning on a symbolic level."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0.2",
+]
