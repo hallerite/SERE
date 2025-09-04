@@ -1,0 +1,40 @@
+# tasks/kitchen/t01_one_step_steep.yaml
+id: t01_one_step_steep
+name: One-step; steep the tea
+description: |
+  Everything is already prepared; you only need to steep the tea.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  max_steps: 5
+  seed: 201
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+    - ["water-temp", ["mug1"], 100.0]
+
+objects:
+  robot: [r1]
+  location: [kitchen]
+  container: [mug1, kettle1]
+  appliance: [kettle1]
+  object: [teabag1]
+
+static_facts: []
+
+init:
+  - (at r1 kitchen)
+  - (obj-at mug1 kitchen)
+  - (obj-at kettle1 kitchen)
+  - (open mug1)
+  - (in teabag1 mug1)       # teabag already in mug
+  - (has-hot-water mug1)    # mug already has hot water
+  - (clear-hand r1)
+
+goal:
+  - (tea-ready mug1)
+
+reference_plan:
+  - (steep-tea r1 teabag1 mug1)

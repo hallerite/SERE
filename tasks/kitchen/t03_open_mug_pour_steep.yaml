@@ -1,0 +1,41 @@
+# tasks/kitchen/t03_open_mug_pour_steep.yaml
+id: t03_open_mug_pour_steep
+name: Three steps; open mug, pour, steep
+description: |
+  The mug is closed. Kettle is hot & open, teabag is already in the mug.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  max_steps: 8
+  seed: 203
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+    - ["water-temp", ["kettle1"], 90.0]
+
+objects:
+  robot: [r1]
+  location: [kitchen]
+  container: [mug1, kettle1]
+  appliance: [kettle1]
+  object: [teabag1]
+
+static_facts: []
+
+init:
+  - (at r1 kitchen)
+  - (obj-at mug1 kitchen)
+  - (obj-at kettle1 kitchen)
+  - (open kettle1)
+  - (in teabag1 mug1)
+  - (clear-hand r1)
+
+goal:
+  - (tea-ready mug1)
+
+reference_plan:
+  - (open r1 mug1)
+  - (pour r1 kettle1 mug1)
+  - (steep-tea r1 teabag1 mug1)

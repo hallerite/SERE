@@ -1,0 +1,41 @@
+# tasks/kitchen/t04_open_both_then_pour_steep.yaml
+id: t04_open_both_then_pour_steep
+name: Four steps; open kettle & mug, pour, steep
+description: |
+  Both kettle and mug are closed. Kettle is already hot. Open, pour, steep.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  max_steps: 10
+  seed: 204
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+    - ["water-temp", ["kettle1"], 90.0]
+
+objects:
+  robot: [r1]
+  location: [kitchen]
+  container: [mug1, kettle1]
+  appliance: [kettle1]
+  object: [teabag1]
+
+static_facts: []
+
+init:
+  - (at r1 kitchen)
+  - (obj-at mug1 kitchen)
+  - (obj-at kettle1 kitchen)
+  - (in teabag1 mug1)
+  - (clear-hand r1)
+
+goal:
+  - (tea-ready mug1)
+
+reference_plan:
+  - (open r1 kettle1)
+  - (open r1 mug1)
+  - (pour r1 kettle1 mug1)
+  - (steep-tea r1 teabag1 mug1)

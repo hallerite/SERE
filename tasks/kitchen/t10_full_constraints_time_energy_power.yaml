@@ -1,0 +1,61 @@
+# tasks/kitchen/t10_full_constraints_time_energy_power.yaml
+id: t10_full_constraints_time_energy_power
+name: Full constraints; time + energy + power
+description: |
+  Hardest variant: must recharge once, power on the kettle, heat twice from 40°C,
+  and finish at the table under a time limit.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  time_limit: 26.0
+  max_steps: 80
+  seed: 210
+  init_fluents:
+    - ["energy", ["r1"], 2]
+    - ["elapsed", [], 0.0]
+    - ["water-temp", ["kettle1"], 40.0]
+
+objects:
+  robot: [r1]
+  location: [hallway, kitchen, pantry, table]
+  container: [mug1, kettle1]
+  appliance: [kettle1]
+  object: [teabag1]
+
+static_facts:
+  - (has-charger hallway)
+  - (adjacent hallway kitchen)
+  - (adjacent kitchen hallway)
+  - (adjacent kitchen pantry)
+  - (adjacent pantry kitchen)
+  - (adjacent kitchen table)
+  - (adjacent table kitchen)
+
+init:
+  - (at r1 hallway)
+  - (obj-at kettle1 kitchen)
+  - (obj-at mug1 kitchen)
+  - (obj-at teabag1 pantry)
+  - (clear-hand r1)
+
+goal:
+  - (tea-ready mug1)
+  - (at r1 table)
+
+reference_plan:
+  - (recharge r1 hallway)           # energy gate
+  - (move r1 hallway kitchen)       # +1s
+  - (power-on r1 kettle1)
+  - (open r1 kettle1)
+  - (open r1 mug1)
+  - (toggle-kettle r1 kettle1)      # 40 -> 70  (+5s)
+  - (toggle-kettle r1 kettle1)      # 70 -> 100 (+5s)
+  - (move r1 kitchen pantry)        # +1s
+  - (pick-up r1 teabag1)            # +0.5s
+  - (move r1 pantry kitchen)        # +1s
+  - (put-in r1 teabag1 mug1)        # +0.5s
+  - (pour r1 kettle1 mug1)          # +1s
+  - (steep-tea r1 teabag1 mug1)     # +2s
+  - (move r1 kitchen table)         # +1s   (~18–20s total, within 26s)

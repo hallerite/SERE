@@ -1,0 +1,41 @@
+# tasks/kitchen/t02_pour_then_steep.yaml
+id: t02_pour_then_steep
+name: Two steps; pour then steep
+description: |
+  Kettle is hot and open; mug is open with teabag inside. Just pour, then steep.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  max_steps: 6
+  seed: 202
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+    - ["water-temp", ["kettle1"], 90.0]
+
+objects:
+  robot: [r1]
+  location: [kitchen]
+  container: [mug1, kettle1]
+  appliance: [kettle1]
+  object: [teabag1]
+
+static_facts: []
+
+init:
+  - (at r1 kitchen)
+  - (obj-at mug1 kitchen)
+  - (obj-at kettle1 kitchen)
+  - (open mug1)
+  - (open kettle1)
+  - (in teabag1 mug1)
+  - (clear-hand r1)
+
+goal:
+  - (tea-ready mug1)
+
+reference_plan:
+  - (pour r1 kettle1 mug1)
+  - (steep-tea r1 teabag1 mug1)

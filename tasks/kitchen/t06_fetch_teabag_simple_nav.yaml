@@ -1,0 +1,48 @@
+# tasks/kitchen/t06_fetch_teabag_simple_nav.yaml
+id: t06_fetch_teabag_simple_nav
+name: Fetch teabag with simple navigation
+description: |
+  Teabag is in the pantry. Go get it, put it in the mug, then heat/pour/steep if needed.
+  Kettle is hot and open; mug is closed initially.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  max_steps: 20
+  seed: 206
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+    - ["water-temp", ["kettle1"], 90.0]
+
+objects:
+  robot: [r1]
+  location: [kitchen, pantry]
+  container: [mug1, kettle1]
+  appliance: [kettle1]
+  object: [teabag1]
+
+static_facts:
+  - (adjacent kitchen pantry)
+  - (adjacent pantry kitchen)
+
+init:
+  - (at r1 kitchen)
+  - (obj-at mug1 kitchen)
+  - (obj-at kettle1 kitchen)
+  - (open kettle1)
+  - (obj-at teabag1 pantry)
+  - (clear-hand r1)
+
+goal:
+  - (tea-ready mug1)
+
+reference_plan:
+  - (move r1 kitchen pantry)
+  - (pick-up r1 teabag1)
+  - (move r1 pantry kitchen)
+  - (open r1 mug1)
+  - (put-in r1 teabag1 mug1)
+  - (pour r1 kettle1 mug1)
+  - (steep-tea r1 teabag1 mug1)
