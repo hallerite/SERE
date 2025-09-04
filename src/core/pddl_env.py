@@ -6,10 +6,14 @@ from .world_state import WorldState
 from .invariants import InvariantPlugin
 
 # --- numeric guards/effects ---
-NUM_CMP = re.compile(r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)\s+([^)]+)\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$")
-NUM_EFF = re.compile(r"^\(\s*(increase|decrease|assign|cost)\s*\(\s*([^\s()]+)\s+([^)]+)\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$")
+NUM_CMP = re.compile(
+    r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
+)
+NUM_EFF = re.compile(
+    r"^\(\s*(increase|decrease|assign|cost)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
+)
 
-def _bind_args(argstr: str, bind: Dict[str,str]) -> Tuple[str,...]:
+def _bind_args(argstr: Optional[str], bind: Dict[str, str]) -> Tuple[str, ...]:
     toks = argstr.split() if argstr else []
     return tuple(bind.get(t[1:], t) if t.startswith("?") else t for t in toks)
 
