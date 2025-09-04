@@ -1,0 +1,258 @@
+domain: assembly
+requirements: [":strips", ":typing"]   # engine can toggle; spec stays superset
+
+# ---------- Types ----------
+types:
+  - name: robot
+  - name: location
+  - name: object
+  - name: container
+    parent: object
+  - name: tool
+    parent: object
+  - name: part
+    parent: object
+  - name: assembly
+    parent: object
+  - name: machine
+    parent: object
+
+# ---------- Predicates ----------
+predicates:
+  # spatial / kinematic
+  - name: at
+    args: [{name: r, type: robot}, {name: l, type: location}]
+    nl: "{r} is at {l}"
+
+  - name: obj-at
+    args: [{name: o, type: object}, {name: l, type: location}]
+    nl: "{o} is at {l}"
+
+  - name: co-located
+    args: [{name: x, type: object}, {name: y, type: object}]
+    nl: "{x} and {y} are at the same location"
+
+  - name: adjacent
+    args: [{name: l1, type: location}, {name: l2, type: location}]
+    static: true
+    nl: "{l1} is adjacent to {l2}"
+
+  # grasping / hand state
+  - name: holding
+    args: [{name: r, type: robot}, {name: o, type: object}]
+    nl: "{r} is holding {o}"
+
+  - name: clear-hand
+    args: [{name: r, type: robot}]
+    nl: "{r} has a free hand"
+
+  # containers & openness
+  - name: in
+    args: [{name: o, type: object}, {name: c, type: container}]
+    nl: "{o} is in {c}"
+
+  - name: open
+    args: [{name: c, type: container}]
+    nl: "{c} is open"
+
+  # tools & equipment state
+  - name: equipped
+    args: [{name: r, type: robot}, {name: t, type: tool}]
+    nl: "{r} has {t} equipped"
+
+  - name: tool-for
+    args: [{name: t, type: tool}, {name: op, type: object}]
+    static: true
+    nl: "{t} is suitable for {op}"
+
+  # assembly relations
+  - name: aligned
+    args: [{name: p, type: part}, {name: a, type: assembly}]
+    nl: "{p} is aligned with {a}"
+
+  - name: installed
+    args: [{name: p, type: part}, {name: a, type: assembly}]
+    nl: "{p} is installed on {a}"
+
+  - name: fastened
+    args: [{name: p, type: part}, {name: a, type: assembly}]
+    nl: "{p} is fastened to {a}"
+
+  - name: damaged
+    args: [{name: o, type: object}]
+    nl: "{o} is damaged"
+
+  # infrastructure / facilities
+  - name: has-charger
+    args: [{name: l, type: location}]
+    static: true
+    nl: "{l} has a charging station"
+
+  - name: has-fixture
+    args: [{name: l, type: location}]
+    static: true
+    nl: "{l} has a vise/fixture"
+
+  # machines
+  - name: powered
+    args: [{name: m, type: machine}]
+    nl: "{m} is powered"
+
+# ---------- Fluents (numeric state) ----------
+fluents:
+  - name: elapsed
+    args: []
+    nl: "Elapsed time"
+
+  - name: total-cost
+    args: []
+    nl: "Accumulated cost"
+
+  - name: energy
+    args: [{name: r, type: robot}]
+    nl: "Energy of {r}"
+
+  - name: torque
+    args: [{name: t, type: tool}]
+    nl: "Torque setting on {t}"
+
+# ---------- Actions ----------
+actions:
+
+  # movement / navigation
+  - name: move
+    params: [{r: robot}, {from: location}, {to: location}]
+    pre: ["(at ?r ?from)", "(adjacent ?from ?to)"]
+    add: ["(at ?r ?to)"]
+    del: ["(at ?r ?from)"]
+    num_pre: ["(>= (energy ?r) 1)"]
+    num_eff: ["(decrease (energy ?r) 1)", "(increase (elapsed) 1)", "(cost (move ?r ?from ?to) 1)"]
+    duration: 1.0
+
+  # container access (crates, bins, drawers)
+  - name: open
+    params: [{r: robot}, {c: container}]
+    pre: ["(co-located ?r ?c)", "(not (open ?c))"]
+    add: ["(open ?c)"]
+    num_eff: ["(increase (elapsed) 0.3)", "(cost (open ?c) 0.1)"]
+    duration: 0.3
+
+  - name: close
+    params: [{r: robot}, {c: container}]
+    pre: ["(co-located ?r ?c)", "(open ?c)"]
+    del: ["(open ?c)"]
+    num_eff: ["(increase (elapsed) 0.3)", "(cost (close ?c) 0.1)"]
+    duration: 0.3
+
+  # picking & placing
+  - name: pick-up
+    params: [{r: robot}, {o: object}]
+    pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
+    add: ["(holding ?r ?o)"]
+    del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]     # wildcard delete on obj-at, consume hand
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (pick-up ?o) 0.2)"]
+    duration: 0.5
+
+  - name: put-down
+    params: [{r: robot}, {o: object}]
+    pre: ["(holding ?r ?o)"]
+    add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]     # location inferred from robot
+    del: ["(holding ?r ?o)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (put-down ?o) 0.2)"]
+    duration: 0.5
+
+  # storage
+  - name: put-in
+    params: [{r: robot}, {o: object}, {c: container}]
+    pre: ["(co-located ?r ?c)", "(holding ?r ?o)", "(open ?c)"]
+    add: ["(in ?o ?c)", "(clear-hand ?r)"]
+    del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (put-in ?o ?c) 0.2)"]
+    duration: 0.5
+
+  - name: take-out
+    params: [{r: robot}, {o: object}, {c: container}]
+    pre: ["(co-located ?r ?c)", "(in ?o ?c)", "(open ?c)", "(clear-hand ?r)"]
+    add: ["(holding ?r ?o)"]
+    del: ["(in ?o ?c)", "(clear-hand ?r)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (take-out ?o ?c) 0.2)"]
+    duration: 0.5
+
+  # tool management
+  - name: equip-tool
+    params: [{r: robot}, {t: tool}]
+    pre: ["(holding ?r ?t)"]
+    add: ["(equipped ?r ?t)", "(clear-hand ?r)"]
+    del: ["(holding ?r ?t)"]
+    num_eff: ["(increase (elapsed) 0.4)", "(cost (equip-tool ?t) 0.1)"]
+    duration: 0.4
+
+  - name: unequip-tool
+    params: [{r: robot}, {t: tool}]
+    pre: ["(equipped ?r ?t)", "(clear-hand ?r)"]
+    add: ["(holding ?r ?t)"]
+    del: ["(equipped ?r ?t)", "(clear-hand ?r)"]
+    num_eff: ["(increase (elapsed) 0.4)", "(cost (unequip-tool ?t) 0.1)"]
+    duration: 0.4
+
+  # preparation & alignment
+  - name: align
+    params: [{r: robot}, {p: part}, {a: assembly}]
+    pre: ["(co-located ?r ?p)", "(co-located ?r ?a)", "(obj-at ?p ?l)", "(obj-at ?a ?l2)"]
+    add: ["(aligned ?p ?a)"]
+    num_eff: ["(increase (elapsed) 1)", "(cost (align ?p ?a) 0.5)"]
+    duration: 1.0
+
+  # assembly (fasten/attach) with conditionals
+  - name: fasten
+    params: [{r: robot}, {p: part}, {a: assembly}, {t: tool}]
+    pre: ["(equipped ?r ?t)", "(tool-for ?t ?a)", "(aligned ?p ?a)", "(co-located ?r ?p)", "(co-located ?r ?a)"]
+    add: ["(fastened ?p ?a)", "(installed ?p ?a)"]
+    num_eff: ["(increase (elapsed) 2)", "(cost (fasten ?p ?a ?t) 1)"]
+    duration: 2.0
+    cond:
+      # If the part is damaged, fasten still consumes time/cost but does not install.
+      - when: ["(damaged ?p)"]
+        delete: ["(installed ?p ?a)"]
+
+  # optional: torque setting influences nothing structural but gives room for curricula
+  - name: set-torque
+    params: [{r: robot}, {t: tool}, {lvl: object}]
+    pre: ["(equipped ?r ?t)"]   # lvl is symbolic (e.g., torque-8), or you can switch to numeric if desired
+    add: []
+    num_eff: ["(increase (elapsed) 0.2)", "(cost (set-torque ?t ?lvl) 0.05)"]
+    duration: 0.2
+
+  # disassembly (unfasten & detach) – yields the part in-hand
+  - name: unfasten
+    params: [{r: robot}, {p: part}, {a: assembly}, {t: tool}]
+    pre: ["(equipped ?r ?t)", "(tool-for ?t ?a)", "(fastened ?p ?a)", "(co-located ?r ?p)", "(co-located ?r ?a)", "(clear-hand ?r)"]
+    add: ["(holding ?r ?p)"]
+    del: ["(fastened ?p ?a)", "(installed ?p ?a)", "(clear-hand ?r)"]
+    num_eff: ["(increase (elapsed) 2)", "(cost (unfasten ?p ?a ?t) 1)"]
+    duration: 2.0
+
+  # place subassemblies back onto bench (explicit convenience primitive)
+  - name: place-on-bench
+    params: [{r: robot}, {o: object}]
+    pre: ["(holding ?r ?o)"]
+    add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+    del: ["(holding ?r ?o)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (place-on-bench ?o) 0.2)"]
+    duration: 0.5
+
+  # machines (e.g., power screwdriver station) – optional affordance
+  - name: power-on
+    params: [{r: robot}, {m: machine}]
+    pre: ["(co-located ?r ?m)", "(not (powered ?m))"]
+    add: ["(powered ?m)"]
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (power-on ?m) 0.3)"]
+    duration: 0.5
+
+  # resource maintenance
+  - name: recharge
+    params: [{r: robot}, {l: location}]
+    pre: ["(at ?r ?l)", "(has-charger ?l)"]
+    add: []
+    num_eff: ["(increase (energy ?r) 5)", "(increase (elapsed) 2)", "(cost (recharge ?r ?l) 0.1)"]
+    duration: 2.0
