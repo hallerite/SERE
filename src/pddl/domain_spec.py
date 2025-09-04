@@ -32,11 +32,10 @@ class ActionSpec:
     add: List[str]
     delete: List[str]
     nl: str
-    # --- NEW ---
-    num_pre: List[str] = None       # numeric guards, e.g. "(>= (energy ?r) 1)"
-    num_eff: List[str] = None       # numeric effects "(increase (elapsed) 1)"
-    cond: List[ConditionalBlock] = None
-    duration: Optional[float] = None
+    num_pre: List[str] = []       # numeric guards, e.g. "(>= (energy ?r) 1)"
+    num_eff: List[str] = []       # numeric effects "(increase (elapsed) 1)"
+    cond: List[ConditionalBlock] = []
+    duration: Optional[float] = 0
 
 @dataclass
 class DomainSpec:
@@ -44,7 +43,6 @@ class DomainSpec:
     types: Dict[str, str]
     predicates: Dict[str, PredicateSpec]
     actions: Dict[str, ActionSpec]
-    # --- NEW ---
     fluents: Dict[str, FluentSpec]
 
     @staticmethod
