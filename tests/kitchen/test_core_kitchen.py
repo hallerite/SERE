@@ -2,6 +2,47 @@ import pytest
 from src.io.factory import load_kitchen
 from src.core.world_state import lit
 
+_BASIC_TASK_YAML = """\
+id: t01_make_tea_basic
+name: Make tea and end at table
+description: Basic kitchen layout for unit tests.
+
+objects:
+  robot: [r1]
+  location: [hallway, kitchen, pantry, table]
+  container: [kettle1, mug1]
+  appliance: [kettle1]
+  object: [teabag1]
+
+static_facts:
+  - (adjacent hallway kitchen)
+  - (adjacent kitchen hallway)
+  - (adjacent kitchen pantry)
+  - (adjacent pantry kitchen)
+  - (adjacent kitchen table)
+  - (adjacent table kitchen)
+
+init:
+  - (at r1 hallway)
+  - (obj-at kettle1 kitchen)
+  - (powered kettle1)
+  - (obj-at mug1 kitchen)
+  - (obj-at teabag1 pantry)
+  - (clear-hand r1)
+
+goal:
+  - (tea-ready mug1)
+  - (at r1 table)
+"""
+
+@pytest.fixture(scope="session")
+def basic_task_file(tmp_path_factory):
+    """Create a temp YAML task file once per test session."""
+    d = tmp_path_factory.mktemp("tasks")
+    f = d / "t01_make_tea_basic.yaml"
+    f.write_text(_BASIC_TASK_YAML)
+    return f
+
 # --------------------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------------------
@@ -62,8 +103,8 @@ def steep(env, tb, m):
 # Core semantics: derived preds, wildcard deletes, add inference
 # --------------------------------------------------------------------------------------
 
-def test_co_located_positive_precondition_works():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=20)
+def test_co_located_positive_precondition_works(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=20)
     reset_with(env)
     # Co-location false in hallway
     obs, r, done, info = open_(env, "kettle1")
@@ -75,8 +116,8 @@ def test_co_located_positive_precondition_works():
     assert info.get("outcome") != "invalid"
     assert ("open", ("kettle1",)) in env.world.facts
 
-def test_pickup_wildcard_delete_and_clearhand():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=20)
+def test_pickup_wildcard_delete_and_clearhand(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=20)
     reset_with(env)
     move(env, "hallway", "kitchen")
     obs, r, done, info = pickup(env, "mug1")
@@ -88,8 +129,8 @@ def test_pickup_wildcard_delete_and_clearhand():
     # holding present
     assert ("holding", ("r1", "mug1")) in env.world.facts
 
-def test_putdown_infers_robot_location_for_add_objat():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=20)
+def test_putdown_infers_robot_location_for_add_objat(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=20)
     reset_with(env)
     move(env, "hallway", "kitchen")
     pickup(env, "mug1")
@@ -99,8 +140,8 @@ def test_putdown_infers_robot_location_for_add_objat():
     assert ("holding", ("r1", "mug1")) not in env.world.facts
     assert ("clear-hand", ("r1",)) in env.world.facts
 
-def test_put_in_deletes_prior_objat_and_sets_in():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=40)
+def test_put_in_deletes_prior_objat_and_sets_in(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
@@ -113,8 +154,8 @@ def test_put_in_deletes_prior_objat_and_sets_in():
     assert all(not (p == "obj-at" and a[0] == "teabag1") for p, a in env.world.facts)
     assert ("holding", ("r1", "teabag1")) not in env.world.facts
 
-def test_take_out_needs_open_and_clear_hand_and_works():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=40)
+def test_take_out_needs_open_and_clear_hand_and_works(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
@@ -132,16 +173,16 @@ def test_take_out_needs_open_and_clear_hand_and_works():
 # Numeric guards, conditionals, and hot water
 # --------------------------------------------------------------------------------------
 
-def test_move_energy_guard_blocks_when_insufficient():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=5)
+def test_move_energy_guard_blocks_when_insufficient(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=5)
     reset_with(env)
     env.world.set_fluent("energy", ("r1",), 0)  # move requires >= 1
     obs, r, done, info = move(env, "hallway", "kitchen")
     assert done and info.get("outcome") == "invalid"
     assert "Numeric precondition failed" in info.get("error", "")
 
-def test_pour_success_branch_sets_hot_water_and_temp():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=60)
+def test_pour_success_branch_sets_hot_water_and_temp(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=60)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
@@ -155,8 +196,8 @@ def test_pour_success_branch_sets_hot_water_and_temp():
     assert ("has-hot-water", ("mug1",)) in env.world.facts
     assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
 
-def test_pour_spill_branch_when_mug_closed():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=60)
+def test_pour_spill_branch_when_mug_closed(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=60)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "kettle1")
@@ -168,8 +209,8 @@ def test_pour_spill_branch_when_mug_closed():
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert ("spilled", ("mug1",)) in env.world.facts
 
-def test_steep_requires_hot_water_and_presence():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=80)
+def test_steep_requires_hot_water_and_presence(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=80)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
@@ -192,8 +233,8 @@ def test_steep_requires_hot_water_and_presence():
 # Durations / wait / time limits
 # --------------------------------------------------------------------------------------
 
-def test_wait_and_time_limit_enforced():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=10, time_limit=2.0)
+def test_wait_and_time_limit_enforced(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=10, time_limit=2.0)
     env.enable_durations = True
     reset_with(env)
     obs, r, done, info = env.step("<move>(wait 1)</move>")
@@ -205,8 +246,8 @@ def test_wait_and_time_limit_enforced():
 # Invariants & error handling
 # --------------------------------------------------------------------------------------
 
-def test_multiple_locations_rejected_on_reset():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=5)
+def test_multiple_locations_rejected_on_reset(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=5)
     reset_with(env)
     # Force illegal duplicate locations
     env.world.facts.add(lit("obj-at", "mug1", "pantry"))
@@ -214,16 +255,16 @@ def test_multiple_locations_rejected_on_reset():
         env.reset()
     assert "multiple 'obj-at' locations" in str(e.value)
 
-def test_obj_at_and_in_invariant_caught_on_reset():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=5)
+def test_obj_at_and_in_invariant_caught_on_reset(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=5)
     reset_with(env)
     # Force illegal: both obj-at and in for same object
     env.world.facts.add(lit("in", "mug1", "kettle1"))  # nonsense on purpose
     with pytest.raises(ValueError):
         env.reset()
 
-def test_missing_move_tags_is_invalid():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=5)
+def test_missing_move_tags_is_invalid(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=5)
     reset_with(env)
     obs, r, done, info = env.step("(move r1 hallway kitchen)")  # missing <move> tags
     assert done and info.get("outcome") == "invalid"
@@ -232,8 +273,8 @@ def test_missing_move_tags_is_invalid():
 # Open/Close edges
 # --------------------------------------------------------------------------------------
 
-def test_open_is_guarded_and_close_requires_open():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=20)
+def test_open_is_guarded_and_close_requires_open(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=20)
     reset_with(env)
     move(env, "hallway", "kitchen")
     # open mug1 once
@@ -242,7 +283,7 @@ def test_open_is_guarded_and_close_requires_open():
     obs, r, done, info = open_(env, "mug1")
     assert done and info.get("outcome") == "invalid"
     # closing now should succeed (fresh episode)
-    env2, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=20)
+    env2, _ = load_kitchen(str(basic_task_file), max_steps=20)
     reset_with(env2)
     move(env2, "hallway", "kitchen")
     open_(env2, "mug1")
@@ -254,8 +295,8 @@ def test_open_is_guarded_and_close_requires_open():
 
 # ==================== NUMERIC SEMANTICS ====================
 
-def test_move_decreases_energy_and_increases_elapsed():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=10)
+def test_move_decreases_energy_and_increases_elapsed(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=10)
     reset_with(env, energy=5)
     # baseline
     e0 = env.world.get_fluent("energy", ("r1",))
@@ -266,8 +307,8 @@ def test_move_decreases_energy_and_increases_elapsed():
     assert e1 == e0 - 1, f"energy should drop by 1, got {e0}->{e1}"
     assert t1 >= t0 + 1 - 1e-9, f"elapsed should increase by 1, got {t0}->{t1}"
 
-def test_pour_assign_overrides_not_accumulates():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=40)
+def test_pour_assign_overrides_not_accumulates(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1"); open_(env, "kettle1")
@@ -275,8 +316,8 @@ def test_pour_assign_overrides_not_accumulates():
     pour(env, "kettle1", "mug1")
     assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
 
-def test_action_cost_accumulates_in_info():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=5)
+def test_action_cost_accumulates_in_info(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=5)
     reset_with(env)
     move(env, "hallway", "kitchen")            # cost 1
     obs, r, done, info = open_(env, "mug1")    # cost 0.2
@@ -284,8 +325,8 @@ def test_action_cost_accumulates_in_info():
 
 # ==================== CONDITIONAL NO-BRANCH ====================
 
-def test_pour_no_branch_when_temp_too_low():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=40)
+def test_pour_no_branch_when_temp_too_low(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1"); open_(env, "kettle1")
@@ -297,8 +338,8 @@ def test_pour_no_branch_when_temp_too_low():
 
 # ==================== DERIVED AND ADJACENCY ====================
 
-def test_co_located_truth_table_simple():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=5)
+def test_co_located_truth_table_simple(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=5)
     reset_with(env)
     # At reset, r1 in hallway, kettle1 in kitchen => not co-located
     assert not env.world.holds(lit("co-located", "r1", "kettle1"))
@@ -306,8 +347,8 @@ def test_co_located_truth_table_simple():
     assert env.world.holds(lit("co-located", "r1", "kettle1"))
     assert env.world.holds(lit("co-located", "r1", "mug1"))
 
-def test_move_non_adjacent_fails():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=5)
+def test_move_non_adjacent_fails(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=5)
     reset_with(env)
     # Assume hallway !~ pantry in your task statics
     obs, r, done, info = move(env, "hallway", "pantry")
@@ -316,8 +357,8 @@ def test_move_non_adjacent_fails():
 
 # ==================== EPISODE LIFECYCLE ====================
 
-def test_invalid_step_marks_done_and_next_step_raises():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=5)
+def test_invalid_step_marks_done_and_next_step_raises(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=5)
     reset_with(env)
     # Invalid: open kettle from hallway (not co-located)
     obs, r, done, info = open_(env, "kettle1")
@@ -327,8 +368,8 @@ def test_invalid_step_marks_done_and_next_step_raises():
 
 # ==================== ADD-INFERENCE GUARDS ====================
 
-def test_putdown_raises_when_robot_location_ambiguous():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=10)
+def test_putdown_raises_when_robot_location_ambiguous(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=10)
     reset_with(env)
     move(env, "hallway", "kitchen")
     # Corrupt state: two at-locations for r1
@@ -340,8 +381,8 @@ def test_putdown_raises_when_robot_location_ambiguous():
 
 # ==================== CLEAR-HAND ENFORCEMENT ====================
 
-def test_take_out_requires_clear_hand():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=40)
+def test_take_out_requires_clear_hand(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
@@ -359,8 +400,8 @@ def test_take_out_requires_clear_hand():
 
 # ==================== TIME LIMIT EDGE ====================
 
-def test_time_limit_boundary_exact_ok_exceed_bad():
-    env, _ = load_kitchen("tasks/kitchen/t01_make_tea_basic.yaml", max_steps=10, time_limit=2.0)
+def test_time_limit_boundary_exact_ok_exceed_bad(basic_task_file):
+    env, _ = load_kitchen(str(basic_task_file), max_steps=10, time_limit=2.0)
     env.enable_durations = True
     reset_with(env)
     obs, r, done, info = env.step("<move>(wait 2)</move>")
