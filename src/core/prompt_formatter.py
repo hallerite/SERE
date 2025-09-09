@@ -2,9 +2,9 @@
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Set, Optional
 from ..pddl.domain_spec import DomainSpec, Predicate
-from ..pddl.grounding import ground_literal
 from ..pddl.nl_mapper import NLMapper
-from ..core.world_state import WorldState
+from .world_state import WorldState
+from .semantics import eval_clause
 import fnmatch
 
 @dataclass
@@ -182,16 +182,15 @@ class PromptFormatter:
                 continue
             for args in cartesian(pools):
                 bind = {var: val for (var,_), val in zip(act.params, args)}
-                pre_pos, negs = [], []
-                for s in act.pre:
-                    is_neg, litp = ground_literal(s, bind)
-                    (negs if is_neg else pre_pos).append(litp)
-                if world.check_preconds(pre_pos, extra=static_facts):
-                    continue
-                violated = any(world.holds(l) or (l in static_facts) for l in negs)
-                if violated:
+                # every pre must evaluate true
+                ok = True
+                for pre in act.pre:
+                    if not eval_clause(world, static_facts, pre, bind, enable_numeric=True):
+                        ok = False; break
+                if not ok:
                     continue
                 afford.append(f"({act.name} {' '.join(args)})")
+
         return afford
 
     # ---------- Helpers ----------

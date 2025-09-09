@@ -3,48 +3,9 @@ import re, random
 from ..pddl.domain_spec import DomainSpec, ActionSpec, Predicate
 from ..pddl.grounding import parse_grounded, instantiate, ground_literal
 from .prompt_formatter import PromptFormatter, PromptFormatterConfig
+from .semantics import eval_num_pre, apply_num_eff, eval_clause
 from .world_state import WorldState
 from .invariants import InvariantPlugin
-
-# --- numeric guards/effects ---
-NUM_CMP = re.compile(
-    r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
-)
-NUM_EFF = re.compile(
-    r"^\(\s*(increase|decrease|assign|cost)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
-)
-
-def _bind_args(argstr: Optional[str], bind: Dict[str, str]) -> Tuple[str, ...]:
-    toks = argstr.split() if argstr else []
-    return tuple(bind.get(t[1:], t) if t.startswith("?") else t for t in toks)
-
-def _eval_num_pre(world: WorldState, expr: str, bind: Dict[str,str]) -> bool:
-    m = NUM_CMP.match(expr.strip())
-    if not m: raise ValueError(f"Bad num_pre: {expr}")
-    op, fname, argstr, rhs = m.groups()
-    args = _bind_args(argstr, bind)
-    val = world.get_fluent(fname, args)
-    rhs = float(rhs)
-    if op == "<":  return val < rhs
-    if op == "<=": return val <= rhs
-    if op == ">":  return val > rhs
-    if op == ">=": return val >= rhs
-    return abs(val - rhs) < 1e-9  # "="
-
-def _apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[str,Any]):
-    m = NUM_EFF.match(expr.strip())
-    if not m: raise ValueError(f"Bad num_eff: {expr}")
-    op, fname, argstr, delta = m.groups()
-    args  = _bind_args(argstr, bind)
-    delta = float(delta)
-    if op == "assign":
-        world.set_fluent(fname, args, delta)
-    elif op == "increase":
-        world.set_fluent(fname, args, world.get_fluent(fname, args) + delta)
-    elif op == "decrease":
-        world.set_fluent(fname, args, world.get_fluent(fname, args) - delta)
-    elif op == "cost":
-        info["action_cost"] = info.get("action_cost", 0.0) + delta
 
 def extract_tag(s: str, tag: str) -> Optional[str]:
     start, end = f"<{tag}>", f"</{tag}>"
@@ -99,10 +60,6 @@ class PDDLEnv:
                  max_messages: int = 8,
                  time_limit: Optional[float] = None,
 
-                 visible_fluents: Optional[List[str]] = None,   # which fluents to print in the obs
-                 fluents_precision: int = 2,
-                 show_fluent_deltas: bool = True,
-
                  default_duration: float = 1.0,
                  seed: Optional[int] = None):
         self.domain, self.world = domain, world
@@ -136,9 +93,6 @@ class PDDLEnv:
         self.time_limit = time_limit
         self.time = 0.0
         
-        self.visible_fluents = visible_fluents or ["*"]   # glob-style
-        self.fluents_precision = int(fluents_precision)
-        self.show_fluent_deltas = bool(show_fluent_deltas)
         self._prev_fluents: Dict[Tuple[str, Tuple[str,...]], float] = {}
 
         self.messages: List[str] = []
@@ -176,8 +130,10 @@ class PDDLEnv:
         return obs_text, info
 
     def step(self, text: str):
-        if self.done: raise RuntimeError("Episode finished. Call reset().")
+        if self.done:
+            raise RuntimeError("Episode finished. Call reset().")
 
+        # snapshot fluents for delta display (formatter may use prev_fluents)
         self._prev_fluents = dict(self.world.fluents)
 
         info: Dict[str, Any] = {}
@@ -202,54 +158,42 @@ class PDDLEnv:
             return self._illegal(f"Unknown action '{name}'", info)
 
         act: ActionSpec = self.domain.actions[name]
-        bind = {var: val for (var,_), val in zip(act.params, args)}
+        bind = {var: val for (var, _), val in zip(act.params, args)}
 
-        # Ground positives only
-        pre_pos: List[Predicate] = []
-        neg_lits: List[Predicate] = []
-        for s in act.pre:
-            is_neg, litp = ground_literal(s, bind)
-            (neg_lits if is_neg else pre_pos).append(litp)
+        # ---------- Preconditions (supports (or ...) and (not ...)) ----------
+        for s in (act.pre or []):
+            if not eval_clause(self.world, self.static_facts, s, bind, enable_numeric=self.enable_numeric):
+                return self._illegal(f"Precondition failed: {s}", info)
 
-        # Numeric guards
+        # Legacy numeric guards (still honored for better error messages / older domains)
         if self.enable_numeric and act.num_pre:
             for np in act.num_pre:
-                if not _eval_num_pre(self.world, np, bind):
+                if not eval_num_pre(self.world, np, bind):
                     return self._illegal(f"Numeric precondition failed: {np}", info)
 
-        # Classic preconditions
-        missing = self.world.check_preconds(pre_pos, extra=self.static_facts)
-        if missing:
-            return self._illegal(f"Preconditions not satisfied: {missing}", info)
-
-        # Negative preconditions (route through world.holds so derived preds work)
-        for litp in neg_lits:
-            if self.world.holds(litp) or (litp in self.static_facts):
-                return self._illegal(
-                    f"Negative precondition violated: (not ({litp[0]} {' '.join(litp[1])}))",
-                    info
-                )
-
-        # Apply base effects
+        # ---------- Apply base effects ----------
         _, add, dele = instantiate(self.domain, act, args)
 
-        # ---------- Engine niceties (lazy, arity-safe) ----------
+        # Engine niceties (wildcard deletes & inferring robot location for obj-at adds)
         def _is_unbound(x: Any) -> bool:
             return isinstance(x, str) and x.startswith("?")
 
-        # Wildcard deletes: unbound vars act as wildcards (delete all matches)
         def _expand_delete_patterns(deletes: List[Predicate], facts: set) -> List[Predicate]:
             expanded: List[Predicate] = []
             for (pred, argtup) in deletes:
                 if any(_is_unbound(a) for a in argtup):
                     for (p, a) in list(facts):
-                        if p != pred: continue
+                        if p != pred:
+                            continue
                         ok = True
                         for i, pat in enumerate(argtup):
-                            if _is_unbound(pat): continue
+                            if _is_unbound(pat):
+                                continue
                             if i >= len(a) or pat != a[i]:
-                                ok = False; break
-                        if ok: expanded.append((p, a))
+                                ok = False
+                                break
+                        if ok:
+                            expanded.append((p, a))
                 else:
                     expanded.append((pred, argtup))
             return expanded
@@ -260,17 +204,14 @@ class PDDLEnv:
                     return arg_tuple[i] if i < len(arg_tuple) else None
             return None
 
-        # Unique robot location (arity-safe)
         def _unique_robot_loc(world: WorldState, r: Optional[str]) -> Optional[str]:
-            if not r: return None
-            locs = [a[1] for (pred, a) in world.facts
-                    if pred == "at" and len(a) == 2 and a[0] == r]
+            if not r:
+                return None
+            locs = [a[1] for (pred, a) in world.facts if pred == "at" and len(a) == 2 and a[0] == r]
             return locs[0] if len(locs) == 1 else None
 
-
-        # Add-at-robot-location: only when we actually see an unbound 'obj-at' add
         def _expand_add_patterns(adds: List[Predicate], world: WorldState,
-                                 act: ActionSpec, arg_tuple: tuple) -> List[Predicate]:
+                                act: ActionSpec, arg_tuple: tuple) -> List[Predicate]:
             expanded: List[Predicate] = []
             r_cached: Optional[str] = None
             rloc_cached: Optional[str] = None
@@ -303,80 +244,48 @@ class PDDLEnv:
 
         self.world.apply(add, dele)
 
-        # Conditional effects
+        # ---------- Conditional effects ----------
         if self.enable_conditional and act.cond:
             for cb in act.cond:
                 ok = True
                 for w in cb.when:
-                    w = w.strip()
-                    if w.startswith("(") and not w.startswith("(not") and any(w.startswith(f"({op}") for op in ["<", ">", "<=", ">=", "="]):
-                        if not self.enable_numeric or not _eval_num_pre(self.world, w, bind):
-                            ok = False; break
-                    else:
-                        is_neg, litw = ground_literal(w, bind)
-                        h = (litw in self.world.facts) or (litw in self.static_facts)
-                        if (not is_neg and not h) or (is_neg and h):
-                            ok = False; break
+                    if not eval_clause(self.world, self.static_facts, w, bind, enable_numeric=self.enable_numeric):
+                        ok = False
+                        break
                 if ok:
                     for a in cb.add:
-                        _, litp = ground_literal(a, bind); self.world.facts.add(litp)
+                        _, litp = ground_literal(a, bind)
+                        self.world.facts.add(litp)
                     for d in cb.delete:
-                        _, litp = ground_literal(d, bind); self.world.facts.discard(litp)
+                        _, litp = ground_literal(d, bind)
+                        self.world.facts.discard(litp)
                     if self.enable_numeric:
-                        for ne in cb.num_eff: _apply_num_eff(self.world, ne, bind, info)
-
-        # Emit base action messages
-        for msg in getattr(act, "messages", []) or []:
-            self.messages.append(_format_msg(msg, bind, self.world))
-
-        # Emit conditional block messages
-        if self.enable_conditional and act.cond:
-            for cb in act.cond:
-                ok = True
-                # (we already computed ok earlier; do it again or refactor—keeping it simple)
-                for w in cb.when:
-                    w = w.strip()
-                    if w.startswith("(") and not w.startswith("(not") and any(w.startswith(f"({op}") for op in ["<", ">", "<=", ">=", "="]):
-                        if not self.enable_numeric or not _eval_num_pre(self.world, w, bind):
-                            ok = False; break
-                    else:
-                        is_neg, litw = ground_literal(w, bind)
-                        h = (litw in self.world.facts) or (litw in self.static_facts)
-                        if (not is_neg and not h) or (is_neg and h):
-                            ok = False; break
-                if ok:
+                        for ne in cb.num_eff:
+                            apply_num_eff(self.world, ne, bind, info)
                     for m in cb.messages:
                         self.messages.append(_format_msg(m, bind, self.world))
 
-
-        # Numeric effects (unconditional)
+        # ---------- Numeric effects (unconditional) ----------
         if self.enable_numeric and act.num_eff:
             for ne in act.num_eff:
-                _apply_num_eff(self.world, ne, bind, info)
-        
-        # Stochastic outcomes
+                apply_num_eff(self.world, ne, bind, info)
+
+        # ---------- Stochastic outcomes ----------
         if self.enable_stochastic and getattr(act, "outcomes", None):
-            # Filter outcomes by optional 'when' guards
             valid = []
             for oc in act.outcomes:
                 ok = True
                 for w in oc.when or []:
-                    w = w.strip()
-                    if w.startswith("(") and not w.startswith("(not") and any(w.startswith(f"({op}") for op in ["<", ">", "<=", ">=", "="]):
-                        if not self.enable_numeric or not _eval_num_pre(self.world, w, bind):
-                            ok = False; break
-                    else:
-                        is_neg, litw = ground_literal(w, bind)
-                        h = (litw in self.world.facts) or (litw in self.static_facts)
-                        if (not is_neg and not h) or (is_neg and h):
-                            ok = False; break
+                    if not eval_clause(self.world, self.static_facts, w, bind, enable_numeric=self.enable_numeric):
+                        ok = False
+                        break
                 if ok:
                     valid.append(oc)
 
-            # Normalize and sample
             totp = sum(max(0.0, float(oc.p)) for oc in valid)
             if valid and totp <= 0:
                 info["stochastic_warning"] = "nonpositive_total_probability"
+
             choice = None
             roll = self.rng.random() * totp if totp > 0 else None
             acc = 0.0
@@ -386,28 +295,23 @@ class PDDLEnv:
                     choice = oc
                     break
             if choice is None and valid:
-                # fallback: pick last if totp==0 or num issues
                 choice = valid[-1]
 
             if choice:
-                # apply choice effects
                 add = []
                 dele = []
                 for s in choice.add or []:
                     _, litp = ground_literal(s, bind); add.append(litp)
                 for s in (choice.delete or []):
                     _, litp = ground_literal(s, bind); dele.append(litp)
-                # Use same wildcard-expansion niceties
                 dele = _expand_delete_patterns(dele, self.world.facts)
                 add  = _expand_add_patterns(add, self.world, act, args)
                 self.world.apply(add, dele)
 
-                # numeric effects
                 if self.enable_numeric and choice.num_eff:
                     for ne in choice.num_eff:
-                        _apply_num_eff(self.world, ne, bind, info)
+                        apply_num_eff(self.world, ne, bind, info)
 
-                # messages
                 for m in choice.messages or []:
                     self.messages.append(_format_msg(m, bind, self.world))
 
@@ -415,21 +319,25 @@ class PDDLEnv:
                 info["stochastic_roll"] = roll
                 info["stochastic_total_p"] = totp
 
+        # ---------- Base action messages (after effects so probes see new state) ----------
+        for msg in getattr(act, "messages", []) or []:
+            self.messages.append(_format_msg(msg, bind, self.world))
 
-        # Time / duration
+        # ---------- Time / duration ----------
         if self.enable_durations:
             dur = float(act.duration) if (act.duration is not None) else self.default_duration
             self._advance_time(dur, info)
 
-        # Plugins (post)
+        # ---------- Plugins (post) ----------
         for pl in self.plugins:
             errs = pl.validate(self.world)
             if errs:
                 return self._illegal(f"Postcondition violated: {errs}", info)
 
-        # Step bookkeeping and terminal check
+        # ---------- Bookkeeping / termination ----------
         self.steps += 1
         return self._post_apply_success(info)
+
 
     # --- helpers ---
     def _advance_time(self, dur: float, info: Dict[str, Any]):
@@ -470,10 +378,6 @@ class PDDLEnv:
         })
         self.done = True
         return f"Invalid: {msg}\nGame Over.", self.invalid_penalty, True, info
-
-    def _fluent_visible(self, name: str) -> bool:
-        import fnmatch
-        return any(fnmatch.fnmatch(name, pat) for pat in self.visible_fluents)
 
     def _obs(self) -> str:
         # affordances (on/off decided by formatter)
