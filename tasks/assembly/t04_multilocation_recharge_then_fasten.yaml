@@ -5,6 +5,7 @@ description: |
   fetch and equip the tool from a bin at the cell, move to the bench, align, and fasten.
 
 meta:
+  domain: assembly
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
@@ -34,7 +35,6 @@ static_facts:
 init:
   - (at r1 cell)
   - (obj-at bin1 cell)
-  - (obj-at drv cell)
   - (in drv bin1)          # tool is in the bin
   - (obj-at p1 bench)
   - (obj-at asm1 bench)

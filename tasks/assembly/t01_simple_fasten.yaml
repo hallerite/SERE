@@ -5,6 +5,7 @@ description: |
   Just fasten to complete the install.
 
 meta:
+  domain: assembly
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

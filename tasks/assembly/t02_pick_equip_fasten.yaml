@@ -4,6 +4,7 @@ description: |
   The tool is on the bench. Pick it up, equip it, and fasten the pre-aligned part.
 
 meta:
+  domain: assembly
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

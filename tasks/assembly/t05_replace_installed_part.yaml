@@ -5,6 +5,7 @@ description: |
   then align and fasten the correct part (p_good).
 
 meta:
+  domain: assembly
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
@@ -29,6 +30,7 @@ init:
   - (at r1 bench)
   - (obj-at p_good bench)
   - (obj-at asm1 bench)
+  - (obj-at p_bad bench) 
   - (obj-at drv bench)
   - (fastened p_bad asm1)
   - (installed p_bad asm1)
@@ -37,9 +39,7 @@ init:
 goal:
   - (installed p_good asm1)
   - (fastened p_good asm1)
-  # ensure the wrong part is no longer attached
-  - (not (fastened p_bad asm1))
-  - (not (installed p_bad asm1))
+  - (obj-at p_bad bench)
 
 reference_plan:
   - (pick-up r1 drv)

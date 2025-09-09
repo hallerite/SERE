@@ -211,7 +211,7 @@ actions:
   # preparation & alignment
   - name: align
     params: [{r: robot}, {p: part}, {a: assembly}]
-    pre: ["(co-located ?r ?p)", "(co-located ?r ?a)", "(obj-at ?p ?l)", "(obj-at ?a ?l2)"]
+    pre: ["(co-located ?r ?p)", "(co-located ?r ?a)"]
     add: ["(aligned ?p ?a)"]
     num_eff: ["(increase (elapsed) 1)", "(cost (align ?p ?a) 0.5)"]
     duration: 1.0

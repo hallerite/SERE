@@ -5,6 +5,7 @@ description: |
   equip it, align the part, and fasten.
 
 meta:
+  domain: assembly
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
