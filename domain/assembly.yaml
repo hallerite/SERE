@@ -98,6 +98,15 @@ predicates:
     args: [{name: m, type: machine}]
     nl: "{m} is powered"
 
+  # quality of outcome
+  - name: defective
+    args: [{name: a, type: assembly}]
+    nl: "{a} is defective"
+
+  - name: needs-rework
+    args: [{name: a, type: assembly}]
+    nl: "{a} needs rework"
+
 # ---------- Fluents (numeric state) ----------
 fluents:
   - name: elapsed
@@ -115,6 +124,10 @@ fluents:
   - name: torque
     args: [{name: t, type: tool}]
     nl: "Torque setting on {t}"
+
+  - name: quality
+    args: [{name: a, type: assembly}]
+    nl: "Quality score of {a}"
 
 # ---------- Actions ----------
 actions:
@@ -211,9 +224,32 @@ actions:
     num_eff: ["(increase (elapsed) 2)", "(cost (fasten ?p ?a ?t) 1)"]
     duration: 2.0
     cond:
-      # If the part is damaged, fasten still consumes time/cost but does not install.
       - when: ["(damaged ?p)"]
         delete: ["(installed ?p ?a)"]
+    outcomes:
+      # 10%: hard defect → mark assembly as defective, quality low
+      - name: "hard_defect"
+        p: 0.10
+        add: ["(defective ?a)"]
+        num_eff: ["(assign (quality ?a) 0.20)"]
+        messages:
+          - "QC: Hard defect on ?a detected. Disassemble and reassemble."
+
+      # 30%: soft quality issue → needs rework, quality mediocre
+      - name: "soft_defect"
+        p: 0.30
+        add: ["(needs-rework ?a)"]
+        num_eff: ["(assign (quality ?a) 0.65)"]
+        messages:
+          - "QC: Marginal quality on ?a (rework needed). Consider unfasten → realign → refasten."
+
+      # Otherwise: success → clear flags, set good quality
+      - name: "good"
+        p: 0.60
+        delete: ["(defective ?a)", "(needs-rework ?a)"]
+        num_eff: ["(assign (quality ?a) 0.95)"]
+        messages:
+          - "QC: ?a passed. Quality=good."
 
   # optional: torque setting influences nothing structural but gives room for curricula
   - name: set-torque
@@ -256,3 +292,21 @@ actions:
     add: []
     num_eff: ["(increase (energy ?r) 5)", "(increase (elapsed) 2)", "(cost (recharge ?r ?l) 0.1)"]
     duration: 2.0
+
+  - name: qc-check
+    params: [{r: robot}, {a: assembly}]
+    pre: ["(co-located ?r ?a)"]
+    add: []
+    # Emits a message but no state change; tiny time/cost to prevent spam
+    num_eff: ["(increase (elapsed) 0.2)", "(cost (qc-check ?a) 0.05)"]
+    duration: 0.2
+    messages:
+      - "QC Report for ?a — quality=(quality ?a), flags: (defective ?a) (needs-rework ?a)"
+
+  - name: realign
+    params: [{r: robot}, {p: part}, {a: assembly}]
+    pre: ["(co-located ?r ?p)", "(co-located ?r ?a)"]
+    add: ["(aligned ?p ?a)"]
+    delete: []
+    num_eff: ["(increase (elapsed) 0.5)", "(cost (realign ?p ?a) 0.1)"]
+    duration: 0.5
