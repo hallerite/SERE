@@ -410,3 +410,61 @@ def test_time_limit_boundary_exact_ok_exceed_bad(basic_task_file):
     assert not done, "time == limit should not end the episode"
     obs, r, done, info = env.step("<move>(wait 0.01)</move>")
     assert done and info.get("outcome") == "loss"
+
+# ==================== TEST "OR" ====================
+# ==================== OR PRECONDITIONS / needs-open GUARD ====================
+
+def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
+    """
+    If the source container is marked (needs-open ?k) and it's closed,
+    the single 'pour' action should be blocked by the (or ...) preconditions.
+    Opening the kettle should then allow the same pour to proceed (assuming >=80C).
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    # Mark kettle as needing to be open to pour
+    reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
+    # Move to kitchen & heat kettle to >=80 (3 toggles at +30C each)
+    move(env, "hallway", "kitchen")
+    toggle(env, "kettle1"); toggle(env, "kettle1"); toggle(env, "kettle1")
+    # Mug can be left open or closed; either way, the source is the guard we care about.
+    # Keep mug open for a clean success check later.
+    open_(env, "mug1")
+
+    # Kettle is still CLOSED → pour should be invalid due to (or ...) precondition
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert done and info.get("outcome") == "invalid"
+    assert "Precondition failed" in info.get("error", "")
+
+    # Now open kettle and try again → should succeed & set hot water
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
+    move(env, "hallway", "kitchen")
+    open_(env, "mug1")
+    toggle(env, "kettle1"); toggle(env, "kettle1"); toggle(env, "kettle1")
+    open_(env, "kettle1")
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert info.get("outcome") != "invalid"
+    assert ("has-hot-water", ("mug1",)) in env.world.facts
+    assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
+
+
+def test_pour_spill_only_when_target_marked_needs_open_and_closed(basic_task_file):
+    """
+    With the new semantics, a spill occurs only if the TARGET container is marked
+    (needs-open ?m) and is closed at pour time.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    # Mark mug as requiring open to pour into
+    reset_with(env, extra_statics=[lit("needs-open", "mug1")])
+    move(env, "hallway", "kitchen")
+
+    # Open the kettle and heat it enough
+    open_(env, "kettle1")
+    toggle(env, "kettle1"); toggle(env, "kettle1"); toggle(env, "kettle1")
+
+    # Ensure mug is CLOSED (remove open if present)
+    env.world.facts.discard(("open", ("mug1",)))
+
+    # Now pour → should spill (because needs-open(mug1) ∧ not open(mug1))
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert ("spilled", ("mug1",)) in env.world.facts
