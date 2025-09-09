@@ -5,6 +5,7 @@ description: |
   Kettle is hot and open; mug is open with teabag inside. Just pour, then steep.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

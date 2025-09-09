@@ -5,6 +5,7 @@ description: |
   Everything is already prepared; you only need to steep the tea.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

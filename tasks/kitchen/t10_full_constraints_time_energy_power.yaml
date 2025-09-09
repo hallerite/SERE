@@ -6,6 +6,7 @@ description: |
   and finish at the table under a time limit.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

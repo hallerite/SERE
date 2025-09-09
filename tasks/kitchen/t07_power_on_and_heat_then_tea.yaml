@@ -6,6 +6,7 @@ description: |
   heat twice (to 100°C), then fetch teabag and brew.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

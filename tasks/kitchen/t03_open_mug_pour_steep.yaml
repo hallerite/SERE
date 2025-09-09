@@ -5,6 +5,7 @@ description: |
   The mug is closed. Kettle is hot & open, teabag is already in the mug.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

@@ -5,6 +5,7 @@ description: |
   Both kettle and mug are closed. Kettle is already hot. Open, pour, steep.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

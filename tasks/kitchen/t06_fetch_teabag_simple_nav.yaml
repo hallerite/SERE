@@ -6,6 +6,7 @@ description: |
   Kettle is hot and open; mug is closed initially.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

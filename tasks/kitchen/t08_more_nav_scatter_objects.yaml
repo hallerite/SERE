@@ -5,6 +5,7 @@ description: |
   Mug at table, kettle in kitchen, teabag in pantry. Bring it all together and brew.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

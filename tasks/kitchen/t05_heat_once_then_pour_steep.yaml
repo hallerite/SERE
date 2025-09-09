@@ -6,6 +6,7 @@ description: |
   (Teabag already in mug.)
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true

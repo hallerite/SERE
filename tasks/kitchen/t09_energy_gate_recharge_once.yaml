@@ -5,6 +5,7 @@ description: |
   Low starting energy requires one recharge at the hallway charger to complete the brew and move to table.
 
 meta:
+  domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
