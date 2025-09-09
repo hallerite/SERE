@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import re, random
 from ..pddl.domain_spec import DomainSpec, ActionSpec, Predicate
 from ..pddl.grounding import parse_grounded, instantiate, ground_literal
+from .prompt_formatter import PromptFormatter, PromptFormatterConfig
 from .world_state import WorldState
 from .invariants import InvariantPlugin
 
@@ -85,6 +86,8 @@ def _format_msg(template: str, bind: Dict[str, str], world: WorldState) -> str:
 class PDDLEnv:
     def __init__(self, domain: DomainSpec, world: WorldState,
                  static_facts: set, goal: List[tuple],
+                 formatter_config: Optional[dict] = None,
+                 formatter_obj: Optional[PromptFormatter] = None,
                  plugins: Optional[List[InvariantPlugin]] = None,
                  max_steps: int = 40, step_penalty: float = -0.01,
                  invalid_penalty: float = -0.1, goal_reward: float = 1.0,
@@ -104,6 +107,21 @@ class PDDLEnv:
                  seed: Optional[int] = None):
         self.domain, self.world = domain, world
         self.static_facts, self.goal = static_facts, goal
+
+        # formatter
+        if formatter_obj is not None:
+            self.formatter = formatter_obj
+        else:
+            cfg = PromptFormatterConfig()
+            if formatter_config:
+                for k, v in formatter_config.items():
+                    if hasattr(cfg, k):
+                        setattr(cfg, k, v)
+                    else:
+                        raise AttributeError(f"Unknown prompt config key: {k}")
+            self.formatter = PromptFormatter(self.domain, cfg)
+        self._system_prompt_cache = ""
+
         self.plugins = plugins or []
         self.max_steps = max_steps
         self.step_penalty, self.invalid_penalty, self.goal_reward = step_penalty, invalid_penalty, goal_reward
@@ -140,9 +158,15 @@ class PDDLEnv:
             raise ValueError(f"Invariant errors: {errs}")
 
         self.messages.clear()
+        self._system_prompt_cache = self.formatter.build_system_prompt(
+            world=self.world,
+            static_facts=self.static_facts,
+            goal=self.goal
+        )
 
         obs_text = self._obs()  # PLAIN TEXT ONLY
         info = {
+            "system_prompt": self._system_prompt_cache,
             "problem_pddl": self.world.to_problem_pddl("instance", self.static_facts, self.goal),
             "features": dict(numeric=self.enable_numeric,
                              conditional=self.enable_conditional,
@@ -451,41 +475,19 @@ class PDDLEnv:
         import fnmatch
         return any(fnmatch.fnmatch(name, pat) for pat in self.visible_fluents)
 
-    def _format_fluents(self) -> str:
-        if not self.world.fluents: 
-            return ""
-        rows = []
-        prec = self.fluents_precision
-        for (name, args), val in sorted(self.world.fluents.items()):
-            if not self._fluent_visible(name):
-                continue
-            key = f"({name}{'' if not args else ' ' + ' '.join(args)})"
-            delta_txt = ""
-            if self.show_fluent_deltas:
-                prev = self._prev_fluents.get((name, args))
-                if prev is not None:
-                    dv = val - prev
-                    if abs(dv) >= 10**(-prec):  # hide microscopic noise
-                        sign = "+" if dv >= 0 else ""
-                        delta_txt = f" ({sign}{dv:.{prec}f})"
-            rows.append(f"{key}={val:.{prec}f}{delta_txt}")
-        # update snapshot for next call
-        self._prev_fluents = dict(self.world.fluents)
-        return ("\nFluents: " + ", ".join(rows)) if rows else ""
-
     def _obs(self) -> str:
-        facts = "\n  ".join(f"({p} {' '.join(a)})" for (p,a) in sorted(self.world.facts) if p != "adjacent")
-        goals = " ".join(f"({g[0]} {' '.join(g[1])})" for g in self.goal)
-        ftxt = self._format_fluents()
-        ttxt = f"\nTime: {self.time:.2f}" if self.enable_durations else ""
-        mtxt = ""
-        if self.messages:
-            tail = self.messages[-self.max_messages:]
-            mtxt = "\nMessages:\n  - " + "\n  - ".join(tail)
-        return (
-            f"State:\n  {facts}\n"
-            f"Steps: {self.steps}/{self.max_steps}\n"
-            f"Goal: {goals}{ftxt}{ttxt}{mtxt}\n"
-            f"Reply with <move>(action args)</move>."
-        )
+        # affordances (on/off decided by formatter)
+        aff = self.formatter.generate_affordances(self.world, self.static_facts)
 
+        return self.formatter.format_obs(
+            world=self.world,
+            static_facts=self.static_facts,
+            goal=self.goal,
+            steps=self.steps,
+            max_steps=self.max_steps,
+            time_val=self.time,
+            durations_on=self.enable_durations,
+            messages=self.messages[-self.max_messages:],
+            prev_fluents=self._prev_fluents,
+            affordances=aff,
+        )

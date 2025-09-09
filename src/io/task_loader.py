@@ -94,7 +94,7 @@ def load_task(
     if init_fluents:
         _apply_init_fluents(w, init_fluents)
 
-    # Env config (YAML meta < explicit kwargs)
+    # --- Env config (YAML meta < explicit kwargs) ---
     env_cfg = {
         "max_steps":           meta.get("max_steps", 40),
         "step_penalty":        meta.get("step_penalty", -0.01),
@@ -106,7 +106,6 @@ def load_task(
         "enable_stochastic":   meta.get("enable_stochastic", False),
         "time_limit":          meta.get("time_limit", None),
         "default_duration":    meta.get("default_duration", 1.0),
-        "visible_fluents":     meta.get("visible_fluents", ["*"]),
         "seed":                meta.get("seed", None),
         "max_messages":        meta.get("max_messages", 8),
     }
