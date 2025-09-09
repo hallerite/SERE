@@ -5,6 +5,16 @@ import yaml
 Predicate = Tuple[str, Tuple[str, ...]]
 
 @dataclass
+class OutcomeSpec:
+    name: str
+    p: float
+    add: List[str] = field(default_factory=list)
+    delete: List[str] = field(default_factory=list)
+    num_eff: List[str] = field(default_factory=list)
+    when: List[str] = field(default_factory=list)      # optional guards
+    messages: List[str] = field(default_factory=list)  # optional agent messages
+
+@dataclass
 class FluentSpec:
     name: str
     args: List[Tuple[str, str]]  # (var, type)
@@ -16,6 +26,7 @@ class ConditionalBlock:
     add: List[str]
     delete: List[str]
     num_eff: List[str]           # e.g., ["(increase (elapsed) 1)"]
+    messages: List[str] = field(default_factory=list)
 
 @dataclass
 class PredicateSpec:
@@ -36,6 +47,8 @@ class ActionSpec:
     num_eff: List[str] = field(default_factory=list)       # numeric effects "(increase (elapsed) 1)"
     cond: List[ConditionalBlock] = field(default_factory=list)
     duration: Optional[float] = None
+    messages: List[str] = field(default_factory=list)         # base messages
+    outcomes: List[OutcomeSpec] = field(default_factory=list) # stochastic outcomes
 
 @dataclass
 class DomainSpec:
@@ -87,7 +100,21 @@ class DomainSpec:
                     when=cb.get("when", []) or [],
                     add=cb.get("add", []) or [],
                     delete=cb.get("del", cb.get("delete", [])) or [],
-                    num_eff=cb.get("num_eff", []) or []
+                    num_eff=cb.get("num_eff", []) or [],
+                    messages=cb.get("messages", []) or []
+                ))
+
+            # --- outcomes ---
+            outcomes = []
+            for oc in a.get("outcomes", []) or []:
+                outcomes.append(OutcomeSpec(
+                    name=oc.get("name", "outcome"),
+                    p=float(oc["p"]),
+                    add=oc.get("add", []) or [],
+                    delete=oc.get("del", oc.get("delete", [])) or [],
+                    num_eff=oc.get("num_eff", []) or [],
+                    when=oc.get("when", []) or [],
+                    messages=oc.get("messages", []) or []
                 ))
             actions[a["name"]] = ActionSpec(
                 name=a["name"],
@@ -100,5 +127,7 @@ class DomainSpec:
                 num_eff=a.get("num_eff", []) or [],
                 cond=cond_blocks or [],
                 duration=a.get("duration", None),
+                messages=a.get("messages", []) or [],
+                outcomes=outcomes or []
             )
         return DomainSpec(y["domain"], types, preds, actions, fls)

@@ -50,6 +50,38 @@ def extract_tag(s: str, tag: str) -> Optional[str]:
     i, j = s.find(start), s.find(end)
     return None if i < 0 or j < 0 else s[i+len(start):j].strip()
 
+def _format_msg(template: str, bind: Dict[str, str], world: WorldState) -> str:
+    """
+    Replace ?vars with their bound symbols.
+    Also supports simple inline probes:
+      - "(quality ?a)" → current numeric fluent value
+      - "(pred ?x ...)" → truthy/falsey probe prints "true"/"false"
+    We keep it intentionally lightweight to avoid dragging the parser in.
+    """
+    s = template
+    for k, v in bind.items():
+        s = re.sub(rf'\?{re.escape(k)}(\b|[^A-Za-z0-9_?-])', lambda m: v + (m.group(1) or ''), s)
+
+    # inline probes of form "(name arg1 arg2)"
+    for token in re.findall(r"\([^)]+\)", s):
+        try:
+            name, args = parse_grounded(token)
+            if name in ["<", ">", "<=", ">=", "="]:
+                continue
+            # try fluent read
+            val = world.get_fluent(name, args)
+            # if fluent missing and args non-empty, maybe it's a predicate probe
+            if val != 0.0 or (name, args) in world.fluents:
+                s = s.replace(token, f"{val:.2f}")
+            else:
+                truth = world.holds((name, args))
+                s = s.replace(token, "true" if truth else "false")
+        except Exception:
+            # leave token as-is if not parseable
+            pass
+    return s
+
+
 class PDDLEnv:
     def __init__(self, domain: DomainSpec, world: WorldState,
                  static_facts: set, goal: List[tuple],
@@ -60,6 +92,8 @@ class PDDLEnv:
                  enable_numeric: bool = False,
                  enable_conditional: bool = False,
                  enable_durations: bool = False,
+                 enable_stochastic: bool = True, 
+                 max_messages: int = 8,
                  time_limit: Optional[float] = None,
 
                  visible_fluents: Optional[List[str]] = None,   # which fluents to print in the obs
@@ -78,6 +112,8 @@ class PDDLEnv:
         self.enable_numeric = enable_numeric
         self.enable_conditional = enable_conditional
         self.enable_durations = enable_durations
+        self.enable_stochastic = enable_stochastic
+
         self.default_duration = float(default_duration)
         self.time_limit = time_limit
         self.time = 0.0
@@ -86,6 +122,10 @@ class PDDLEnv:
         self.fluents_precision = int(fluents_precision)
         self.show_fluent_deltas = bool(show_fluent_deltas)
         self._prev_fluents: Dict[Tuple[str, Tuple[str,...]], float] = {}
+
+        self.messages: List[str] = []
+        self.max_messages = int(max_messages)
+
 
         self.rng = random.Random(seed)
 
@@ -99,12 +139,15 @@ class PDDLEnv:
         if errs:
             raise ValueError(f"Invariant errors: {errs}")
 
+        self.messages.clear()
+
         obs_text = self._obs()  # PLAIN TEXT ONLY
         info = {
             "problem_pddl": self.world.to_problem_pddl("instance", self.static_facts, self.goal),
             "features": dict(numeric=self.enable_numeric,
                              conditional=self.enable_conditional,
-                             durations=self.enable_durations)
+                             durations=self.enable_durations,
+                             stochastic=self.enable_stochastic)
         }
         return obs_text, info
 
@@ -236,7 +279,7 @@ class PDDLEnv:
 
         self.world.apply(add, dele)
 
-        # Conditional effects (unchanged)
+        # Conditional effects
         if self.enable_conditional and act.cond:
             for cb in act.cond:
                 ok = True
@@ -258,10 +301,96 @@ class PDDLEnv:
                     if self.enable_numeric:
                         for ne in cb.num_eff: _apply_num_eff(self.world, ne, bind, info)
 
+        # Emit base action messages
+        for msg in getattr(act, "messages", []) or []:
+            self.messages.append(_format_msg(msg, bind, self.world))
+
+        # Emit conditional block messages
+        if self.enable_conditional and act.cond:
+            for cb in act.cond:
+                ok = True
+                # (we already computed ok earlier; do it again or refactor—keeping it simple)
+                for w in cb.when:
+                    w = w.strip()
+                    if w.startswith("(") and not w.startswith("(not") and any(w.startswith(f"({op}") for op in ["<", ">", "<=", ">=", "="]):
+                        if not self.enable_numeric or not _eval_num_pre(self.world, w, bind):
+                            ok = False; break
+                    else:
+                        is_neg, litw = ground_literal(w, bind)
+                        h = (litw in self.world.facts) or (litw in self.static_facts)
+                        if (not is_neg and not h) or (is_neg and h):
+                            ok = False; break
+                if ok:
+                    for m in cb.messages:
+                        self.messages.append(_format_msg(m, bind, self.world))
+
+
         # Numeric effects (unconditional)
         if self.enable_numeric and act.num_eff:
             for ne in act.num_eff:
                 _apply_num_eff(self.world, ne, bind, info)
+        
+        # Stochastic outcomes
+        if self.enable_stochastic and getattr(act, "outcomes", None):
+            # Filter outcomes by optional 'when' guards
+            valid = []
+            for oc in act.outcomes:
+                ok = True
+                for w in oc.when or []:
+                    w = w.strip()
+                    if w.startswith("(") and not w.startswith("(not") and any(w.startswith(f"({op}") for op in ["<", ">", "<=", ">=", "="]):
+                        if not self.enable_numeric or not _eval_num_pre(self.world, w, bind):
+                            ok = False; break
+                    else:
+                        is_neg, litw = ground_literal(w, bind)
+                        h = (litw in self.world.facts) or (litw in self.static_facts)
+                        if (not is_neg and not h) or (is_neg and h):
+                            ok = False; break
+                if ok:
+                    valid.append(oc)
+
+            # Normalize and sample
+            totp = sum(max(0.0, float(oc.p)) for oc in valid)
+            if valid and totp <= 0:
+                info["stochastic_warning"] = "nonpositive_total_probability"
+            choice = None
+            roll = self.rng.random() * totp if totp > 0 else None
+            acc = 0.0
+            for oc in valid:
+                acc += max(0.0, float(oc.p))
+                if roll is not None and roll <= acc:
+                    choice = oc
+                    break
+            if choice is None and valid:
+                # fallback: pick last if totp==0 or num issues
+                choice = valid[-1]
+
+            if choice:
+                # apply choice effects
+                add = []
+                dele = []
+                for s in choice.add or []:
+                    _, litp = ground_literal(s, bind); add.append(litp)
+                for s in (choice.delete or []):
+                    _, litp = ground_literal(s, bind); dele.append(litp)
+                # Use same wildcard-expansion niceties
+                dele = _expand_delete_patterns(dele, self.world.facts)
+                add  = _expand_add_patterns(add, self.world, act, args)
+                self.world.apply(add, dele)
+
+                # numeric effects
+                if self.enable_numeric and choice.num_eff:
+                    for ne in choice.num_eff:
+                        _apply_num_eff(self.world, ne, bind, info)
+
+                # messages
+                for m in choice.messages or []:
+                    self.messages.append(_format_msg(m, bind, self.world))
+
+                info["stochastic_outcome"] = getattr(choice, "name", "chosen")
+                info["stochastic_roll"] = roll
+                info["stochastic_total_p"] = totp
+
 
         # Time / duration
         if self.enable_durations:
@@ -305,10 +434,16 @@ class PDDLEnv:
             info["outcome"] = "loss"
         else:
             info["outcome"] = "ongoing"
+        info["messages"] = self.messages[-self.max_messages:]
         return self._obs(), reward, self.done, info
-
-    def _illegal(self, msg: str, info: Dict[str, Any]):
-        info.update({"invalid_move": True, "error": msg, "outcome": "invalid"})
+    
+    def _illegal(self, msg, info):
+        info.update({
+            "invalid_move": True,
+            "error": msg,
+            "outcome": "invalid",
+            "messages": self.messages[-self.max_messages:],  # add
+        })
         self.done = True
         return f"Invalid: {msg}\nGame Over.", self.invalid_penalty, True, info
 
@@ -343,9 +478,14 @@ class PDDLEnv:
         goals = " ".join(f"({g[0]} {' '.join(g[1])})" for g in self.goal)
         ftxt = self._format_fluents()
         ttxt = f"\nTime: {self.time:.2f}" if self.enable_durations else ""
+        mtxt = ""
+        if self.messages:
+            tail = self.messages[-self.max_messages:]
+            mtxt = "\nMessages:\n  - " + "\n  - ".join(tail)
         return (
             f"State:\n  {facts}\n"
             f"Steps: {self.steps}/{self.max_steps}\n"
-            f"Goal: {goals}{ftxt}{ttxt}\n"
+            f"Goal: {goals}{ftxt}{ttxt}{mtxt}\n"
             f"Reply with <move>(action args)</move>."
         )
+
