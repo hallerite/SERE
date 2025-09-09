@@ -69,6 +69,11 @@ predicates:
     static: true
     nl: "{l1} is adjacent to {l2}"
 
+  - name: needs-open
+    args: [{name: c, type: container}]
+    static: true
+    nl: "{c} requires opening to pour"
+
 # ---------- Fluents (numeric state) ----------
 fluents:
   - name: elapsed
@@ -143,7 +148,11 @@ actions:
 
   - name: take-out
     params: [{r: robot}, {o: object}, {c: container}]
-    pre: ["(co-located ?r ?c)", "(in ?o ?c)", "(open ?c)", "(clear-hand ?r)"]
+    pre:
+      - "(clear-hand ?r)"
+      - "(co-located ?r ?c)"
+      - "(in ?o ?c)"
+      - "(open ?c)"
     add: ["(holding ?r ?o)"]
     del: ["(in ?o ?c)", "(clear-hand ?r)"]
     num_eff: ["(increase (elapsed) 0.5)", "(cost (take-out ?o ?c) 0.3)"]
@@ -165,14 +174,25 @@ actions:
 
   - name: pour
     params: [{r: robot}, {k: container}, {m: container}]
-    pre: ["(co-located ?r ?k)", "(co-located ?r ?m)"]
+    pre:
+      - "(co-located ?r ?k)"
+      - "(co-located ?r ?m)"
+      - "(or (not (needs-open ?k)) (open ?k))"     # source may require open
     add: []
+    del: []
     cond:
-      - when: ["(open ?k)", "(open ?m)", "(>= (water-temp ?k) 80)"]
-        add: ["(has-hot-water ?m)"]
-        num_eff: ["(assign (water-temp ?m) 100)"]
-      - when: ["(not (open ?m))"]
+      # 1) SPILL: target requires open and is closed
+      - when: ["(needs-open ?m)", "(not (open ?m))"]
         add: ["(spilled ?m)"]
+        del: ["(has-hot-water ?m)"]                # defensive cleanup
+        num_eff: []                                # no temp change on spill
+
+      # 2) FILL: target OK (open OR doesn't require) AND source hot
+      - when: ["(or (not (needs-open ?m)) (open ?m))", "(>= (water-temp ?k) 80)"]
+        add: ["(has-hot-water ?m)"]
+        del: []
+        num_eff: ["(assign (water-temp ?m) 100)"]
+
     num_eff: ["(increase (elapsed) 1)", "(cost (pour ?k ?m) 0.5)"]
     duration: 1.0
 
