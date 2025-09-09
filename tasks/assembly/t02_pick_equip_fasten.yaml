@@ -1,0 +1,42 @@
+id: t02_pick_equip_fasten
+name: Pick tool, equip, then fasten
+description: |
+  The tool is on the bench. Pick it up, equip it, and fasten the pre-aligned part.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  enable_stochastic: false
+  max_steps: 6
+  seed: 102
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+
+objects:
+  robot: [r1]
+  location: [bench]
+  tool: [drv]
+  part: [p1]
+  assembly: [asm1]
+
+static_facts:
+  - (tool-for drv asm1)
+
+init:
+  - (at r1 bench)
+  - (obj-at drv bench)
+  - (obj-at p1 bench)
+  - (obj-at asm1 bench)
+  - (aligned p1 asm1)
+  - (clear-hand r1)
+
+goal:
+  - (installed p1 asm1)
+  - (fastened p1 asm1)
+
+reference_plan:
+  - (pick-up r1 drv)
+  - (equip-tool r1 drv)
+  - (fasten r1 p1 asm1 drv)

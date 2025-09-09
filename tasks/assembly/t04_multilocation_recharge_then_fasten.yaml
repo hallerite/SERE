@@ -1,0 +1,56 @@
+id: t04_multilocation_recharge_then_fasten
+name: Multi-location with recharge before assembly
+description: |
+  The robot starts away from the bench with low energy. It must recharge at the dock,
+  fetch and equip the tool from a bin at the cell, move to the bench, align, and fasten.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  enable_stochastic: false
+  max_steps: 20
+  seed: 104
+  init_fluents:
+    - ["energy", ["r1"], 2]     # too low for all required moves → must recharge
+    - ["elapsed", [], 0.0]
+
+objects:
+  robot: [r1]
+  location: [dock, cell, bench]
+  container: [bin1]
+  tool: [drv]
+  part: [p1]
+  assembly: [asm1]
+
+static_facts:
+  - (tool-for drv asm1)
+  - (adjacent dock cell)
+  - (adjacent cell dock)
+  - (adjacent cell bench)
+  - (adjacent bench cell)
+  - (has-charger dock)
+
+init:
+  - (at r1 cell)
+  - (obj-at bin1 cell)
+  - (obj-at drv cell)
+  - (in drv bin1)          # tool is in the bin
+  - (obj-at p1 bench)
+  - (obj-at asm1 bench)
+  - (clear-hand r1)
+
+goal:
+  - (installed p1 asm1)
+  - (fastened p1 asm1)
+
+reference_plan:
+  - (move r1 cell dock)
+  - (recharge r1 dock)
+  - (move r1 dock cell)
+  - (open r1 bin1)
+  - (take-out r1 drv bin1)
+  - (equip-tool r1 drv)
+  - (move r1 cell bench)
+  - (align r1 p1 asm1)
+  - (fasten r1 p1 asm1 drv)

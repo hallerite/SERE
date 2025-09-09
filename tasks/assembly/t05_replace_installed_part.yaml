@@ -1,0 +1,50 @@
+id: t05_replace_installed_part
+name: Disassemble wrong part and install correct one
+description: |
+  A wrong part (p_bad) is already installed on the assembly. Remove it, place it on the bench,
+  then align and fasten the correct part (p_good).
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  enable_stochastic: false
+  max_steps: 25
+  seed: 105
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+
+objects:
+  robot: [r1]
+  location: [bench]
+  tool: [drv]
+  part: [p_bad, p_good]
+  assembly: [asm1]
+
+static_facts:
+  - (tool-for drv asm1)
+
+init:
+  - (at r1 bench)
+  - (obj-at p_good bench)
+  - (obj-at asm1 bench)
+  - (obj-at drv bench)
+  - (fastened p_bad asm1)
+  - (installed p_bad asm1)
+  - (clear-hand r1)
+
+goal:
+  - (installed p_good asm1)
+  - (fastened p_good asm1)
+  # ensure the wrong part is no longer attached
+  - (not (fastened p_bad asm1))
+  - (not (installed p_bad asm1))
+
+reference_plan:
+  - (pick-up r1 drv)
+  - (equip-tool r1 drv)
+  - (unfasten r1 p_bad asm1 drv)
+  - (place-on-bench r1 p_bad)
+  - (align r1 p_good asm1)
+  - (fasten r1 p_good asm1 drv)

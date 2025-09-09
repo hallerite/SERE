@@ -1,0 +1,47 @@
+id: t03_get_tool_from_bin_align_and_fasten
+name: Retrieve tool from bin, align, then fasten
+description: |
+  The tool is inside a closed bin at the bench. Open the bin, take out the tool,
+  equip it, align the part, and fasten.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  enable_stochastic: false
+  max_steps: 10
+  seed: 103
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+
+objects:
+  robot: [r1]
+  location: [bench]
+  container: [bin1]
+  tool: [drv]
+  part: [p1]
+  assembly: [asm1]
+
+static_facts:
+  - (tool-for drv asm1)
+
+init:
+  - (at r1 bench)
+  - (obj-at bin1 bench)
+  - (obj-at p1 bench)
+  - (obj-at asm1 bench)
+  - (in drv bin1)
+  - (clear-hand r1)
+
+goal:
+  - (installed p1 asm1)
+  - (fastened p1 asm1)
+
+reference_plan:
+  - (open r1 bin1)
+  - (take-out r1 drv bin1)
+  - (equip-tool r1 drv)
+  - (align r1 p1 asm1)
+  - (fasten r1 p1 asm1 drv)
+  # (close r1 bin1)  # optional; not required for goal

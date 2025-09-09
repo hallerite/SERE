@@ -1,0 +1,41 @@
+id: t01_simple_fasten
+name: One-step; fasten pre-aligned part
+description: |
+  Everything is ready. The robot already has the tool equipped and the part is aligned.
+  Just fasten to complete the install.
+
+meta:
+  enable_numeric: true
+  enable_conditional: true
+  enable_durations: true
+  enable_stochastic: false
+  max_steps: 3
+  seed: 101
+  init_fluents:
+    - ["energy", ["r1"], 10]
+    - ["elapsed", [], 0.0]
+
+objects:
+  robot: [r1]
+  location: [bench]
+  tool: [drv]
+  part: [p1]
+  assembly: [asm1]
+
+static_facts:
+  - (tool-for drv asm1)
+
+init:
+  - (at r1 bench)
+  - (obj-at p1 bench)
+  - (obj-at asm1 bench)
+  - (equipped r1 drv)
+  - (aligned p1 asm1)
+  - (clear-hand r1)
+
+goal:
+  - (installed p1 asm1)
+  - (fastened p1 asm1)
+
+reference_plan:
+  - (fasten r1 p1 asm1 drv)
