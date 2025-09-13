@@ -1,6 +1,6 @@
 import pytest
-from src.io.task_loader import load_task
-from src.core.world_state import lit
+from sere.io.task_loader import load_task
+from sere.core.world_state import lit
 
 _BASIC_TASK_YAML = """\
 id: t01_make_tea_basic

@@ -1,22 +1,37 @@
-import glob, yaml, pytest
-from src.io.task_loader import load_task
+import pytest
+from importlib.resources import files as pkg_files
 
-def _load_yaml(path):
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
+from sere.io.task_loader import load_task
 
-# Auto-discover every task YAML (t*.yaml) across all domains
-ALL_TASKS = sorted(glob.glob("tasks/*/t*.yaml"))
 
-@pytest.mark.parametrize("task_yaml", ALL_TASKS, ids=lambda p: p.split("/")[-1])
-def test_reference_plan_succeeds(task_yaml):
-    y = _load_yaml(task_yaml)
+def _iter_task_ids():
+    """
+    Enumerate packaged tasks under sere.assets.tasks as logical IDs:
+      e.g. 'kitchen/t01_one_step_steep.yaml'
+    """
+    base = pkg_files("sere.assets.tasks")
+    out = []
+    for domain_dir in base.iterdir():
+        if not domain_dir.is_dir():
+            continue
+        for entry in domain_dir.iterdir():
+            name = entry.name
+            if entry.is_file() and name.startswith("t") and name.endswith(".yaml"):
+                out.append(f"{domain_dir.name}/{name}")
+    return sorted(out)
 
+
+# Auto-discover every task YAML (t*.yaml) across all domains (packaged)
+ALL_TASKS = _iter_task_ids()
+
+
+@pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
+def test_reference_plan_succeeds(task_id: str):
     # Run with generous limits; let tasks override via meta if needed.
     # We also hard-disable stochastic here so reference plans are deterministic.
     env, meta = load_task(
-        None,                # infer domains/{meta.domain}.yaml or from path
-        task_yaml,
+        None,                # infer domain yaml or from path
+        task_id,
         max_steps=200,
         enable_numeric=True,
         enable_conditional=True,
@@ -31,12 +46,13 @@ def test_reference_plan_succeeds(task_yaml):
     except Exception:
         pass  # ok if energy fluent not present
 
-    # If a task has no reference_plan yet, mark it xfail so the suite still runs.
-    plan = y.get("reference_plan")
+    # Reference plan comes from loader meta; don't open YAML directly
+    plan = meta.get("reference_plan") or []
     if not plan:
-        pytest.xfail(f"{task_yaml} has no reference_plan")
+        pytest.xfail(f"{task_id} has no reference_plan")
 
     # Execute the reference plan
+    step_info = {}
     for i, act in enumerate(plan):
         obs, r, done, step_info = env.step(f"<move>{act}</move>")
         if done:
@@ -45,7 +61,7 @@ def test_reference_plan_succeeds(task_yaml):
             else:
                 raise AssertionError(
                     f"Failed at step {i}: {act}\n"
-                    f"task={task_yaml}\n"
+                    f"task={task_id}\n"
                     f"domain={meta.get('domain')}\n"
                     f"outcome={step_info.get('outcome')}\n"
                     f"error={step_info.get('error')}\n"
