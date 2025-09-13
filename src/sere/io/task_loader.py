@@ -1,9 +1,11 @@
 import yaml, re
 from pathlib import Path
 from typing import Tuple, Set, Optional, Dict, Any, List
-from ..pddl.domain_spec import DomainSpec
-from ..core.world_state import WorldState
-from ..core.pddl_env import PDDLEnv
+from importlib.resources import files as pkg_files, as_file
+
+from sere.pddl.domain_spec import DomainSpec
+from sere.core.world_state import WorldState
+from sere.core.pddl_env import PDDLEnv
 
 def _parse_lit(s: str):
     s = s.strip()
@@ -22,7 +24,7 @@ def _apply_init_fluents(world: WorldState, init_fluents: List[list]):
 
 def _infer_domain_from_path(task_path: str) -> Optional[str]:
     p = task_path.replace("\\", "/").lower()
-    m = re.search(r"/tasks/([^/]+)/", p)
+    m = re.search(r"/assets/tasks/([^/]+)/", p)
     return m.group(1) if m else None
 
 def _resolve_domain_path(domain_hint: Optional[str], task_path: str, domain_path: Optional[str]) -> str:
@@ -38,6 +40,48 @@ def _resolve_domain_path(domain_hint: Optional[str], task_path: str, domain_path
     if inferred:
         return f"domain/{inferred}.yaml"
     raise ValueError("Cannot determine domain. Set meta.domain in the task YAML or pass domain_path explicitly.")
+
+# --- tiny helpers to read from packaged assets when files aren't on disk ---
+
+def _strip_leading(part: Path, prefix: str) -> Path:
+    parts = part.parts
+    if parts and parts[0] == prefix:
+        return Path(*parts[1:])
+    return part
+
+def _load_yaml_from_task(task_path: str) -> Dict[str, Any]:
+    """Try filesystem first; else load from package sere.assets.tasks (supports legacy 'tasks/...')."""
+    p = Path(task_path)
+    if p.exists():
+        with open(p, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    # package lookup (logical id like 'kitchen/foo.yaml' or legacy 'tasks/kitchen/foo.yaml')
+    rel = _strip_leading(Path(task_path), "tasks")
+    cand = pkg_files("sere.assets.tasks") / str(rel)
+    if cand.is_file():
+        with cand.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    raise FileNotFoundError(f"Task not found: {task_path} (looked on disk and under sere.assets.tasks/{rel})")
+
+def _resolve_domain_file(dom_path: str) -> Path:
+    """
+    Return a real filesystem Path to the domain YAML, resolving against
+    packaged sere.assets.domain if not present on disk. Uses as_file() so
+    DomainSpec.from_yaml can consume a path string.
+    """
+    p = Path(dom_path)
+    if p.exists():
+        return p
+    # allow 'domain/...' or 'domains/...'
+    rel = Path(dom_path)
+    if rel.parts and rel.parts[0] in {"domain", "domains"}:
+        rel = Path(*rel.parts[1:])
+    cand = pkg_files("sere.assets.domain") / str(rel)
+    if not cand.is_file():
+        raise FileNotFoundError(f"Domain file not found: {dom_path} (looked on disk and under sere.assets.domain/{rel})")
+    # materialize to a real path for downstream code
+    with as_file(cand) as real_path:
+        return Path(real_path)
 
 def _load_invariants_plugin(domain_name: str):
     """Tries to load core.invariants.{DomainName}Invariants by naming convention."""
@@ -61,15 +105,14 @@ def load_task(
       domain file at 'domain/{meta.domain}.yaml'
     Caller can still override via domain_path or plugins.
     """
-    y = yaml.safe_load(open(task_path, "r"))
+    y = _load_yaml_from_task(task_path)
+
     meta = y.get("meta", {}) or {}
 
     domain_hint = (meta.get("domain") or "").strip().lower() or None
     dom_path = _resolve_domain_path(domain_hint, task_path, domain_path)
 
-    dom_file = Path(dom_path)
-    if not dom_file.exists():
-        raise FileNotFoundError(f"Domain file not found: {dom_file} (from domain='{domain_hint}' / task='{task_path}')")
+    dom_file = _resolve_domain_file(dom_path)
 
     dom = DomainSpec.from_yaml(str(dom_file))
 

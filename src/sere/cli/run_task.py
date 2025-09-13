@@ -1,5 +1,5 @@
 import sys
-from src.io.task_loader import load_task
+from sere.io.task_loader import load_task
 
 DEFAULT_TASK = "tasks/kitchen/t01_one_step_steep.yaml"
 
