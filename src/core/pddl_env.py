@@ -112,22 +112,21 @@ class PDDLEnv:
             raise ValueError(f"Invariant errors: {errs}")
 
         self.messages.clear()
-        self._system_prompt_cache = self.formatter.build_system_prompt(
-            world=self.world,
-            static_facts=self.static_facts,
-            goal=self.goal
-        )
+        self._system_prompt_cache = self.formatter.build_system_prompt(world=self.world)
 
         obs_text = self._obs()  # PLAIN TEXT ONLY
         info = {
             "system_prompt": self._system_prompt_cache,
             "problem_pddl": self.world.to_problem_pddl("instance", self.static_facts, self.goal),
-            "features": dict(numeric=self.enable_numeric,
-                             conditional=self.enable_conditional,
-                             durations=self.enable_durations,
-                             stochastic=self.enable_stochastic)
+            "features": dict(
+                numeric=self.enable_numeric,
+                conditional=self.enable_conditional,
+                durations=self.enable_durations,
+                stochastic=self.enable_stochastic
+            )
         }
         return obs_text, info
+
 
     def step(self, text: str):
         if self.done:

@@ -12,24 +12,37 @@ def main():
         max_steps=50,
         enable_stochastic=False,
         formatter_config=dict(
-            obs_mode="nl",              # "nl" | "pddl" | "both"
-            show_affordances=True,        # list valid moves each turn
-            include_static_in_briefing=True,
-            include_problem_pddl_in_briefing=True,
-            show_goal_nl=True,
+            # system prompt appearance
+            sysprompt_mode="both",            # "nl" | "pddl" | "both"
+            show_objects_in_sysprompt=True,
+
+            # observation formatting
+            obs_mode="both",                  # "nl" | "pddl" | "both"
+            show_affordances=True,
+            show_goal_nl=True,              # goal appears in obs (not in sys prompt)
             nl_max_facts=200,
-        ),
+        )
+
     )
 
     obs, info = env.reset()
     print(f"Task: {meta['id']} — {meta['name']}  (domain: {meta.get('domain','?')})\n")
-    # Optional: show the briefing/system prompt once
+
+    # Show the domain-only system prompt once
     sp = info.get("system_prompt")
     if sp:
-        print("=== System Prompt / Briefing ===")
+        print("=== System Prompt ===")
         print(sp)
-        print("=== End Briefing ===\n")
+        print("=== End System Prompt ===\n")
 
+    # Show the one-shot, instance-specific episode intro once
+    ep = info.get("episode_intro")
+    if ep:
+        print("=== Episode Intro ===")
+        print(ep)
+        print("=== End Episode Intro ===\n")
+
+    # First observation (current, volatile state)
     print("\n" + obs)
 
     # Optional: top-up energy for convenience if the fluent exists
