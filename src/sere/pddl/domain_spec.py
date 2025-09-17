@@ -43,7 +43,6 @@ class ActionSpec:
     add: List[str]
     delete: List[str]
     nl: str
-    num_pre: List[str] = field(default_factory=list)       # numeric guards, e.g. "(>= (energy ?r) 1)"
     num_eff: List[str] = field(default_factory=list)       # numeric effects
     cond: List[ConditionalBlock] = field(default_factory=list)
     duration: Optional[float] = None
@@ -125,7 +124,6 @@ class DomainSpec:
                 add=a.get("add", []) or [],
                 delete=a.get("del", a.get("delete", [])) or [],
                 nl=a.get("nl", a["name"]),
-                num_pre=a.get("num_pre", []) or [],
                 num_eff=a.get("num_eff", []) or [],
                 cond=cond_blocks or [],
                 duration=a.get("duration", None),

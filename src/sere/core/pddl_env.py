@@ -168,12 +168,6 @@ class PDDLEnv:
             if not eval_clause(self.world, self.static_facts, s, bind, enable_numeric=self.enable_numeric):
                 return self._illegal(f"Precondition failed: {s}", info)
 
-        # Legacy numeric guards (still honored for better error messages / older domains)
-        if self.enable_numeric and act.num_pre:
-            for np in act.num_pre:
-                if not eval_num_pre(self.world, np, bind):
-                    return self._illegal(f"Numeric precondition failed: {np}", info)
-
         # ---------- Apply base effects ----------
         _, add, dele = instantiate(self.domain, act, args)
 

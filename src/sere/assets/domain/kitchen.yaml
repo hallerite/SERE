@@ -217,9 +217,8 @@ actions:
 
   - name: steep-tea
     params: [{r: robot}, {tb: object}, {m: container}]
-    pre: ["(co-located ?r ?m)", "(in ?tb ?m)"]
+    pre: ["(co-located ?r ?m)", "(in ?tb ?m)", "(>= (water-temp ?m) 80)"]
     add: ["(tea-ready ?m)"]
-    num_pre: ["(>= (water-temp ?m) 80)"]
     num_eff: []
     duration: 2.0
     nl: "Steep tea in {m}"

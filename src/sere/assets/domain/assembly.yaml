@@ -137,10 +137,9 @@ actions:
   # movement / navigation
   - name: move
     params: [{r: robot}, {from: location}, {to: location}]
-    pre: ["(at ?r ?from)", "(adjacent ?from ?to)"]
+    pre: ["(at ?r ?from)", "(adjacent ?from ?to)", "(>= (energy ?r) 1)"]
     add: ["(at ?r ?to)"]
     del: ["(at ?r ?from)"]
-    num_pre: ["(>= (energy ?r) 1)"]
     num_eff: ["(decrease (energy ?r) 1)"]
     duration: 1.0
 
