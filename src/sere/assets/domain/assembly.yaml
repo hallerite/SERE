@@ -141,7 +141,7 @@ actions:
     add: ["(at ?r ?to)"]
     del: ["(at ?r ?from)"]
     num_pre: ["(>= (energy ?r) 1)"]
-    num_eff: ["(decrease (energy ?r) 1)", "(increase (elapsed) 1)"]
+    num_eff: ["(decrease (energy ?r) 1)"]
     duration: 1.0
 
   # container access (crates, bins, drawers)
@@ -149,14 +149,14 @@ actions:
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(not (open ?c))"]
     add: ["(open ?c)"]
-    num_eff: ["(increase (elapsed) 0.3)"]
+    num_eff: []
     duration: 0.3
 
   - name: close
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(open ?c)"]
     del: ["(open ?c)"]
-    num_eff: ["(increase (elapsed) 0.3)"]
+    num_eff: []
     duration: 0.3
 
   # picking & placing

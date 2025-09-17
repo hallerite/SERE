@@ -25,7 +25,7 @@ class ConditionalBlock:
     when: List[str]              # e.g., ["(open ?k)", "(not (open ?m))", "(>= (water-temp ?k) 80)"]
     add: List[str]
     delete: List[str]
-    num_eff: List[str]           # e.g., ["(increase (elapsed) 1)"]
+    num_eff: List[str] 
     messages: List[str] = field(default_factory=list)
 
 @dataclass
@@ -44,7 +44,7 @@ class ActionSpec:
     delete: List[str]
     nl: str
     num_pre: List[str] = field(default_factory=list)       # numeric guards, e.g. "(>= (energy ?r) 1)"
-    num_eff: List[str] = field(default_factory=list)       # numeric effects "(increase (elapsed) 1)"
+    num_eff: List[str] = field(default_factory=list)       # numeric effects
     cond: List[ConditionalBlock] = field(default_factory=list)
     duration: Optional[float] = None
     duration_var: str | None = None

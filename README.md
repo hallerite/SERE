@@ -103,7 +103,7 @@ Domains are YAML files that define:
 
 - **Types** (`robot`, `location`, `object`, …)  
 - **Predicates** (`at`, `holding`, `in`, …)  
-- **Fluents** (`energy`, `elapsed`, …)  
+- **Fluents** (`energy`, `time` …)  
 - **Actions** with preconditions/effects  
 
 See [`domain/kitchen_domain.yaml`](domain/kitchen_domain.yaml) for a full example.

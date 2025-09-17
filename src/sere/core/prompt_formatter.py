@@ -145,9 +145,7 @@ class PromptFormatter:
         rows = []
         prec = max(0, int(self.cfg.fluents_precision))
         for (name, args), val in sorted(world_fluents.items()):
-            # Time is engine-owned; never display a stray 'elapsed' fluent if present.
-            if name == "elapsed":
-                continue
+            # Time is engine-owned
             if not any(fnmatch.fnmatch(name, pat) for pat in (self.cfg.visible_fluents or ["*"])):
                 continue
             key = f"({name}{'' if not args else ' ' + ' '.join(args)})"

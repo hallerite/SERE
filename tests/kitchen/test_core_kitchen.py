@@ -294,7 +294,7 @@ def test_open_is_guarded_and_close_requires_open(basic_task_file):
 
 # ==================== NUMERIC SEMANTICS ====================
 
-def test_move_decreases_energy_and_increases_elapsed(basic_task_file):
+def test_move_decreases_energy_and_increases_time(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=10)
     reset_with(env, energy=5)
     env.enable_durations = True
@@ -305,7 +305,7 @@ def test_move_decreases_energy_and_increases_elapsed(basic_task_file):
     e1 = env.world.get_fluent("energy", ("r1",))
     t1 = env.time
     assert e1 == e0 - 1, f"energy should drop by 1, got {e0}->{e1}"
-    assert t1 >= t0 + 1 - 1e-9, f"elapsed should increase by 1, got {t0}->{t1}"
+    assert t1 >= t0 + 1 - 1e-9, f"time should increase by 1, got {t0}->{t1}"
 
 def test_pour_assign_overrides_not_accumulates(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=40)
@@ -470,7 +470,7 @@ def test_heat_numeric_rhs_and_duration(basic_task_file):
     """
     heat-kettle ?n:
       - increases water-temp by 15*?n
-      - increases elapsed by 0.5*?n
+      - increases time by 0.5*?n
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
@@ -501,7 +501,7 @@ def test_heat_multiple_ns_accumulate_linearly(basic_task_file):
     obs, r, done, info = heat(env, "kettle1", 6)  # +90C, +3.0s
     assert info.get("outcome") != "invalid"
 
-    # Total +105C, elapsed >= 3.5s
+    # Total +105C, time >= 3.5s
     assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(105.0)
     assert env.time >= 3.5 - 1e-9
 
@@ -572,8 +572,8 @@ def test_pour_assign_sets_target_temp_to_100(basic_task_file):
 
 def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
     """
-    - wait r1 n advances elapsed by n when durations are enabled.
-    - a single heat that would push elapsed over the time_limit ends the episode with loss.
+    - wait r1 n advances time by n when durations are enabled.
+    - a single heat that would push time over the time_limit ends the episode with loss.
     """
     # Small time limit for the second half of the test
     env, _ = load_task(None, str(basic_task_file), max_steps=20, time_limit=1.0)
@@ -589,7 +589,7 @@ def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
     assert not done
     assert env.time >= 0.4 - 1e-9
 
-    # Now a single heat with duration 0.5 * 2 = 1.0 pushes elapsed over 1.0 → loss
+    # Now a single heat with duration 0.5 * 2 = 1.0 pushes time over 1.0 → loss
     obs, r, done, info = heat(env, "kettle1", 2)
     assert done and info.get("outcome") == "loss"
     assert info.get("reason") == "time_limit_exceeded"

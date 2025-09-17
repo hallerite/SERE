@@ -18,9 +18,6 @@ def _apply_init_fluents(world: WorldState, init_fluents: List[list]):
         if not (isinstance(entry, list) and len(entry) == 3):
             raise ValueError(f"Bad init_fluents entry (want [name, [args...], value]): {entry}")
         fname, args, val = entry
-        # Time is engine-owned; ignore any attempts to seed 'elapsed'
-        if str(fname) == "elapsed":
-            continue
         if not isinstance(args, list):
             raise ValueError(f"init_fluents args must be a list: {entry}")
         world.set_fluent(str(fname), tuple(str(a) for a in args), float(val))

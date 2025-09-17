@@ -14,7 +14,6 @@ meta:
   seed: 104
   init_fluents:
     - ["energy", ["r1"], 2]     # too low for all required moves → must recharge
-    - ["elapsed", [], 0.0]
 
 objects:
   robot: [r1]
