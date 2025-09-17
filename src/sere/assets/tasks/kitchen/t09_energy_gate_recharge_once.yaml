@@ -36,7 +36,6 @@ init:
   - (at r1 hallway)
   - (obj-at kettle1 kitchen)
   - (powered kettle1)
-  - (open kettle1)
   - (obj-at mug1 kitchen)
   - (obj-at teabag1 pantry)
   - (clear-hand r1)
@@ -48,8 +47,7 @@ goal:
 reference_plan:
   - (recharge r1 hallway)           # +5 energy
   - (move r1 hallway kitchen)
-  - (open r1 mug1)
-  - (toggle-kettle r1 kettle1)      # 60 -> 90
+  - (heat-kettle r1 kettle1 3)
   - (move r1 kitchen pantry)
   - (pick-up r1 teabag1)
   - (move r1 pantry kitchen)

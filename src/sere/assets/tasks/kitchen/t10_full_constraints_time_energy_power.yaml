@@ -49,10 +49,7 @@ reference_plan:
   - (recharge r1 hallway)           # energy gate
   - (move r1 hallway kitchen)       # +1s
   - (power-on r1 kettle1)
-  - (open r1 kettle1)
-  - (open r1 mug1)
-  - (toggle-kettle r1 kettle1)      # 40 -> 70  (+5s)
-  - (toggle-kettle r1 kettle1)      # 70 -> 100 (+5s)
+  - (heat-kettle r1 kettle1 3)
   - (move r1 kitchen pantry)        # +1s
   - (pick-up r1 teabag1)            # +0.5s
   - (move r1 pantry kitchen)        # +1s

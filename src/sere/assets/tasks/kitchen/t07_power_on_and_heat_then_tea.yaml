@@ -43,10 +43,7 @@ goal:
 reference_plan:
   - (move r1 hallway kitchen)
   - (power-on r1 kettle1)
-  - (open r1 kettle1)
-  - (open r1 mug1)
-  - (toggle-kettle r1 kettle1)   # 40 -> 70
-  - (toggle-kettle r1 kettle1)   # 70 -> 100
+  - (heat-kettle r1 kettle1 3)
   - (move r1 kitchen pantry)
   - (pick-up r1 teabag1)
   - (move r1 pantry kitchen)

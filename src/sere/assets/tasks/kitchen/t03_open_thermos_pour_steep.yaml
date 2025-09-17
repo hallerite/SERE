@@ -1,8 +1,8 @@
-# tasks/kitchen/t03_open_mug_pour_steep.yaml
-id: t03_open_mug_pour_steep
-name: Three steps; open mug, pour, steep
+# tasks/kitchen/t03_open_thermos_pour_steep.yaml
+id: t03_open_thermos_pour_steep
+name: Three steps; open thermos, pour, steep
 description: |
-  The mug is closed. Kettle is hot & open, teabag is already in the mug.
+  The thermos is closed. Kettle is hot & open; teabag is already in the thermos.
 
 meta:
   domain: kitchen
@@ -19,24 +19,25 @@ meta:
 objects:
   robot: [r1]
   location: [kitchen]
-  container: [mug1, kettle1]
+  container: [thermos1, kettle1]
   appliance: [kettle1]
   object: [teabag1]
 
-static_facts: []
+static_facts:
+  - (needs-open thermos1)
 
 init:
   - (at r1 kitchen)
-  - (obj-at mug1 kitchen)
+  - (obj-at thermos1 kitchen)
   - (obj-at kettle1 kitchen)
   - (open kettle1)
-  - (in teabag1 mug1)
+  - (in teabag1 thermos1)
   - (clear-hand r1)
 
 goal:
-  - (tea-ready mug1)
+  - (tea-ready thermos1)
 
 reference_plan:
-  - (open r1 mug1)
-  - (pour r1 kettle1 mug1)
-  - (steep-tea r1 teabag1 mug1)
+  - (open r1 thermos1)
+  - (pour r1 kettle1 thermos1)
+  - (steep-tea r1 teabag1 thermos1)

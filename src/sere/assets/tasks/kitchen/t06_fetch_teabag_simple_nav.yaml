@@ -43,7 +43,6 @@ reference_plan:
   - (move r1 kitchen pantry)
   - (pick-up r1 teabag1)
   - (move r1 pantry kitchen)
-  - (open r1 mug1)
   - (put-in r1 teabag1 mug1)
   - (pour r1 kettle1 mug1)
   - (steep-tea r1 teabag1 mug1)

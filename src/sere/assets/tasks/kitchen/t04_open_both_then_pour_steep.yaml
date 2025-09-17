@@ -37,6 +37,5 @@ goal:
 
 reference_plan:
   - (open r1 kettle1)
-  - (open r1 mug1)
   - (pour r1 kettle1 mug1)
   - (steep-tea r1 teabag1 mug1)
