@@ -132,6 +132,15 @@ fluents:
 # ---------- Actions ----------
 actions:
 
+  - name: wait
+    params: [{n: number}]
+    pre: []
+    add: []
+    del: []
+    duration_var: "n"
+    duration_unit: 1.0
+    nl: "Wait for {n} ticks"
+
   # movement / navigation
   - name: move
     params: [{r: robot}, {from: location}, {to: location}]
