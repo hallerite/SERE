@@ -13,7 +13,6 @@ meta:
   seed: 209
   init_fluents:
     - ["energy", ["r1"], 1]
-    - ["elapsed", [], 0.0]
     - ["water-temp", ["kettle1"], 60.0]
 
 objects:
