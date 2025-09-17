@@ -85,7 +85,7 @@ def test_align_and_fasten_happy_path(asm_task_file):
     PICK(env, "drv"); EQUIP(env, "drv")
     ALIGN(env, "p1", "asm1")
     obs, r, done, info = FASTEN(env, "p1", "asm1", "drv")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert ("aligned", ("p1", "asm1")) in env.world.facts
     assert ("installed", ("p1", "asm1")) in env.world.facts
     assert ("fastened", ("p1", "asm1")) in env.world.facts
@@ -97,7 +97,7 @@ def test_fasten_on_damaged_part_does_not_install(asm_task_file):
     PICK(env, "drv"); EQUIP(env, "drv")
     ALIGN(env, "p1", "asm1")
     obs, r, done, info = FASTEN(env, "p1", "asm1", "drv")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     # fasten action adds installed, but cond block deletes it when damaged
     assert ("fastened", ("p1", "asm1")) in env.world.facts
     assert ("installed", ("p1", "asm1")) not in env.world.facts
@@ -108,7 +108,7 @@ def test_pickup_wildcard_delete_and_clear_hand(asm_task_file):
     env, _ = load_task(None, str(asm_task_file), max_steps=20)
     reset_with(env)
     obs, r, done, info = PICK(env, "p1")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert all(not (p == "obj-at" and a[0] == "p1") for p,a in env.world.facts)  # wildcard delete
     assert ("holding", ("r1", "p1")) in env.world.facts
     assert ("clear-hand", ("r1",)) not in env.world.facts
@@ -118,7 +118,7 @@ def test_putdown_infers_robot_location(asm_task_file):
     reset_with(env)
     PICK(env, "p1")
     obs, r, done, info = PUT(env, "p1")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert ("obj-at", ("p1", "bench")) in env.world.facts
     assert ("holding", ("r1", "p1")) not in env.world.facts
     assert ("clear-hand", ("r1",)) in env.world.facts
@@ -129,13 +129,13 @@ def test_put_in_and_take_out_require_open_and_clear_hand(asm_task_file):
     OPEN(env, "bin1")
     PICK(env, "p1")
     obs, r, done, info = PUTIN(env, "p1", "bin1")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert ("in", ("p1", "bin1")) in env.world.facts
     assert all(not (p == "obj-at" and a[0] == "p1") for p,a in env.world.facts)
     # take-out needs clear-hand; ensure it's true
     assert ("clear-hand", ("r1",)) in env.world.facts
     obs, r, done, info = TAKE(env, "p1", "bin1")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert ("holding", ("r1", "p1")) in env.world.facts
     assert ("in", ("p1", "bin1")) not in env.world.facts
 
@@ -146,12 +146,12 @@ def test_equip_and_unequip_transitions(asm_task_file):
     reset_with(env)
     PICK(env, "drv")
     obs, r, done, info = EQUIP(env, "drv")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert ("equipped", ("r1", "drv")) in env.world.facts
     assert ("holding", ("r1", "drv")) not in env.world.facts
     assert ("clear-hand", ("r1",)) in env.world.facts
     obs, r, done, info = UNEQ(env, "drv")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert ("equipped", ("r1", "drv")) not in env.world.facts
     assert ("holding", ("r1", "drv")) in env.world.facts
     assert ("clear-hand", ("r1",)) not in env.world.facts
@@ -168,13 +168,13 @@ def test_unfasten_requires_colocated_and_yields_holding(asm_task_file):
     # our test task has obj-at p_good bench already -> co-located holds
     assert env.world.holds(lit("co-located","r1","p_good"))
     obs, r, done, info = UNFASTEN(env,"p_good","asm1","drv")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert ("holding", ("r1", "p_good")) in env.world.facts
     assert ("fastened", ("p_good","asm1")) not in env.world.facts
     assert ("installed", ("p_good","asm1")) not in env.world.facts
     # place it back on bench
     obs, r, done, info = BENCH(env,"p_good")
-    assert info.get("outcome") != "invalid"
+    assert info.get("outcome") != "invalid_move"
     assert ("obj-at", ("p_good","bench")) in env.world.facts
     assert ("clear-hand", ("r1",)) in env.world.facts
 
@@ -184,7 +184,7 @@ def test_move_non_adjacent_fails(asm_task_file):
     env, _ = load_task(None, str(asm_task_file), max_steps=10)
     reset_with(env)
     obs, r, done, info = M(env, "bench", "dock")  # not directly adjacent per statics
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     assert "adjacent" in info.get("error","")
 
 def test_invariants_catch_multiple_locations_and_objat_in(asm_task_file):
@@ -210,7 +210,7 @@ def test_move_energy_guard_and_recharge(asm_task_file):
     env, _ = load_task(None, str(asm_task_file), max_steps=50)
     reset_with(env, energy=0)
     obs, r, done, info = M(env, "bench","cell")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     # recharge at dock
     reset_with(env, energy=2)   # enough to get bench->cell->dock
     M(env,"bench","cell"); M(env,"cell","dock")
@@ -233,7 +233,7 @@ def test_wait_and_time_limit_enforced(asm_task_file):
     obs, r, done, info = env.step("<move>(wait 2)</move>")
     assert not done, "time == limit should not end the episode"
     obs, r, done, info = env.step("<move>(wait 0.01)</move>")
-    assert done and info.get("outcome") == "loss" and info.get("reason") == "time_limit_exceeded"
+    assert done and info.get("outcome") == "timeout" and info.get("reason") == "time_limit_exceeded"
 
 # ---- derived predicate sanity --------------------------------------------
 

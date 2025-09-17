@@ -23,15 +23,7 @@ ALL_TASKS = _iter_task_ids()
 
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_reference_plan_succeeds_and_reward_matches(task_id: str):
-    env, meta = load_task(
-        None,
-        task_id,
-        max_steps=200,
-        enable_numeric=True,
-        enable_conditional=True,
-        enable_durations=True,
-        enable_stochastic=False,
-    )
+    env, meta = load_task(None, task_id)
 
     obs, info = env.reset()
     try:
@@ -76,7 +68,7 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
                         rs_expected_dynamic += float(rew)
 
         if done:
-            if step_info.get("outcome") == "win":
+            if step_info.get("outcome") == "success":
                 break
             else:
                 raise AssertionError(
@@ -88,7 +80,7 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
                     f"obs=\n{obs}"
                 )
 
-    assert step_info.get("outcome") == "win"
+    assert step_info.get("outcome") == "success"
 
     # Baseline reward check
     baseline = env.step_penalty * n_steps_executed + env.goal_reward

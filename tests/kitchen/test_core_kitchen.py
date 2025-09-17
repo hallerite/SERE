@@ -113,7 +113,7 @@ def test_co_located_positive_precondition_works(basic_task_file):
     reset_with(env)
     # Co-location false in hallway
     obs, r, done, info = open_(env, "kettle1")
-    assert done and info.get("outcome") == "invalid" and "co-located" in info.get("error", "")
+    assert done and info.get("outcome") == "invalid_move" and "co-located" in info.get("error", "")
     # Move to kitchen -> co-location true
     reset_with(env)
     move(env, "hallway", "kitchen")
@@ -183,7 +183,7 @@ def test_move_energy_guard_blocks_when_insufficient(basic_task_file):
     reset_with(env)
     env.world.set_fluent("energy", ("r1",), 0)  # move requires >= 1
     obs, r, done, info = move(env, "hallway", "kitchen")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     assert "Precondition failed" in info.get("error", "")
     assert "(>= (energy ?r) 1)" in info.get("error", "")
 
@@ -241,7 +241,7 @@ def test_wait_and_time_limit_enforced(basic_task_file):
     obs, r, done, info = env.step("<move>(wait 1)</move>")
     assert not done
     obs, r, done, info = env.step("<move>(wait 2)</move>")
-    assert done and info.get("outcome") == "loss" and info.get("reason") == "time_limit_exceeded"
+    assert done and info.get("outcome") == "timeout" and info.get("reason") == "time_limit_exceeded"
 
 # --------------------------------------------------------------------------------------
 # Invariants & error handling
@@ -268,7 +268,7 @@ def test_missing_move_tags_is_invalid(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=5)
     reset_with(env)
     obs, r, done, info = env.step("(move r1 hallway kitchen)")  # missing <move> tags
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
 
 # --------------------------------------------------------------------------------------
 # Open/Close edges
@@ -282,7 +282,7 @@ def test_open_is_guarded_and_close_requires_open(basic_task_file):
     open_(env, "mug1")
     # opening again should fail due to (not (open ?c))
     obs, r, done, info = open_(env, "mug1")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     # closing now should succeed (fresh episode)
     env2, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env2)
@@ -292,7 +292,7 @@ def test_open_is_guarded_and_close_requires_open(basic_task_file):
     assert info.get("outcome") != "invalid"
     # closing again should fail
     obs, r, done, info = close_(env2, "mug1")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
 
 # ==================== NUMERIC SEMANTICS ====================
 
@@ -350,7 +350,7 @@ def test_move_non_adjacent_fails(basic_task_file):
     reset_with(env)
     # Assume hallway !~ pantry in your task statics
     obs, r, done, info = move(env, "hallway", "pantry")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     assert "adjacent" in info.get("error", "")
 
 # ==================== EPISODE LIFECYCLE ====================
@@ -360,7 +360,7 @@ def test_invalid_step_marks_done_and_next_step_raises(basic_task_file):
     reset_with(env)
     # Invalid: open kettle from hallway (not co-located)
     obs, r, done, info = open_(env, "kettle1")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     with pytest.raises(RuntimeError):
         move(env, "hallway", "kitchen")
 
@@ -393,7 +393,7 @@ def test_take_out_requires_clear_hand(basic_task_file):
     # Now pick mug again to lose clear-hand
     pickup(env, "mug1")
     obs, r, done, info = takeout(env, "teabag1", "mug1")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     assert "clear-hand" in info.get("error","")
 
 # ==================== TIME LIMIT EDGE ====================
@@ -405,7 +405,7 @@ def test_time_limit_boundary_exact_ok_exceed_bad(basic_task_file):
     obs, r, done, info = env.step("<move>(wait 2)</move>")
     assert not done, "time == limit should not end the episode"
     obs, r, done, info = env.step("<move>(wait 0.01)</move>")
-    assert done and info.get("outcome") == "loss"
+    assert done and info.get("outcome") == "timeout"
 
 # ==================== TEST "OR" ====================
 # ==================== OR PRECONDITIONS / needs-open GUARD ====================
@@ -428,7 +428,7 @@ def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
 
     # Kettle is CLOSED → pour should be invalid due to source-open guard
     obs, r, done, info = pour(env, "kettle1", "mug1")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     assert "Precondition failed" in info.get("error", "")
 
     # Fresh episode (invalid ends episode): open kettle and try again → should succeed
@@ -519,7 +519,7 @@ def test_heat_invalid_when_open_or_unpowered(basic_task_file):
     # Opening kettle then trying to heat -> invalid
     open_(env, "kettle1")
     obs, r, done, info = heat(env, "kettle1", 1)
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     assert "Precondition failed" in info.get("error", "")
 
     # New episode: remove power and try to heat -> invalid
@@ -529,7 +529,7 @@ def test_heat_invalid_when_open_or_unpowered(basic_task_file):
     # Drop 'powered' fact
     env.world.facts.discard(("powered", ("kettle1",)))
     obs, r, done, info = heat(env, "kettle1", 1)
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     assert "Precondition failed" in info.get("error", "")
 
 
@@ -543,7 +543,7 @@ def test_heat_rejects_zero_or_non_numeric_n(basic_task_file):
 
     # n = 0 → invalid
     obs, r, done, info = heat(env, "kettle1", 0)
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
 
     # Fresh episode for non-numeric
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
@@ -551,7 +551,7 @@ def test_heat_rejects_zero_or_non_numeric_n(basic_task_file):
     move(env, "hallway", "kitchen")
     # Manually craft a non-numeric heat (bypass helper)
     obs, r, done, info = env.step("<move>(heat-kettle r1 kettle1 foo)</move>")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
 
 
 def test_pour_assign_sets_target_temp_to_100(basic_task_file):
@@ -593,7 +593,7 @@ def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
 
     # Now a single heat with duration 0.5 * 2 = 1.0 pushes time over 1.0 → loss
     obs, r, done, info = heat(env, "kettle1", 2)
-    assert done and info.get("outcome") == "loss"
+    assert done and info.get("outcome") == "timeout"
     assert info.get("reason") == "time_limit_exceeded"
 
 
@@ -613,7 +613,7 @@ def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
 
     # Closed kettle + needs-open(kettle1) → invalid
     obs, r, done, info = pour(env, "kettle1", "mug1")
-    assert done and info.get("outcome") == "invalid"
+    assert done and info.get("outcome") == "invalid_move"
     assert "Precondition failed" in info.get("error", "")
 
     # Now open kettle and try again → success

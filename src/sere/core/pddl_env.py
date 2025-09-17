@@ -396,36 +396,89 @@ class PDDLEnv:
 
 
     # --- helpers ---
+        # ----- Energy/outcome helpers -----
+    def _robots(self) -> list[str]:
+        return [sym for sym, typ in self.world.objects.items() if typ.lower() == "robot"]
+
+    def _robot_loc(self, r: str) -> Optional[str]:
+        locs = [a[1] for (pred, a) in self.world.facts if pred == "at" and len(a) == 2 and a[0] == r]
+        return locs[0] if len(locs) == 1 else None
+
+    def _has_energy_support(self) -> bool:
+        # Only consider energy logic if the domain declares the fluent and there is a robot.
+        return ("energy" in (self.domain.fluents or {})) and bool(self._robots())
+
+    def _energy_val(self, r: str) -> float:
+        # world.get_fluent defaults to 0.0 if unset.
+        return float(self.world.get_fluent("energy", (r,)))
+
+    def _can_recharge_now(self) -> bool:
+        # Recharge preconditions: (at ?r ?l) and static (has-charger ?l).
+        for r in self._robots():
+            l = self._robot_loc(r)
+            if l and ("has-charger", (l,)) in self.static_facts:
+                return True
+        return False
+
+    def _energy_depleted_unrecoverable(self) -> bool:
+        # Terminal iff: (a) numeric enabled, (b) energy fluent modeled,
+        # (c) all robots have energy < 1, and (d) no charger at current location.
+        if not self.enable_numeric or not self._has_energy_support():
+            return False
+        robots = self._robots()
+        if not robots:
+            return False
+        all_empty = all(self._energy_val(r) < 1.0 for r in robots)
+        if not all_empty:
+            return False
+        return not self._can_recharge_now()
+
     def _advance_time(self, dur: float, info: Dict[str, Any]):
         """Advance the internal episode clock; domains/tasks never touch time."""
         self.time += float(dur)
         if self.enable_durations and self.time_limit is not None and self.time > self.time_limit:
             # Mark terminal right away
             self.done = True
-            info["outcome"] = "loss"
+            info["outcome"] = "timeout"
             info["reason"] = "time_limit_exceeded"
 
     def _post_apply_success(self, info: Dict[str, Any]):
         reward = self.step_penalty
+
+        # Goal reached → success
         if self.goal and all(self.world.holds(g) for g in self.goal):
             self.done = True
             reward += self.goal_reward
-            info["outcome"] = "win"
-        elif self.done:  # e.g., time limit above
+            info["outcome"] = "success"
+
+        # Energy exhaustion (only if not already terminal)
+        elif not self.done and self._energy_depleted_unrecoverable():
+            self.done = True
+            info["outcome"] = "out_of_energy"
+            info["reason"] = "energy_depleted"
+
+        # Already terminal (e.g., timeout flagged in _advance_time)
+        elif self.done:
             pass
+
+        # Step cap → timeout
         elif self.steps >= self.max_steps:
             self.done = True
-            info["outcome"] = "loss"
+            info["outcome"] = "timeout"
+            info["reason"] = "max_steps_exceeded"
+
         else:
             info["outcome"] = "ongoing"
+
         info["messages"] = self.messages[-self.max_messages:]
         return self._obs(), reward, self.done, info
+
     
     def _illegal(self, msg, info):
         info.update({
             "invalid_move": True,
             "error": msg,
-            "outcome": "invalid",
+            "outcome": "invalid_move",
             "messages": self.messages[-self.max_messages:],  # add
         })
         self.done = True
