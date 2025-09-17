@@ -152,6 +152,24 @@ def load_task(
         "seed":                meta.get("seed", None),
         "max_messages":        meta.get("max_messages", 8),
     }
+
+    # --- Reward shaping config (optional) ---
+    rs_cfg = meta.get("reward_shaping") or {}
+    if rs_cfg:
+        env_cfg["reward_shaping"] = dict(
+            mode = (rs_cfg.get("mode") or "instant"),
+            gamma = float(rs_cfg.get("gamma", 1.0)),
+            milestones = [
+                dict(
+                    expr=str(m.get("expr")),
+                    reward=float(m.get("reward", 0.0)),
+                    once=bool(m.get("once", True)),
+                )
+                for m in (rs_cfg.get("milestones") or [])
+                if m and m.get("expr") is not None
+            ],
+        )
+
     env_cfg.update(env_kwargs or {})
 
     env = PDDLEnv(dom, w, static_facts, goals, plugins=plugins or [], **env_cfg)

@@ -2,13 +2,10 @@ import pytest
 from importlib.resources import files as pkg_files
 
 from sere.io.task_loader import load_task
+from sere.core.semantics import eval_clause
 
 
 def _iter_task_ids():
-    """
-    Enumerate packaged tasks under sere.assets.tasks as logical IDs:
-      e.g. 'kitchen/t01_one_step_steep.yaml'
-    """
     base = pkg_files("sere.assets.tasks")
     out = []
     for domain_dir in base.iterdir():
@@ -21,16 +18,13 @@ def _iter_task_ids():
     return sorted(out)
 
 
-# Auto-discover every task YAML (t*.yaml) across all domains (packaged)
 ALL_TASKS = _iter_task_ids()
 
 
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
-def test_reference_plan_succeeds(task_id: str):
-    # Run with generous limits; let tasks override via meta if needed.
-    # We also hard-disable stochastic here so reference plans are deterministic.
+def test_reference_plan_succeeds_and_reward_matches(task_id: str):
     env, meta = load_task(
-        None,                # infer domain yaml or from path
+        None,
         task_id,
         max_steps=200,
         enable_numeric=True,
@@ -39,22 +33,48 @@ def test_reference_plan_succeeds(task_id: str):
         enable_stochastic=False,
     )
 
-    # Reset and set sane default energy unless the task explicitly wants to test low energy.
     obs, info = env.reset()
     try:
         env.world.set_fluent("energy", ("r1",), 10)
     except Exception:
-        pass  # ok if energy fluent not present
+        pass
 
-    # Reference plan comes from loader meta; don't open YAML directly
     plan = meta.get("reference_plan") or []
     if not plan:
         pytest.xfail(f"{task_id} has no reference_plan")
 
-    # Execute the reference plan
+    total_reward = 0.0
+    shaping_total_observed = 0.0
+    n_steps_executed = 0
+
+    # dynamic expected shaping mirror for instant mode
+    rs_expected_dynamic = 0.0
+    rs_seen = set()  # indices for once=True
+    rs_milestones = list(getattr(env, "rs_milestones", []) or [])
+    rs_mode = getattr(env, "rs_mode", "instant")
+
     step_info = {}
     for i, act in enumerate(plan):
         obs, r, done, step_info = env.step(f"<move>{act}</move>")
+        total_reward += r
+        shaping_total_observed += float(step_info.get("shaping_bonus", 0.0))
+        n_steps_executed += 1
+
+        # compute expected shaping payout online to handle non-monotone exprs
+        if rs_milestones and rs_mode == "instant":
+            for j, (expr, rew, once) in enumerate(rs_milestones):
+                try:
+                    hit = eval_clause(env.world, env.static_facts, expr, bind={}, enable_numeric=True)
+                except Exception:
+                    hit = False
+                if once:
+                    if hit and j not in rs_seen:
+                        rs_expected_dynamic += float(rew)
+                        rs_seen.add(j)
+                else:
+                    if hit:
+                        rs_expected_dynamic += float(rew)
+
         if done:
             if step_info.get("outcome") == "win":
                 break
@@ -69,3 +89,11 @@ def test_reference_plan_succeeds(task_id: str):
                 )
 
     assert step_info.get("outcome") == "win"
+
+    # Baseline reward check
+    baseline = env.step_penalty * n_steps_executed + env.goal_reward
+    assert total_reward == pytest.approx(baseline + shaping_total_observed, rel=1e-12, abs=1e-12)
+
+    # Instant-mode shaping should match our dynamic mirror (not final-state truth!)
+    if rs_milestones and rs_mode == "instant":
+        assert shaping_total_observed == pytest.approx(rs_expected_dynamic, rel=1e-12, abs=1e-12)

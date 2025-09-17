@@ -15,6 +15,13 @@ meta:
   init_fluents:
     - ["energy", ["r1"], 10]
     - ["water-temp", ["kettle1"], 90.0]
+  reward_shaping:
+    mode: instant
+    milestones:
+      - {expr: "(holding r1 teabag1)",    reward: 0.05, once: true}
+      - {expr: "(in teabag1 mug1)",       reward: 0.05, once: true}
+      - {expr: "(has-hot-water mug1)",    reward: 0.10, once: true}
+
 
 objects:
   robot: [r1]

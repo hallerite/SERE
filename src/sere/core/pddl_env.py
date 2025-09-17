@@ -66,7 +66,8 @@ class PDDLEnv:
                  time_limit: Optional[float] = None,
 
                  default_duration: float = 1.0,
-                 seed: Optional[int] = None):
+                 seed: Optional[int] = None,
+                 reward_shaping: Optional[dict] = None):
         self.domain, self.world = domain, world
         self.static_facts, self.goal = static_facts, goal
 
@@ -106,6 +107,19 @@ class PDDLEnv:
 
         self.rng = random.Random(seed)
 
+        # ----- Reward shaping -----
+        rs = reward_shaping or {}
+        self.rs_mode = (rs.get("mode") or "instant").lower()
+        self.rs_gamma = float(rs.get("gamma", 1.0))
+        # store milestones as list of (expr, weight, once)
+        self.rs_milestones: List[Tuple[str, float, bool]] = [
+            (str(m["expr"]), float(m.get("reward", 0.0)), bool(m.get("once", True)))
+            for m in rs.get("milestones", [])
+            if m and m.get("expr") is not None
+        ]
+        self._rs_seen: set = set()      # indices of milestones achieved (instant)
+        self._rs_phi_prev: float = 0.0  # potential at previous state
+
     def reset(self, *, seed: Optional[int] = None):
         if seed is not None:
             self.rng.seed(seed)
@@ -118,6 +132,10 @@ class PDDLEnv:
 
         self.messages.clear()
         self._system_prompt_cache = self.formatter.build_system_prompt(world=self.world)
+        # reward shaping
+        self._rs_seen.clear()
+        self._rs_phi_prev = self._rs_phi(self.world)
+
 
         obs_text = self._obs()  # PLAIN TEXT ONLY
         info = {
@@ -351,8 +369,30 @@ class PDDLEnv:
                 return self._illegal(f"Postcondition violated: {errs}", info)
 
         # ---------- Bookkeeping / termination ----------
+                # ---------- Bookkeeping / termination ----------
         self.steps += 1
-        return self._post_apply_success(info)
+        obs, base_r, done, info = self._post_apply_success(info)
+
+        # ---------- Reward shaping payout ----------
+        rs_bonus = 0.0
+        if self.rs_milestones:
+            if self.rs_mode == "potential":
+                phi_now = self._rs_phi(self.world)
+                rs_bonus = self.rs_gamma * phi_now - self._rs_phi_prev
+                self._rs_phi_prev = phi_now
+            else:  # "instant"
+                for i, (expr, w, once) in enumerate(self.rs_milestones):
+                    if once and i in self._rs_seen:
+                        continue
+                    if self._eval_expr(expr):
+                        rs_bonus += w
+                        if once:
+                            self._rs_seen.add(i)
+        if abs(rs_bonus) > 0:
+            info["shaping_bonus"] = rs_bonus
+
+        return obs, base_r + rs_bonus, done, info
+
 
 
     # --- helpers ---
@@ -409,3 +449,13 @@ class PDDLEnv:
             prev_fluents=self._prev_fluents,
             affordances=aff,
         )
+
+    def _eval_expr(self, s: str) -> bool:
+        # uses existing clause evaluator (supports numeric & boolean)
+        try:
+            return eval_clause(self.world, self.static_facts, s, {}, enable_numeric=self.enable_numeric)
+        except Exception:
+            return False
+
+    def _rs_phi(self, world: WorldState) -> float:
+        return sum(w for (expr, w, _) in self.rs_milestones if self._eval_expr(expr))
