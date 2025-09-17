@@ -145,19 +145,23 @@ class PDDLEnv:
         except Exception as e:
             return self._illegal(f"Parse error: {e}", info)
 
-        # Built-in wait
-        if name == "wait":
-            dur = float(args[0]) if args else 1.0
-            if self.enable_durations:
-                self._advance_time(dur, info)
-            self.steps += 1
-            return self._post_apply_success(info)
-
         if name not in self.domain.actions:
             return self._illegal(f"Unknown action '{name}'", info)
 
         act: ActionSpec = self.domain.actions[name]
         bind = {var: val for (var, _), val in zip(act.params, args)}
+        
+        # Validate duration_var if present: must parse as float > 0
+        if getattr(act, "duration_var", None):
+            n_name = act.duration_var
+            raw = bind.get(n_name)
+            try:
+                dur_multiplier = float(raw)
+            except Exception:
+                return self._illegal(f"Bad duration_var '{n_name}': {raw!r}", info)
+            if dur_multiplier <= 0.0:
+                return self._illegal(f"Duration multiplier '{n_name}' must be > 0.", info)
+
 
         # ---------- Preconditions (supports (or ...) and (not ...)) ----------
         for s in (act.pre or []):
@@ -324,8 +328,22 @@ class PDDLEnv:
 
         # ---------- Time / duration ----------
         if self.enable_durations:
-            dur = float(act.duration) if (act.duration is not None) else self.default_duration
+            vname = getattr(act, "duration_var", None)
+            unit = getattr(act, "duration_unit", None)
+
+            if isinstance(vname, str) and isinstance(unit, (int, float)):
+                sval = bind.get(vname)
+                if sval is None:
+                    return self._illegal(f"Bad duration var '{vname}' value: {sval!r}", info)
+                try:
+                    dur = float(unit) * float(sval)
+                except (TypeError, ValueError):
+                    return self._illegal(f"Bad duration var '{vname}' value: {sval!r}", info)
+            else:
+                dur = float(act.duration) if (act.duration is not None) else self.default_duration
+
             self._advance_time(dur, info)
+
 
         # ---------- Plugins (post) ----------
         for pl in self.plugins:
@@ -354,13 +372,13 @@ class PDDLEnv:
 
     def _post_apply_success(self, info: Dict[str, Any]):
         reward = self.step_penalty
-        if all(self.world.holds(g) for g in self.goal):
+        if self.goal and all(self.world.holds(g) for g in self.goal):
             self.done = True
             reward += self.goal_reward
             info["outcome"] = "win"
         elif self.done:  # e.g., time limit above
             pass
-        elif self.steps + 1 > self.max_steps:
+        elif self.steps >= self.max_steps:
             self.done = True
             info["outcome"] = "loss"
         else:

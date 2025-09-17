@@ -93,8 +93,8 @@ def takeout(env, o, c):
 def power_on(env, a):
     return env.step(f"<move>(power-on r1 {a})</move>")
 
-def toggle(env, k):
-    return env.step(f"<move>(toggle-kettle r1 {k})</move>")
+def heat(env, k, n):
+    return env.step(f"<move>(heat-kettle r1 {k} {n})</move>")
 
 def pour(env, k, m):
     return env.step(f"<move>(pour r1 {k} {m})</move>")
@@ -182,18 +182,18 @@ def test_move_energy_guard_blocks_when_insufficient(basic_task_file):
     env.world.set_fluent("energy", ("r1",), 0)  # move requires >= 1
     obs, r, done, info = move(env, "hallway", "kitchen")
     assert done and info.get("outcome") == "invalid"
-    assert "Numeric precondition failed" in info.get("error", "")
+    assert "Precondition failed" in info.get("error", "")
+    assert "(>= (energy ?r) 1)" in info.get("error", "")
+
 
 def test_pour_success_branch_sets_hot_water_and_temp(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=60)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
-    open_(env, "kettle1")
-    # Heat to >= 80 (domain increases +30 each toggle)
-    toggle(env, "kettle1")
-    toggle(env, "kettle1")
-    toggle(env, "kettle1")
+    # Kettle must be closed to heat; it starts closed, so don't open it here.
+    heat(env, "kettle1", 6)   # +90°C
+
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert info.get("outcome") != "invalid"
     assert ("has-hot-water", ("mug1",)) in env.world.facts
@@ -203,10 +203,8 @@ def test_pour_spill_branch_when_mug_closed(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=60)
     reset_with(env)
     move(env, "hallway", "kitchen")
-    open_(env, "kettle1")
-    # Heat enough
-    for _ in range(3):
-        toggle(env, "kettle1")
+    heat(env, "kettle1", 6)   # +90°C
+
     # Ensure mug is closed
     env.world.facts.discard(("open", ("mug1",)))
     obs, r, done, info = pour(env, "kettle1", "mug1")
@@ -217,10 +215,8 @@ def test_steep_requires_hot_water_and_presence(basic_task_file):
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
-    open_(env, "kettle1")
-    # Heat and pour
-    for _ in range(3):
-        toggle(env, "kettle1")
+    heat(env, "kettle1", 6)   # +90°C
+
     pour(env, "kettle1", "mug1")
     # Insert teabag
     move(env, "kitchen", "pantry")
@@ -314,9 +310,12 @@ def test_pour_assign_overrides_not_accumulates(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
-    open_(env, "mug1"); open_(env, "kettle1")
-    for _ in range(3): toggle(env, "kettle1")
-    pour(env, "kettle1", "mug1")
+    open_(env, "mug1")
+    # Two ticks -> +30°C, still <80°C
+    # Heat to >= 80°C
+    heat(env, "kettle1", 6)  # +90°C
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert ("has-hot-water", ("mug1",)) in env.world.facts
     assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
 
 def test_action_cost_accumulates_in_info(basic_task_file):
@@ -332,12 +331,12 @@ def test_pour_no_branch_when_temp_too_low(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
-    open_(env, "mug1"); open_(env, "kettle1")
-    # Only one toggle -> 30C, <80C
-    toggle(env, "kettle1")
+    open_(env, "mug1")
+    # Keep kettle CLOSED while heating; 2 ticks -> +30°C (<80°C)
+    heat(env, "kettle1", 2)
+
     obs, r, done, info = pour(env, "kettle1", "mug1")
-    assert ("has-hot-water", ("mug1",)) not in env.world.facts
-    assert ("spilled", ("mug1",)) not in env.world.facts
+
 
 # ==================== DERIVED AND ADJACENCY ====================
 
@@ -417,55 +416,232 @@ def test_time_limit_boundary_exact_ok_exceed_bad(basic_task_file):
 
 def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
     """
-    If the source container is marked (needs-open ?k) and it's closed,
-    the single 'pour' action should be blocked by the (or ...) preconditions.
-    Opening the kettle should then allow the same pour to proceed (assuming >=80C).
+    If the SOURCE container is marked (needs-open ?k) and it's closed,
+    'pour' should be blocked by the (or ...) preconditions.
+    Opening the kettle then allows pour (assuming >=80C).
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
-    # Mark kettle as needing to be open to pour
+    # Source guard on
     reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
-    # Move to kitchen & heat kettle to >=80 (3 toggles at +30C each)
+
     move(env, "hallway", "kitchen")
-    toggle(env, "kettle1"); toggle(env, "kettle1"); toggle(env, "kettle1")
-    # Mug can be left open or closed; either way, the source is the guard we care about.
-    # Keep mug open for a clean success check later.
+    # Heat while CLOSED (required for heat-kettle); +90°C total
+    heat(env, "kettle1", 6)
+    # Keep mug open so target isn't the blocker
     open_(env, "mug1")
 
-    # Kettle is still CLOSED → pour should be invalid due to (or ...) precondition
+    # Kettle is CLOSED → pour should be invalid due to source-open guard
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert done and info.get("outcome") == "invalid"
     assert "Precondition failed" in info.get("error", "")
 
-    # Now open kettle and try again → should succeed & set hot water
+    # Fresh episode (invalid ends episode): open kettle and try again → should succeed
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
     reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
-    toggle(env, "kettle1"); toggle(env, "kettle1"); toggle(env, "kettle1")
-    open_(env, "kettle1")
+    heat(env, "kettle1", 6)      # keep kettle CLOSED while heating
+    open_(env, "kettle1")        # now open the source, since it needs-open
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert info.get("outcome") != "invalid"
     assert ("has-hot-water", ("mug1",)) in env.world.facts
     assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
 
 
+
 def test_pour_spill_only_when_target_marked_needs_open_and_closed(basic_task_file):
     """
-    With the new semantics, a spill occurs only if the TARGET container is marked
-    (needs-open ?m) and is closed at pour time.
+    Spill occurs only if the TARGET container is marked (needs-open ?m)
+    and is closed at pour time. Source openness irrelevant here.
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
-    # Mark mug as requiring open to pour into
+    # Target requires open
     reset_with(env, extra_statics=[lit("needs-open", "mug1")])
+
     move(env, "hallway", "kitchen")
 
-    # Open the kettle and heat it enough
-    open_(env, "kettle1")
-    toggle(env, "kettle1"); toggle(env, "kettle1"); toggle(env, "kettle1")
+    # Heat kettle enough while CLOSED (+90°C)
+    heat(env, "kettle1", 6)
 
-    # Ensure mug is CLOSED (remove open if present)
+    # Ensure mug is CLOSED
     env.world.facts.discard(("open", ("mug1",)))
 
-    # Now pour → should spill (because needs-open(mug1) ∧ not open(mug1))
+    # Pour → should spill (needs-open(mug1) ∧ not open(mug1))
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert ("spilled", ("mug1",)) in env.world.facts
+
+# ==================== NUMERIC RHS & DURATION-VAR SEMANTICS ====================
+
+def test_heat_numeric_rhs_and_duration(basic_task_file):
+    """
+    heat-kettle ?n:
+      - increases water-temp by 15*?n
+      - increases elapsed by 0.5*?n
+      - adds step-local cost 0.5*?n (reported in info["action_cost"])
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+
+    # Move to kitchen (durations off by default in this helper)
+    move(env, "hallway", "kitchen")
+
+    # Kettle starts CLOSED and POWERED. Heat for n=2.
+    obs, r, done, info = heat(env, "kettle1", 2)
+    assert info.get("outcome") != "invalid"
+
+    # water-temp(kettle1) should be 30.0; elapsed should +1.0; cost 1.0 this step
+    assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(30.0)
+    assert env.world.get_fluent("elapsed", tuple()) >= 1.0 - 1e-9
+    assert info.get("action_cost", 0.0) == pytest.approx(1.0)
+
+
+def test_heat_multiple_ns_accumulate_linearly(basic_task_file):
+    """
+    Two separate heats add their effects linearly.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+
+    heat(env, "kettle1", 1)  # +15C, +0.5s
+    obs, r, done, info = heat(env, "kettle1", 6)  # +90C, +3.0s
+    assert info.get("outcome") != "invalid"
+
+    # Total +105C, elapsed >= 3.5s
+    assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(105.0)
+    assert env.world.get_fluent("elapsed", tuple()) >= 3.5 - 1e-9
+
+
+def test_heat_invalid_when_open_or_unpowered(basic_task_file):
+    """
+    heat-kettle requires co-location, powered, and NOT open.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+
+    # Opening kettle then trying to heat -> invalid
+    open_(env, "kettle1")
+    obs, r, done, info = heat(env, "kettle1", 1)
+    assert done and info.get("outcome") == "invalid"
+    assert "Precondition failed" in info.get("error", "")
+
+    # New episode: remove power and try to heat -> invalid
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+    # Drop 'powered' fact
+    env.world.facts.discard(("powered", ("kettle1",)))
+    obs, r, done, info = heat(env, "kettle1", 1)
+    assert done and info.get("outcome") == "invalid"
+    assert "Precondition failed" in info.get("error", "")
+
+
+def test_heat_rejects_zero_or_non_numeric_n(basic_task_file):
+    """
+    Policy: n must be a positive number. n=0 or non-numeric token → invalid.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+
+    # n = 0 → invalid
+    obs, r, done, info = heat(env, "kettle1", 0)
+    assert done and info.get("outcome") == "invalid"
+
+    # Fresh episode for non-numeric
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+    # Manually craft a non-numeric heat (bypass helper)
+    obs, r, done, info = env.step("<move>(heat-kettle r1 kettle1 foo)</move>")
+    assert done and info.get("outcome") == "invalid"
+
+
+def test_pour_assign_sets_target_temp_to_100(basic_task_file):
+    """
+    After a successful pour into an OK target, the target temp is exactly 100.0
+    (assign semantics, not accumulate).
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=40)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+    open_(env, "mug1")
+    # Heat sufficiently while kettle CLOSED
+    heat(env, "kettle1", 6)  # +90C -> >=80C
+
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert info.get("outcome") != "invalid"
+    assert ("has-hot-water", ("mug1",)) in env.world.facts
+    assert env.world.get_fluent("water-temp", ("mug1",)) == pytest.approx(100.0)
+
+
+def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
+    """
+    - wait r1 n advances elapsed by n when durations are enabled.
+    - a single heat that would push elapsed over the time_limit ends the episode with loss.
+    """
+    # Small time limit for the second half of the test
+    env, _ = load_task(None, str(basic_task_file), max_steps=20, time_limit=1.0)
+    reset_with(env)
+    # Move without durations so it doesn't consume time in this test
+    move(env, "hallway", "kitchen")
+
+    # Enable durations now
+    env.enable_durations = True
+
+    # 'wait' with duration_var= n (unit=1.0)
+    obs, r, done, info = env.step("<move>(wait 0.4)</move>")
+    assert not done
+    assert env.world.get_fluent("elapsed", tuple()) >= 0.4 - 1e-9
+
+    # Now a single heat with duration 0.5 * 2 = 1.0 pushes elapsed over 1.0 → loss
+    obs, r, done, info = heat(env, "kettle1", 2)
+    assert done and info.get("outcome") == "loss"
+    assert info.get("reason") == "time_limit_exceeded"
+
+
+# ==================== SOURCE/TARGET OPENNESS GUARDS (needs-open) ====================
+
+def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
+    """
+    If the SOURCE container is marked (needs-open ?k) and it's closed,
+    'pour' should be invalid. Opening the kettle fixes it.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
+
+    move(env, "hallway", "kitchen")
+    heat(env, "kettle1", 6)  # get it hot enough
+    open_(env, "mug1")       # ensure target isn't the blocker
+
+    # Closed kettle + needs-open(kettle1) → invalid
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert done and info.get("outcome") == "invalid"
+    assert "Precondition failed" in info.get("error", "")
+
+    # Now open kettle and try again → success
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
+    move(env, "hallway", "kitchen")
+    heat(env, "kettle1", 6)
+    open_(env, "mug1")
+    open_(env, "kettle1")
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert info.get("outcome") != "invalid"
+    assert ("has-hot-water", ("mug1",)) in env.world.facts
+    assert env.world.get_fluent("water-temp", ("mug1",)) == pytest.approx(100.0)
+
+
+def test_pour_spill_only_when_target_marked_needs_open_and_closed(basic_task_file):
+    """
+    Spill occurs only if TARGET is (needs-open ?m) AND closed at pour time.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    reset_with(env, extra_statics=[lit("needs-open", "mug1")])
+    move(env, "hallway", "kitchen")
+    heat(env, "kettle1", 6)  # hot enough
+    # Ensure mug is CLOSED
+    env.world.facts.discard(("open", ("mug1",)))
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert ("spilled", ("mug1",)) in env.world.facts

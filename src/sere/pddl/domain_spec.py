@@ -47,6 +47,8 @@ class ActionSpec:
     num_eff: List[str] = field(default_factory=list)       # numeric effects "(increase (elapsed) 1)"
     cond: List[ConditionalBlock] = field(default_factory=list)
     duration: Optional[float] = None
+    duration_var: str | None = None
+    duration_unit: float | None = None
     messages: List[str] = field(default_factory=list)         # base messages
     outcomes: List[OutcomeSpec] = field(default_factory=list) # stochastic outcomes
 
@@ -127,6 +129,8 @@ class DomainSpec:
                 num_eff=a.get("num_eff", []) or [],
                 cond=cond_blocks or [],
                 duration=a.get("duration", None),
+                duration_var=a.get("duration_var"),
+                duration_unit=a.get("duration_unit"),
                 messages=a.get("messages", []) or [],
                 outcomes=outcomes or []
             )

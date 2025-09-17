@@ -9,8 +9,9 @@ NUM_CMP = re.compile(
     r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
 )
 NUM_EFF = re.compile(
-    r"^\(\s*(increase|decrease|assign|cost)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
+    r"^\(\s*(increase|decrease|assign|cost)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([^\s()]+)\s*\)$"
 )
+
 
 def _bind_args(argstr: Optional[str], bind: Dict[str, str]) -> Tuple[str, ...]:
     toks = argstr.split() if argstr else []
@@ -30,13 +31,32 @@ def eval_num_pre(world: WorldState, expr: str, bind: Dict[str, str]) -> bool:
     if op == ">=": return val >= rhsf
     return abs(val - rhsf) < 1e-9
 
+def _eval_rhs_token(rhs: str, bind: dict) -> float:
+    """Evaluate RHS as NUMBER | ?var | NUMBER*?var | ?var*NUMBER."""
+    rhs = rhs.strip()
+    # plain number
+    try:
+        return float(rhs)
+    except ValueError:
+        pass
+    # product forms
+    if "*" in rhs:
+        a, b = [x.strip() for x in rhs.split("*", 1)]
+        return _eval_rhs_token(a, bind) * _eval_rhs_token(b, bind)
+    # variable form
+    if rhs.startswith("?"):
+        v = bind.get(rhs[1:], rhs[1:])
+        return float(v)
+    raise ValueError(f"Unsupported numeric RHS: {rhs!r}")
+
+
 def apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[str,Any]):
     m = NUM_EFF.match(expr.strip())
     if not m: 
         raise ValueError(f"Bad num_eff: {expr}")
-    op, fname, argstr, delta = m.groups()
+    op, fname, argstr, rhs = m.groups()
     args  = _bind_args(argstr, bind)
-    d = float(delta)
+    d = _eval_rhs_token(rhs, bind)
     if op == "assign":
         world.set_fluent(fname, args, d)
     elif op == "increase":
