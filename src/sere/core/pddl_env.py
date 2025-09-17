@@ -14,17 +14,23 @@ def extract_tag(s: str, tag: str) -> Optional[str]:
 
 def _format_msg(template: str, bind: Dict[str, str], world: WorldState) -> str:
     """
-    Replace ?vars with their bound symbols.
+    Replace {vars} and ?vars with their bound symbols.
     Also supports simple inline probes:
       - "(quality ?a)" → current numeric fluent value
-      - "(pred ?x ...)" → truthy/falsey probe prints "true"/"false"
-    We keep it intentionally lightweight to avoid dragging the parser in.
+      - "(pred ?x ...)" → prints "true"/"false"
+    Lightweight on purpose to avoid a full parser.
     """
     s = template
+
+    # Curly-brace placeholders: "{r}" → "r1"
+    for k, v in bind.items():
+        s = s.replace("{" + k + "}", v)
+
+    # Question-mark placeholders: "?r" → "r1"
     for k, v in bind.items():
         s = re.sub(rf'\?{re.escape(k)}(\b|[^A-Za-z0-9_?-])', lambda m: v + (m.group(1) or ''), s)
 
-    # inline probes of form "(name arg1 arg2)"
+    # Inline probes of form "(name arg1 arg2)"
     for token in re.findall(r"\([^)]+\)", s):
         try:
             name, args = parse_grounded(token)
@@ -32,7 +38,6 @@ def _format_msg(template: str, bind: Dict[str, str], world: WorldState) -> str:
                 continue
             # try fluent read
             val = world.get_fluent(name, args)
-            # if fluent missing and args non-empty, maybe it's a predicate probe
             if val != 0.0 or (name, args) in world.fluents:
                 s = s.replace(token, f"{val:.2f}")
             else:

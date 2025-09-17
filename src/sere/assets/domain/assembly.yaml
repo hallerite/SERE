@@ -133,6 +133,8 @@ actions:
     duration_var: "n"
     duration_unit: 1.0
     nl: "Wait for {n} ticks"
+    messages:
+      - "Waited {n} ticks."
 
   # movement / navigation
   - name: move
@@ -142,6 +144,8 @@ actions:
     del: ["(at ?r ?from)"]
     num_eff: ["(decrease (energy ?r) 1)"]
     duration: 1.0
+    messages:
+      - "{r} moved from {from} to {to}. Energy is now (energy ?r)."
 
   # container access (crates, bins, drawers)
   - name: open
@@ -150,6 +154,8 @@ actions:
     add: ["(open ?c)"]
     num_eff: []
     duration: 0.3
+    messages:
+      - "{c} is now open."
 
   - name: close
     params: [{r: robot}, {c: container}]
@@ -157,23 +163,29 @@ actions:
     del: ["(open ?c)"]
     num_eff: []
     duration: 0.3
+    messages:
+      - "{c} is now closed."
 
   # picking & placing
   - name: pick-up
     params: [{r: robot}, {o: object}]
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
-    del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]     # wildcard delete on obj-at, consume hand
+    del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     num_eff: []
     duration: 0.5
+    messages:
+      - "Picked up {o}."
 
   - name: put-down
     params: [{r: robot}, {o: object}]
     pre: ["(holding ?r ?o)"]
-    add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]     # location inferred from robot
+    add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
     num_eff: []
     duration: 0.5
+    messages:
+      - "Placed {o} on the bench at your current location."
 
   # storage
   - name: put-in
@@ -183,6 +195,8 @@ actions:
     del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
     num_eff: []
     duration: 0.5
+    messages:
+      - "{o} is now in {c}."
 
   - name: take-out
     params: [{r: robot}, {o: object}, {c: container}]
@@ -191,6 +205,8 @@ actions:
     del: ["(in ?o ?c)", "(clear-hand ?r)"]
     num_eff: []
     duration: 0.5
+    messages:
+      - "Took {o} out of {c}."
 
   # tool management
   - name: equip-tool
@@ -200,6 +216,8 @@ actions:
     del: ["(holding ?r ?t)"]
     num_eff: []
     duration: 0.4
+    messages:
+      - "{t} equipped."
 
   - name: unequip-tool
     params: [{r: robot}, {t: tool}]
@@ -208,6 +226,8 @@ actions:
     del: ["(equipped ?r ?t)", "(clear-hand ?r)"]
     num_eff: []
     duration: 0.4
+    messages:
+      - "{t} unequipped."
 
   # preparation & alignment
   - name: align
@@ -216,6 +236,8 @@ actions:
     add: ["(aligned ?p ?a)"]
     num_eff: []
     duration: 1.0
+    messages:
+      - "{p} aligned with {a}."
 
   # assembly (fasten/attach) with conditionals
   - name: fasten
@@ -224,27 +246,24 @@ actions:
     add: ["(fastened ?p ?a)", "(installed ?p ?a)"]
     num_eff: []
     duration: 2.0
+    messages:
+      - "Fastened {p} to {a}."
     cond:
       - when: ["(damaged ?p)"]
         delete: ["(installed ?p ?a)"]
     outcomes:
-      # 10%: hard defect → mark assembly as defective, quality low
       - name: "hard_defect"
         p: 0.10
         add: ["(defective ?a)"]
         num_eff: ["(assign (quality ?a) 0.20)"]
         messages:
           - "QC: Hard defect on ?a detected. Disassemble and reassemble."
-
-      # 30%: soft quality issue → needs rework, quality mediocre
       - name: "soft_defect"
         p: 0.30
         add: ["(needs-rework ?a)"]
         num_eff: ["(assign (quality ?a) 0.65)"]
         messages:
           - "QC: Marginal quality on ?a (rework needed). Consider unfasten → realign → refasten."
-
-      # Otherwise: success → clear flags, set good quality
       - name: "good"
         p: 0.60
         delete: ["(defective ?a)", "(needs-rework ?a)"]
@@ -255,10 +274,12 @@ actions:
   # optional: torque setting influences nothing structural but gives room for curricula
   - name: set-torque
     params: [{r: robot}, {t: tool}, {lvl: object}]
-    pre: ["(equipped ?r ?t)"]   # lvl is symbolic (e.g., torque-8), or you can switch to numeric if desired
+    pre: ["(equipped ?r ?t)"]
     add: []
     num_eff: []
     duration: 0.2
+    messages:
+      - "Torque on {t} set to {lvl}."
 
   # disassembly (unfasten & detach) – yields the part in-hand
   - name: unfasten
@@ -268,6 +289,8 @@ actions:
     del: ["(fastened ?p ?a)", "(installed ?p ?a)", "(clear-hand ?r)"]
     num_eff: []
     duration: 2.0
+    messages:
+      - "Unfastened {p} from {a}; now holding {p}."
 
   # place subassemblies back onto bench (explicit convenience primitive)
   - name: place-on-bench
@@ -277,6 +300,8 @@ actions:
     del: ["(holding ?r ?o)"]
     num_eff: []
     duration: 0.5
+    messages:
+      - "Placed {o} on the bench."
 
   # machines (e.g., power screwdriver station) – optional affordance
   - name: power-on
@@ -285,6 +310,8 @@ actions:
     add: ["(powered ?m)"]
     num_eff: []
     duration: 0.5
+    messages:
+      - "{m} is now powered."
 
   # resource maintenance
   - name: recharge
@@ -293,12 +320,13 @@ actions:
     add: []
     num_eff: ["(increase (energy ?r) 5)"]
     duration: 2.0
+    messages:
+      - "{r} recharged at {l}. Energy is now (energy ?r)."
 
   - name: qc-check
     params: [{r: robot}, {a: assembly}]
     pre: ["(co-located ?r ?a)"]
     add: []
-    # Emits a message but no state change
     num_eff: []
     duration: 0.2
     messages:
@@ -311,3 +339,5 @@ actions:
     delete: []
     num_eff: []
     duration: 0.5
+    messages:
+      - "Realigned {p} with {a}."

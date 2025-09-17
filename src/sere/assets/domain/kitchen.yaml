@@ -97,7 +97,9 @@ actions:
     duration_var: "n"
     duration_unit: 1.0
     nl: "Wait for {n} ticks"
-    
+    messages:
+      - "Waited {n} ticks."
+
   - name: move
     params: [{r: robot}, {from: location}, {to: location}]
     pre: ["(at ?r ?from)", "(adjacent ?from ?to)", "(>= (energy ?r) 1)"]
@@ -106,40 +108,46 @@ actions:
     num_eff: ["(decrease (energy ?r) 1)"]
     duration: 1.0
     nl: "Move {r} from {from} to {to}"
+    messages:
+      - "{r} moved from {from} to {to}. Energy is now (energy ?r)."
 
   - name: open
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(not (open ?c))"]
     add: ["(open ?c)"]
-    num_eff: []
     duration: 0.5
     nl: "Open {c}"
+    messages:
+      - "{c} is now open."
 
   - name: close
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(open ?c)"]
     del: ["(open ?c)"]
-    num_eff: []
     duration: 0.5
     nl: "Close {c}"
+    messages:
+      - "{c} is now closed."
 
   - name: pick-up
     params: [{r: robot}, {o: object}]
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-    num_eff: []
     duration: 0.5
     nl: "Pick up {o}"
+    messages:
+      - "Picked up {o}."
 
   - name: put-down
     params: [{r: robot}, {o: object}]
     pre: ["(holding ?r ?o)"]
     add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
-    num_eff: []
     duration: 0.5
     nl: "Put down {o}"
+    messages:
+      - "Placed {o} down."
 
   - name: put-in
     params: [{r: robot}, {o: object}, {c: container}]
@@ -149,9 +157,10 @@ actions:
       - "(or (not (needs-open ?c)) (open ?c))"
     add: ["(in ?o ?c)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
-    num_eff: []
     duration: 0.5
     nl: "Put {o} into {c}"
+    messages:
+      - "{o} is now in {c}."
 
   - name: take-out
     params: [{r: robot}, {o: object}, {c: container}]
@@ -162,17 +171,19 @@ actions:
       - "(or (not (needs-open ?c)) (open ?c))"
     add: ["(holding ?r ?o)"]
     del: ["(in ?o ?c)", "(clear-hand ?r)"]
-    num_eff: []
     duration: 0.5
     nl: "Take {o} out of {c}"
+    messages:
+      - "Took {o} out of {c}."
 
   - name: power-on
     params: [{r: robot}, {a: appliance}]
     pre: ["(co-located ?r ?a)", "(not (powered ?a))"]
     add: ["(powered ?a)"]
-    num_eff: []
     duration: 0.5
     nl: "Power on {a}"
+    messages:
+      - "{a} is now powered."
 
   - name: heat-kettle
     params: [{r: robot}, {k: appliance}, {n: number}]
@@ -180,38 +191,32 @@ actions:
       - "(co-located ?r ?k)"
       - "(powered ?k)"
       - "(not (open ?k))"
-    add: []
-    del: []
     num_eff: ["(increase (water-temp ?k) 15*?n)"]
-
     duration_var: "n"
     duration_unit: 0.5
     nl: "Heat {k} for {n} ticks"
-
+    messages:
+      - "Heating {k}. Water temperature is now (water-temp ?k)°C."
 
   - name: pour
     params: [{r: robot}, {k: container}, {m: container}]
     pre:
-    - "(co-located ?r ?k)"
-    - "(co-located ?r ?m)"
-    - "(or (not (needs-open ?k)) (open ?k))"
-
-    add: []
-    del: []
+      - "(co-located ?r ?k)"
+      - "(co-located ?r ?m)"
+      - "(or (not (needs-open ?k)) (open ?k))"
     cond:
-      # spill if target needs-open but is closed
       - when: ["(needs-open ?m)", "(not (open ?m))"]
         add: ["(spilled ?m)"]
         del: ["(has-hot-water ?m)"]
-        num_eff: []
-      # fill when target OK and source hot enough
+        messages:
+          - "You poured into {m} while closed → spill."
       - when:
           - "(or (not (needs-open ?m)) (open ?m))"
           - "(>= (water-temp ?k) 80)"
         add: ["(has-hot-water ?m)"]
-        del: []
         num_eff: ["(assign (water-temp ?m) 100)"]
-    num_eff: []
+        messages:
+          - "Hot water transferred to {m}."
     duration: 1.0
     nl: "Pour from {k} into {m}"
 
@@ -219,14 +224,16 @@ actions:
     params: [{r: robot}, {tb: object}, {m: container}]
     pre: ["(co-located ?r ?m)", "(in ?tb ?m)", "(>= (water-temp ?m) 80)"]
     add: ["(tea-ready ?m)"]
-    num_eff: []
     duration: 2.0
     nl: "Steep tea in {m}"
+    messages:
+      - "Tea steeped. {m} is ready."
 
   - name: recharge
     params: [{r: robot}, {l: location}]
     pre: ["(at ?r ?l)", "(has-charger ?l)"]
-    add: []
     num_eff: ["(increase (energy ?r) 5)"]
     duration: 2.0
     nl: "Recharge at {l}"
+    messages:
+      - "{r} recharged at {l}. Energy is now (energy ?r)."

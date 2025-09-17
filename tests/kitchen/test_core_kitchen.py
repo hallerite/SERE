@@ -639,3 +639,74 @@ def test_pour_spill_only_when_target_marked_needs_open_and_closed(basic_task_fil
     env.world.facts.discard(("open", ("mug1",)))
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert ("spilled", ("mug1",)) in env.world.facts
+
+# ==================== MESSAGES AFTER ACTIONS ====================
+
+def test_action_messages_and_probes_kitchen(basic_task_file):
+    """
+    Verify post-action messages, including:
+      - {var} and ?var substitution
+      - inline probes for fluents/predicates
+      - conditional-branch messages on pour (success vs. spill)
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+
+    # --- Success path: open → heat → pour (success) ---
+    reset_with(env)
+    # Move to kitchen so co-location holds
+    move(env, "hallway", "kitchen")
+
+    # 1) open mug → "{c} is now open."
+    obs, r, done, info = open_(env, "mug1")
+    msgs = "\n".join(info.get("messages") or [])
+    assert "mug1 is now open." in msgs
+
+    # 2) heat kettle (n=2) → "Heating {k}… water-temp now (water-temp ?k)°C."
+    # kettle starts CLOSED and POWERED in the fixture; co-location now true
+    obs, r, done, info = heat(env, "kettle1", 2)
+    msgs = "\n".join(info.get("messages") or [])
+    # Probe should have evaluated to ~30.00
+    assert "Heating kettle1" in msgs
+    assert ("30.00" in msgs) or ("30.0" in msgs), f"expected temp probe ~30C in messages, got:\n{msgs}"
+
+    # 3) heat more to reach >= 80C (n=4 → +60C, total 90C)
+    heat(env, "kettle1", 4)
+
+    # 4) pour success branch → "Hot water transferred to {m}."
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    msgs = "\n".join(info.get("messages") or [])
+    assert "Hot water transferred to mug1." in msgs
+
+    # --- Spill branch: mug needs-open & closed ---
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+    # Ensure mug is CLOSED (fixture already marks needs-open mug1)
+    env.world.facts.discard(("open", ("mug1",)))
+    # Heat enough for success path, but target is closed → spill branch message
+    heat(env, "kettle1", 6)
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    msgs = "\n".join(info.get("messages") or [])
+    assert "spill" in msgs.lower()
+
+    # --- Simple brace/var substitution sanity: pick-up/put-in/close messages ---
+    env, _ = load_task(None, str(basic_task_file), max_steps=40)
+    reset_with(env)
+    # Go to the PANTRY (teabag1 is there), then pick up
+    move(env, "hallway", "kitchen")
+    move(env, "kitchen", "pantry")
+    obs, r, done, info = pickup(env, "teabag1")
+    msgs = "\n".join(info.get("messages") or [])
+    assert "Picked up teabag1." in msgs
+
+    # Bring it to the kitchen, open mug, put in teabag → messages fire
+    move(env, "pantry", "kitchen")
+    open_(env, "mug1")
+    obs, r, done, info = putin(env, "teabag1", "mug1")
+    msgs = "\n".join(info.get("messages") or [])
+    assert "teabag1 is now in mug1." in msgs
+
+    # Close mug → "{c} is now closed."
+    obs, r, done, info = close_(env, "mug1")
+    msgs = "\n".join(info.get("messages") or [])
+    assert "mug1 is now closed." in msgs
