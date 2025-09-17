@@ -28,7 +28,6 @@ init:
   - (at r1 kitchen)
   - (obj-at mug1 kitchen)
   - (obj-at kettle1 kitchen)
-  - (open mug1)
   - (in teabag1 mug1)       # teabag already in mug
   - (has-hot-water mug1)    # mug already has hot water
   - (clear-hand r1)

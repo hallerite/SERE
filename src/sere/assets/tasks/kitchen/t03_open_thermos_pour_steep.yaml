@@ -24,6 +24,8 @@ objects:
 
 static_facts:
   - (needs-open thermos1)
+  - (openable thermos1)
+  - (openable kettle1)
 
 init:
   - (at r1 kitchen)

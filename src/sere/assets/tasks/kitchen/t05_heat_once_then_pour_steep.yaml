@@ -23,7 +23,8 @@ objects:
   appliance: [kettle1]
   object: [teabag1]
 
-static_facts: []
+static_facts:
+  - (openable kettle1)
 
 init:
   - (at r1 kitchen)

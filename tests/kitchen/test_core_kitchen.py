@@ -23,6 +23,8 @@ static_facts:
   - (adjacent pantry kitchen)
   - (adjacent kitchen table)
   - (adjacent table kitchen)
+  - (openable kettle1)
+  - (openable mug1)
   - (needs-open mug1)
 
 init:

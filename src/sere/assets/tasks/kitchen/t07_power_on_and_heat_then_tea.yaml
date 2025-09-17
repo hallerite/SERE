@@ -28,6 +28,7 @@ static_facts:
   - (adjacent kitchen hallway)
   - (adjacent kitchen pantry)
   - (adjacent pantry kitchen)
+  - (openable kettle1)
 
 init:
   - (at r1 hallway)

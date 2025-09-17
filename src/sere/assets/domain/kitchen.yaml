@@ -75,6 +75,11 @@ predicates:
     static: true
     nl: "{c} requires opening to pour"
 
+  - name: openable
+    args: [{name: c, type: container}]
+    static: true
+    nl: "{c} can be opened/closed"
+
 # ---------- Fluents (numeric state) ----------
 fluents:
 
@@ -113,7 +118,7 @@ actions:
 
   - name: open
     params: [{r: robot}, {c: container}]
-    pre: ["(co-located ?r ?c)", "(not (open ?c))"]
+    pre: ["(co-located ?r ?c)", "(openable ?c)", "(not (open ?c))"]
     add: ["(open ?c)"]
     duration: 0.5
     nl: "Open {c}"
@@ -122,7 +127,7 @@ actions:
 
   - name: close
     params: [{r: robot}, {c: container}]
-    pre: ["(co-located ?r ?c)", "(open ?c)"]
+    pre: ["(co-located ?r ?c)", "(openable ?c)", "(open ?c)"]
     del: ["(open ?c)"]
     duration: 0.5
     nl: "Close {c}"
