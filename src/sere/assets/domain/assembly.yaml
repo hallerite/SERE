@@ -110,10 +110,6 @@ predicates:
 # ---------- Fluents (numeric state) ----------
 fluents:
 
-  - name: total-cost
-    args: []
-    nl: "Accumulated cost"
-
   - name: energy
     args: [{name: r, type: robot}]
     nl: "Energy of {r}"
@@ -145,7 +141,7 @@ actions:
     add: ["(at ?r ?to)"]
     del: ["(at ?r ?from)"]
     num_pre: ["(>= (energy ?r) 1)"]
-    num_eff: ["(decrease (energy ?r) 1)", "(increase (elapsed) 1)", "(cost (move ?r ?from ?to) 1)"]
+    num_eff: ["(decrease (energy ?r) 1)", "(increase (elapsed) 1)"]
     duration: 1.0
 
   # container access (crates, bins, drawers)
@@ -153,14 +149,14 @@ actions:
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(not (open ?c))"]
     add: ["(open ?c)"]
-    num_eff: ["(increase (elapsed) 0.3)", "(cost (open ?c) 0.1)"]
+    num_eff: ["(increase (elapsed) 0.3)"]
     duration: 0.3
 
   - name: close
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(open ?c)"]
     del: ["(open ?c)"]
-    num_eff: ["(increase (elapsed) 0.3)", "(cost (close ?c) 0.1)"]
+    num_eff: ["(increase (elapsed) 0.3)"]
     duration: 0.3
 
   # picking & placing
@@ -169,7 +165,7 @@ actions:
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]     # wildcard delete on obj-at, consume hand
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (pick-up ?o) 0.2)"]
+    num_eff: []
     duration: 0.5
 
   - name: put-down
@@ -177,7 +173,7 @@ actions:
     pre: ["(holding ?r ?o)"]
     add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]     # location inferred from robot
     del: ["(holding ?r ?o)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (put-down ?o) 0.2)"]
+    num_eff: []
     duration: 0.5
 
   # storage
@@ -186,7 +182,7 @@ actions:
     pre: ["(co-located ?r ?c)", "(holding ?r ?o)", "(open ?c)"]
     add: ["(in ?o ?c)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (put-in ?o ?c) 0.2)"]
+    num_eff: []
     duration: 0.5
 
   - name: take-out
@@ -194,7 +190,7 @@ actions:
     pre: ["(co-located ?r ?c)", "(in ?o ?c)", "(open ?c)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(in ?o ?c)", "(clear-hand ?r)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (take-out ?o ?c) 0.2)"]
+    num_eff: []
     duration: 0.5
 
   # tool management
@@ -203,7 +199,7 @@ actions:
     pre: ["(holding ?r ?t)"]
     add: ["(equipped ?r ?t)", "(clear-hand ?r)"]
     del: ["(holding ?r ?t)"]
-    num_eff: ["(increase (elapsed) 0.4)", "(cost (equip-tool ?t) 0.1)"]
+    num_eff: []
     duration: 0.4
 
   - name: unequip-tool
@@ -211,7 +207,7 @@ actions:
     pre: ["(equipped ?r ?t)", "(clear-hand ?r)"]
     add: ["(holding ?r ?t)"]
     del: ["(equipped ?r ?t)", "(clear-hand ?r)"]
-    num_eff: ["(increase (elapsed) 0.4)", "(cost (unequip-tool ?t) 0.1)"]
+    num_eff: []
     duration: 0.4
 
   # preparation & alignment
@@ -219,7 +215,7 @@ actions:
     params: [{r: robot}, {p: part}, {a: assembly}]
     pre: ["(co-located ?r ?p)", "(co-located ?r ?a)"]
     add: ["(aligned ?p ?a)"]
-    num_eff: ["(increase (elapsed) 1)", "(cost (align ?p ?a) 0.5)"]
+    num_eff: []
     duration: 1.0
 
   # assembly (fasten/attach) with conditionals
@@ -227,7 +223,7 @@ actions:
     params: [{r: robot}, {p: part}, {a: assembly}, {t: tool}]
     pre: ["(equipped ?r ?t)", "(tool-for ?t ?a)", "(aligned ?p ?a)", "(co-located ?r ?p)", "(co-located ?r ?a)"]
     add: ["(fastened ?p ?a)", "(installed ?p ?a)"]
-    num_eff: ["(increase (elapsed) 2)", "(cost (fasten ?p ?a ?t) 1)"]
+    num_eff: []
     duration: 2.0
     cond:
       - when: ["(damaged ?p)"]
@@ -262,7 +258,7 @@ actions:
     params: [{r: robot}, {t: tool}, {lvl: object}]
     pre: ["(equipped ?r ?t)"]   # lvl is symbolic (e.g., torque-8), or you can switch to numeric if desired
     add: []
-    num_eff: ["(increase (elapsed) 0.2)", "(cost (set-torque ?t ?lvl) 0.05)"]
+    num_eff: []
     duration: 0.2
 
   # disassembly (unfasten & detach) – yields the part in-hand
@@ -271,7 +267,7 @@ actions:
     pre: ["(equipped ?r ?t)", "(tool-for ?t ?a)", "(fastened ?p ?a)", "(co-located ?r ?p)", "(co-located ?r ?a)", "(clear-hand ?r)"]
     add: ["(holding ?r ?p)"]
     del: ["(fastened ?p ?a)", "(installed ?p ?a)", "(clear-hand ?r)"]
-    num_eff: ["(increase (elapsed) 2)", "(cost (unfasten ?p ?a ?t) 1)"]
+    num_eff: []
     duration: 2.0
 
   # place subassemblies back onto bench (explicit convenience primitive)
@@ -280,7 +276,7 @@ actions:
     pre: ["(holding ?r ?o)"]
     add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (place-on-bench ?o) 0.2)"]
+    num_eff: []
     duration: 0.5
 
   # machines (e.g., power screwdriver station) – optional affordance
@@ -288,7 +284,7 @@ actions:
     params: [{r: robot}, {m: machine}]
     pre: ["(co-located ?r ?m)", "(not (powered ?m))"]
     add: ["(powered ?m)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (power-on ?m) 0.3)"]
+    num_eff: []
     duration: 0.5
 
   # resource maintenance
@@ -296,15 +292,15 @@ actions:
     params: [{r: robot}, {l: location}]
     pre: ["(at ?r ?l)", "(has-charger ?l)"]
     add: []
-    num_eff: ["(increase (energy ?r) 5)", "(increase (elapsed) 2)", "(cost (recharge ?r ?l) 0.1)"]
+    num_eff: ["(increase (energy ?r) 5)"]
     duration: 2.0
 
   - name: qc-check
     params: [{r: robot}, {a: assembly}]
     pre: ["(co-located ?r ?a)"]
     add: []
-    # Emits a message but no state change; tiny time/cost to prevent spam
-    num_eff: ["(increase (elapsed) 0.2)", "(cost (qc-check ?a) 0.05)"]
+    # Emits a message but no state change
+    num_eff: []
     duration: 0.2
     messages:
       - "QC Report for ?a — quality=(quality ?a), flags: (defective ?a) (needs-rework ?a)"
@@ -314,5 +310,5 @@ actions:
     pre: ["(co-located ?r ?p)", "(co-located ?r ?a)"]
     add: ["(aligned ?p ?a)"]
     delete: []
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (realign ?p ?a) 0.1)"]
+    num_eff: []
     duration: 0.5

@@ -218,14 +218,13 @@ def test_move_energy_guard_and_recharge(asm_task_file):
     assert info.get("outcome") != "invalid"
     assert env.world.get_fluent("energy", ("r1",)) >= 5
 
-def test_elapsed_increases_and_cost_accumulates(asm_task_file):
+def test_time_increases(asm_task_file):
     env, _ = load_task(None, str(asm_task_file), max_steps=20)
     reset_with(env)
-    t0 = env.world.get_fluent("elapsed", tuple())
-    obs, r, done, info = M(env, "bench","cell")  # duration 1, cost 1
-    t1 = env.world.get_fluent("elapsed", tuple())
+    t0 = env.time
+    obs, r, done, info = M(env, "bench","cell")  # duration 1
+    t1 = env.time
     assert t1 >= t0 + 1 - 1e-9
-    assert abs(info.get("action_cost", 0.0) - 1.0) < 1e-9
 
 def test_wait_and_time_limit_enforced(asm_task_file):
     env, _ = load_task(None, str(asm_task_file), max_steps=10, time_limit=2.0)

@@ -319,13 +319,6 @@ def test_pour_assign_overrides_not_accumulates(basic_task_file):
     assert ("has-hot-water", ("mug1",)) in env.world.facts
     assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
 
-def test_action_cost_accumulates_in_info(basic_task_file):
-    env, _ = load_task(None, str(basic_task_file), max_steps=5)
-    reset_with(env)
-    move(env, "hallway", "kitchen")            # cost 1
-    obs, r, done, info = open_(env, "mug1")    # cost 0.2
-    assert abs(info.get("action_cost", 0.0) - 0.2) < 1e-9, "open should report its own cost this step"
-
 # ==================== CONDITIONAL NO-BRANCH ====================
 
 def test_pour_no_branch_when_temp_too_low(basic_task_file):
@@ -478,7 +471,6 @@ def test_heat_numeric_rhs_and_duration(basic_task_file):
     heat-kettle ?n:
       - increases water-temp by 15*?n
       - increases elapsed by 0.5*?n
-      - adds step-local cost 0.5*?n (reported in info["action_cost"])
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
@@ -491,10 +483,9 @@ def test_heat_numeric_rhs_and_duration(basic_task_file):
     obs, r, done, info = heat(env, "kettle1", 2)
     assert info.get("outcome") != "invalid"
 
-    # water-temp(kettle1) should be 30.0; elapsed should +1.0; cost 1.0 this step
+    # water-temp(kettle1) should be 30.0; time should +1.0
     assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(30.0)
     assert env.time >= 1.0 - 1e-9
-    assert info.get("action_cost", 0.0) == pytest.approx(1.0)
 
 
 def test_heat_multiple_ns_accumulate_linearly(basic_task_file):

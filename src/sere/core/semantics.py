@@ -9,7 +9,7 @@ NUM_CMP = re.compile(
     r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
 )
 NUM_EFF = re.compile(
-    r"^\(\s*(increase|decrease|assign|cost)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([^\s()]+)\s*\)$"
+    r"^\(\s*(increase|decrease|assign)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([^\s()]+)\s*\)$"
 )
 
 
@@ -63,8 +63,6 @@ def apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[
         world.set_fluent(fname, args, world.get_fluent(fname, args) + d)
     elif op == "decrease":
         world.set_fluent(fname, args, world.get_fluent(fname, args) - d)
-    elif op == "cost":
-        info["action_cost"] = info.get("action_cost", 0.0) + d
 
 # --- Clause evaluator with support for (or ...) and (not ...) ---
 def _split_top_level(expr: str) -> List[str]:
