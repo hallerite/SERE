@@ -358,12 +358,8 @@ class PDDLEnv:
 
     # --- helpers ---
     def _advance_time(self, dur: float, info: Dict[str, Any]):
-        self.time += dur
-        # keep a matching fluent if user defined (:functions elapsed)
-        try:
-            self.world.set_fluent("elapsed", tuple(), self.time)
-        except Exception:
-            pass
+        """Advance the internal episode clock; domains/tasks never touch time."""
+        self.time += float(dur)
         if self.enable_durations and self.time_limit is not None and self.time > self.time_limit:
             # Mark terminal right away
             self.done = True
@@ -398,7 +394,9 @@ class PDDLEnv:
 
     def _obs(self) -> str:
         # affordances (on/off decided by formatter)
-        aff = self.formatter.generate_affordances(self.world, self.static_facts)
+        aff = self.formatter.generate_affordances(
+            self.world, self.static_facts, enable_numeric=self.enable_numeric
+        )
 
         return self.formatter.format_obs(
             world=self.world,

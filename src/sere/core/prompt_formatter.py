@@ -145,6 +145,9 @@ class PromptFormatter:
         rows = []
         prec = max(0, int(self.cfg.fluents_precision))
         for (name, args), val in sorted(world_fluents.items()):
+            # Time is engine-owned; never display a stray 'elapsed' fluent if present.
+            if name == "elapsed":
+                continue
             if not any(fnmatch.fnmatch(name, pat) for pat in (self.cfg.visible_fluents or ["*"])):
                 continue
             key = f"({name}{'' if not args else ' ' + ' '.join(args)})"
@@ -158,6 +161,7 @@ class PromptFormatter:
                         delta_txt = f" ({sign}{dv:.{prec}f})"
             rows.append(f"{key}={val:.{prec}f}{delta_txt}")
         return ("Fluents: " + ", ".join(rows)) if rows else ""
+
 
     # ---------- Affordances ----------
     def generate_affordances(

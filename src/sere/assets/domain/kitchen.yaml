@@ -77,9 +77,6 @@ predicates:
 
 # ---------- Fluents (numeric state) ----------
 fluents:
-  - name: elapsed
-    args: []
-    nl: "Elapsed time"
 
   - name: total-cost
     args: []
@@ -110,7 +107,7 @@ actions:
     pre: ["(at ?r ?from)", "(adjacent ?from ?to)", "(>= (energy ?r) 1)"]
     add: ["(at ?r ?to)"]
     del: ["(at ?r ?from)"]
-    num_eff: ["(decrease (energy ?r) 1)", "(increase (elapsed) 1)", "(cost (move ?r ?from ?to) 1)"]
+    num_eff: ["(decrease (energy ?r) 1)", "(cost (move ?r ?from ?to) 1)"]
     duration: 1.0
     nl: "Move {r} from {from} to {to}"
 
@@ -118,7 +115,7 @@ actions:
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(not (open ?c))"]
     add: ["(open ?c)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (open ?c) 0.2)"]
+    num_eff: ["(cost (open ?c) 0.2)"]
     duration: 0.5
     nl: "Open {c}"
 
@@ -126,7 +123,7 @@ actions:
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(open ?c)"]
     del: ["(open ?c)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (close ?c) 0.2)"]
+    num_eff: ["(cost (close ?c) 0.2)"]
     duration: 0.5
     nl: "Close {c}"
 
@@ -135,7 +132,7 @@ actions:
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (pick-up ?o) 0.2)"]
+    num_eff: ["(cost (pick-up ?o) 0.2)"]
     duration: 0.5
     nl: "Pick up {o}"
 
@@ -144,7 +141,7 @@ actions:
     pre: ["(holding ?r ?o)"]
     add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (put-down ?o) 0.2)"]
+    num_eff: ["(cost (put-down ?o) 0.2)"]
     duration: 0.5
     nl: "Put down {o}"
 
@@ -156,7 +153,7 @@ actions:
       - "(or (not (needs-open ?c)) (open ?c))"
     add: ["(in ?o ?c)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (put-in ?o ?c) 0.3)"]
+    num_eff: ["(cost (put-in ?o ?c) 0.3)"]
     duration: 0.5
     nl: "Put {o} into {c}"
 
@@ -169,7 +166,7 @@ actions:
       - "(or (not (needs-open ?c)) (open ?c))"
     add: ["(holding ?r ?o)"]
     del: ["(in ?o ?c)", "(clear-hand ?r)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (take-out ?o ?c) 0.3)"]
+    num_eff: ["(cost (take-out ?o ?c) 0.3)"]
     duration: 0.5
     nl: "Take {o} out of {c}"
 
@@ -177,7 +174,7 @@ actions:
     params: [{r: robot}, {a: appliance}]
     pre: ["(co-located ?r ?a)", "(not (powered ?a))"]
     add: ["(powered ?a)"]
-    num_eff: ["(increase (elapsed) 0.5)", "(cost (power-on ?a) 0.5)"]
+    num_eff: ["(cost (power-on ?a) 0.5)"]
     duration: 0.5
     nl: "Power on {a}"
 
@@ -189,10 +186,7 @@ actions:
       - "(not (open ?k))"
     add: []
     del: []
-    num_eff:
-    - "(increase (water-temp ?k) 15*?n)"
-    - "(increase (elapsed) 0.5*?n)"
-    - "(cost (heat-kettle ?k ?n) 0.5*?n)"
+    num_eff: ["(increase (water-temp ?k) 15*?n)", "(cost (heat-kettle ?k ?n) 0.5*?n)"]
 
     duration_var: "n"
     duration_unit: 0.5
@@ -221,7 +215,7 @@ actions:
         add: ["(has-hot-water ?m)"]
         del: []
         num_eff: ["(assign (water-temp ?m) 100)"]
-    num_eff: ["(increase (elapsed) 1)", "(cost (pour ?k ?m) 0.5)"]
+    num_eff: ["(cost (pour ?k ?m) 0.5)"]
     duration: 1.0
     nl: "Pour from {k} into {m}"
 
@@ -230,7 +224,7 @@ actions:
     pre: ["(co-located ?r ?m)", "(in ?tb ?m)"]
     add: ["(tea-ready ?m)"]
     num_pre: ["(>= (water-temp ?m) 80)"]
-    num_eff: ["(increase (elapsed) 2)", "(cost (steep-tea ?m) 0.5)"]
+    num_eff: ["(cost (steep-tea ?m) 0.5)"]
     duration: 2.0
     nl: "Steep tea in {m}"
 
@@ -238,6 +232,6 @@ actions:
     params: [{r: robot}, {l: location}]
     pre: ["(at ?r ?l)", "(has-charger ?l)"]
     add: []
-    num_eff: ["(increase (energy ?r) 5)", "(increase (elapsed) 2)", "(cost (recharge ?r ?l) 0.1)"]
+    num_eff: ["(increase (energy ?r) 5)", "(cost (recharge ?r ?l) 0.1)"]
     duration: 2.0
     nl: "Recharge at {l}"

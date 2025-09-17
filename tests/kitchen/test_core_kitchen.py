@@ -297,12 +297,13 @@ def test_open_is_guarded_and_close_requires_open(basic_task_file):
 def test_move_decreases_energy_and_increases_elapsed(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=10)
     reset_with(env, energy=5)
+    env.enable_durations = True
     # baseline
     e0 = env.world.get_fluent("energy", ("r1",))
-    t0 = env.world.get_fluent("elapsed", tuple())
+    t0 = env.time
     move(env, "hallway", "kitchen")
     e1 = env.world.get_fluent("energy", ("r1",))
-    t1 = env.world.get_fluent("elapsed", tuple())
+    t1 = env.time
     assert e1 == e0 - 1, f"energy should drop by 1, got {e0}->{e1}"
     assert t1 >= t0 + 1 - 1e-9, f"elapsed should increase by 1, got {t0}->{t1}"
 
@@ -481,6 +482,7 @@ def test_heat_numeric_rhs_and_duration(basic_task_file):
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
+    env.enable_durations = True
 
     # Move to kitchen (durations off by default in this helper)
     move(env, "hallway", "kitchen")
@@ -491,7 +493,7 @@ def test_heat_numeric_rhs_and_duration(basic_task_file):
 
     # water-temp(kettle1) should be 30.0; elapsed should +1.0; cost 1.0 this step
     assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(30.0)
-    assert env.world.get_fluent("elapsed", tuple()) >= 1.0 - 1e-9
+    assert env.time >= 1.0 - 1e-9
     assert info.get("action_cost", 0.0) == pytest.approx(1.0)
 
 
@@ -501,6 +503,7 @@ def test_heat_multiple_ns_accumulate_linearly(basic_task_file):
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
+    env.enable_durations = True
     move(env, "hallway", "kitchen")
 
     heat(env, "kettle1", 1)  # +15C, +0.5s
@@ -509,7 +512,7 @@ def test_heat_multiple_ns_accumulate_linearly(basic_task_file):
 
     # Total +105C, elapsed >= 3.5s
     assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(105.0)
-    assert env.world.get_fluent("elapsed", tuple()) >= 3.5 - 1e-9
+    assert env.time >= 3.5 - 1e-9
 
 
 def test_heat_invalid_when_open_or_unpowered(basic_task_file):
@@ -593,7 +596,7 @@ def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
     # 'wait' with duration_var= n (unit=1.0)
     obs, r, done, info = env.step("<move>(wait 0.4)</move>")
     assert not done
-    assert env.world.get_fluent("elapsed", tuple()) >= 0.4 - 1e-9
+    assert env.time >= 0.4 - 1e-9
 
     # Now a single heat with duration 0.5 * 2 = 1.0 pushes elapsed over 1.0 → loss
     obs, r, done, info = heat(env, "kettle1", 2)
