@@ -10,8 +10,10 @@ meta:
   enable_conditional: true
   enable_durations: true
   max_steps: 5
+  time_limit: 5
   seed: 201
   init_fluents:
+    - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 10]
     - ["water-temp", ["mug1"], 100.0]
 

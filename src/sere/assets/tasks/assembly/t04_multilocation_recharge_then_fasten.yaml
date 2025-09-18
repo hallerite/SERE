@@ -13,6 +13,7 @@ meta:
   max_steps: 20
   seed: 104
   init_fluents:
+    - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 2]     # too low for all required moves → must recharge
 
 objects:

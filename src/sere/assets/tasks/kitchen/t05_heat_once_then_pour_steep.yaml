@@ -13,6 +13,7 @@ meta:
   max_steps: 12
   seed: 205
   init_fluents:
+    - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 10]
     - ["water-temp", ["kettle1"], 60.0]
   reward_shaping:

@@ -11,6 +11,7 @@ meta:
   enable_durations: true
   max_steps: 200
   init_fluents:
+    - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 10]
     - ["water-temp", ["kettle1"], 40.0]
   reward_shaping:

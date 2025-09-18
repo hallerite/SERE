@@ -13,6 +13,7 @@ meta:
   max_steps: 3
   seed: 101
   init_fluents:
+    - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 10]
 
 objects:
