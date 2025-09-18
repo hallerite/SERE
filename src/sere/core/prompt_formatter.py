@@ -55,9 +55,49 @@ class PromptFormatter:
         if not self.cfg.show_briefing:
             return ""
 
-        actions = self._format_action_catalog()  # always PDDL signatures
+        # Detect whether energy is actually modeled in this instance
+        has_energy = any(name == "energy" for (name, _args) in world.fluents.keys())
 
-        parts = [
+        # Detect whether time/durations matter by inspecting the domain's actions
+        has_time = False
+        for a in self.domain.actions.values():
+            if (a.duration is not None) or (a.duration_var is not None):
+                has_time = True
+                break
+
+        parts: list[str] = []
+
+        # -------- High-level explainer (plain text, redundant on purpose) --------
+        if has_energy or has_time:
+            expl = []
+            expl.append("You are controlling a robot in a simulated world.")
+            if has_energy:
+                expl.append(
+                    "The robot has limited energy. The current energy is shown in the header as "
+                    "Energy: r1 current/capacity. When energy is zero the robot cannot perform most actions. "
+                    "Use the recharge action at a charging location to restore energy up to the battery capacity. "
+                    "Energy never exceeds the capacity. Plan actions so the robot does not run out of energy."
+                )
+            if has_time:
+                expl.append(
+                    "Each action takes time. The header shows Time: value. Some tasks set a maximum time limit. "
+                    "If total time exceeds the limit the task fails. Choose efficient actions to stay within the time limit."
+                )
+            expl.append(
+                "The header always shows the current step number and the maximum allowed steps. "
+                "If time is enabled it also shows total elapsed time. If energy is modeled it shows the energy level "
+                "for each robot, and the battery capacity if defined."
+            )
+            expl.append(
+                "You must output exactly one valid action per step, formatted as <move>(action arg1 arg2 ...)</move>. "
+                "Do not output explanations or multiple actions in one step. Think step by step. "
+                "Watch energy and recharge if needed. Watch time and avoid wasted moves."
+            )
+            parts.append(" ".join(expl))
+
+        # -------- Action catalog (always included) --------
+        actions = self._format_action_catalog()  # always PDDL signatures
+        parts += [
             f"You are controlling the robot in the '{self.domain.name}' domain.",
             "Reply with exactly one action inside <move>…</move>, e.g., <move>(move r1 A B)</move>.",
             "",
@@ -65,13 +105,14 @@ class PromptFormatter:
             actions or "(none)",
         ]
 
+        # -------- Objects listing --------
         if self.cfg.show_objects_in_sysprompt:
-            # PDDL objects always; NL objects only if display_nl
             parts += ["", "Objects (PDDL):", self._format_objects_pddl(world)]
             if self.cfg.display_nl:
                 parts += ["", "Objects (NL):", self._format_objects_nl(world)]
 
         return "\n".join(parts)
+
 
     # ---------- Observation ----------
     def format_obs(
