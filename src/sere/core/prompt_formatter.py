@@ -9,50 +9,53 @@ import fnmatch
 
 @dataclass
 class PromptFormatterConfig:
-    # System prompt (domain + objects only)
+    # Unified rendering: system prompt + observations
+    display_nl: bool = True   # True → NL+PDDL; False → PDDL-only
+
+    # Visibility / limits
     show_briefing: bool = True
-    sysprompt_mode: str = "nl"      # "nl" | "pddl" | "both"
     show_objects_in_sysprompt: bool = True
-
-    # Observation formatting (state/goal/messages/etc.)
-    obs_mode: str = "nl"            # "nl" | "pddl" | "both"
     nl_max_facts: int = 200
-    show_goal_nl: bool = True
 
-    # Affordances
+    # What to show in obs
+    show_goal: bool = True
     show_affordances: bool = True
-
-    # Fluents/messages
     show_fluents: bool = True
+    show_messages: bool = True
+
+    # Fluents formatting
     fluents_precision: int = 2
     show_fluent_deltas: bool = True
-    visible_fluents: Optional[List[str]] = None   # glob patterns or None -> ["*"]
-    show_messages: bool = True
+    visible_fluents: Optional[List[str]] = None  # glob patterns (None -> ["*"])
 
 
 class PromptFormatter:
     def __init__(self, domain: DomainSpec, config: Optional[PromptFormatterConfig] = None):
-        self.domain = domain
-        self.nl = NLMapper(domain)
         self.cfg = config or PromptFormatterConfig()
         if self.cfg.visible_fluents is None:
             self.cfg.visible_fluents = ["*"]
+        self.domain = domain
+        self.nl = NLMapper(domain)
+    
+    def _pddl(self, pred):  # pred = (name, args)
+        n, a = pred
+        return f"({n}{'' if not a else ' ' + ' '.join(a)})"
 
-    # ---------- System Prompt (DOMAIN + OBJECTS ONLY) ----------
+    def _nl_pred(self, pred):
+        try:
+            return self.nl.pred_to_text(pred)
+        except Exception:
+            return None
+
+    def _inline(self, pddl_str: str, nl_str: str | None) -> str:
+        return f"- {pddl_str}" if not (self.cfg.display_nl and nl_str) else f"- {pddl_str} – {nl_str}"
+
+
     def build_system_prompt(self, *, world: WorldState) -> str:
-        """
-        Includes:
-          - Domain name
-          - I/O contract (<move>…</move>)
-          - Action catalog
-          - Objects in scene (format controlled by sysprompt_mode)
-        Excludes:
-          - features, static facts, initial state, goal, problem PDDL
-        """
         if not self.cfg.show_briefing:
             return ""
 
-        actions = self._format_action_catalog()
+        actions = self._format_action_catalog()  # always PDDL signatures
 
         parts = [
             f"You are controlling the robot in the '{self.domain.name}' domain.",
@@ -63,11 +66,10 @@ class PromptFormatter:
         ]
 
         if self.cfg.show_objects_in_sysprompt:
-            mode = (self.cfg.sysprompt_mode or "nl").lower()
-            if mode in ("nl", "both"):
-                parts += ["", "Objects by type:", self._format_objects_nl(world)]
-            if mode in ("pddl", "both"):
-                parts += ["", "Objects (PDDL):", self._format_objects_pddl(world)]
+            # PDDL objects always; NL objects only if display_nl
+            parts += ["", "Objects (PDDL):", self._format_objects_pddl(world)]
+            if self.cfg.display_nl:
+                parts += ["", "Objects (NL):", self._format_objects_nl(world)]
 
         return "\n".join(parts)
 
@@ -86,55 +88,75 @@ class PromptFormatter:
         prev_fluents: Dict[Tuple[str, Tuple[str, ...]], float],
         affordances: List[str],
     ) -> str:
-        # state
-        facts_nl = self._format_state_nl(world.facts)
-        state_pddl = "\n  ".join(
-            f"({p} {' '.join(a)})" for (p, a) in sorted(world.facts) if p != "adjacent"
-        )
+        # ----- State (compact inline: PDDL – NL) -----
+        facts = [fa for fa in sorted(world.facts) if fa[0] != "adjacent"]
+        state_lines: List[str] = []
+        for pred in facts:
+            pddl = self._pddl(pred)
+            nl = self._nl_pred(pred) if self.cfg.display_nl else None
+            state_lines.append(self._inline(pddl, nl))
+        state_txt = "State:\n" + ("\n".join(state_lines) if state_lines else "(none)")
 
-        body = []
-        mode = (self.cfg.obs_mode or "nl").lower()
-        if mode in ("nl", "both"):
-            body.append("State (NL):\n" + facts_nl)
-        if mode in ("pddl", "both"):
-            body.append("State (PDDL):\n  " + state_pddl)
+        # ----- Goal (compact inline: PDDL – NL) -----
+        goal_txt = ""
+        if self.cfg.show_goal and goal:
+            g_lines: List[str] = []
+            for (name, args) in goal:
+                pddl = self._pddl((name, args))
+                nl = None
+                if self.cfg.display_nl:
+                    spec = self.domain.predicates.get(name)
+                    if spec:
+                        try:
+                            mapping = {spec.args[i][0]: args[i] for i in range(len(spec.args))}
+                            nl = spec.nl.format(**mapping)
+                        except Exception:
+                            nl = None
+                g_lines.append(self._inline(pddl, nl))
+            goal_txt = "Goal:\n" + ("\n".join(g_lines) if g_lines else "")
 
-        # time/steps
+        # ----- Messages -----
+        msg_txt = ""
+        if self.cfg.show_messages and messages:
+            msg_txt = "Messages:\n  - " + "\n  - ".join(messages)
+
+        # ----- Fluents (PDDL only, compact) -----
+        fl_txt = ""
+        if self.cfg.show_fluents and world.fluents:
+            prec = max(0, int(self.cfg.fluents_precision))
+            rows = []
+            for (name, args), val in sorted(world.fluents.items()):
+                if not any(fnmatch.fnmatch(name, pat) for pat in (self.cfg.visible_fluents or ["*"])):
+                    continue
+                argstr = "" if not args else " " + " ".join(args)
+                rows.append(f"- (= ({name}{argstr}) {val:.{prec}f})")
+            fl_txt = "Fluents:\n" + ("\n".join(rows) if rows else "")
+
+        # ----- Affordances (compact inline: PDDL – NL) -----
+        aff_txt = ""
+        if self.cfg.show_affordances and affordances:
+            from ..pddl.grounding import parse_grounded
+            lines = []
+            for a in affordances:
+                nl = self.nl.act_to_text(*parse_grounded(a)) if self.cfg.display_nl else None
+                lines.append(self._inline(a, nl))
+            aff_txt = "Valid moves:\n" + "\n".join(lines)
+
+        # ----- Header + stitch -----
         time_txt = f" | Time: {time_val:.2f}" if durations_on else ""
         header = f"Steps: {steps}/{max_steps}{time_txt}"
 
-        # goal lives in OBS (not in system prompt)
-        goal_txt = ""
-        if self.cfg.show_goal_nl:
-            goal_txt = "Goal (NL):\n" + self._format_goal_nl(goal)
-
-        # messages
-        msg_txt = ""
-        if self.cfg.show_messages and messages:
-            msg_txt = "\nMessages:\n  - " + "\n  - ".join(messages)
-
-        # fluents
-        fl_txt = ""
-        if self.cfg.show_fluents and world.fluents:
-            fl_txt = self._format_fluents(
-                world_fluents=world.fluents,
-                prev_fluents=prev_fluents,
-            )
-
-        # affordances
-        aff_txt = ""
-        if self.cfg.show_affordances and affordances:
-            aff_txt = "Valid moves:\n- " + "\n- ".join(affordances)
-
-        return "\n".join([
-            header,
-            "\n".join(body),
-            goal_txt,
-            msg_txt,
-            fl_txt,
-            aff_txt,
-            "Reply with <move>(action args)</move>."
-        ]).strip()
+        return "\n\n".join(
+            p for p in [
+                header,
+                state_txt,
+                goal_txt,
+                msg_txt,
+                fl_txt,
+                aff_txt,
+                "Reply with <move>(action args)</move>."
+            ] if p
+        ).strip()
 
     def _format_fluents(
         self,

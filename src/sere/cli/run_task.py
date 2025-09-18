@@ -7,22 +7,16 @@ def main():
     task_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_TASK
 
     env, meta = load_task(
-        None,                  # resolve domain by convention
+        None,
         task_path,
         max_steps=50,
         enable_stochastic=False,
         formatter_config=dict(
-            # system prompt appearance
-            sysprompt_mode="both",            # "nl" | "pddl" | "both"
+            display_nl=True,           # True => NL+PDDL everywhere; False => PDDL-only
             show_objects_in_sysprompt=True,
-
-            # observation formatting
-            obs_mode="both",                  # "nl" | "pddl" | "both"
             show_affordances=True,
-            show_goal_nl=True,              # goal appears in obs (not in sys prompt)
             nl_max_facts=200,
         )
-
     )
 
     obs, info = env.reset()
