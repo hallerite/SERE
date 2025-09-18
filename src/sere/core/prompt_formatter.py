@@ -144,7 +144,19 @@ class PromptFormatter:
 
         # ----- Header + stitch -----
         time_txt = f" | Time: {time_val:.2f}" if durations_on else ""
-        header = f"Steps: {steps}/{max_steps}{time_txt}"
+        # Energy summary: rX cur[/cap]
+        energy_bits = []
+        for sym, types in sorted(world.objects.items()):
+            if any(t.lower() == "robot" for t in (types or [])):
+                e = world.get_fluent("energy", (sym,))
+                cap = world.get_fluent("battery-cap", (sym,))
+                has_cap = (("battery-cap", (sym,)) in world.fluents)
+                if has_cap:
+                    energy_bits.append(f"{sym} {e:.2f}/{cap:.2f}")
+                else:
+                    energy_bits.append(f"{sym} {e:.2f}")
+        energy_txt = (" | Energy: " + ", ".join(energy_bits)) if energy_bits else ""
+        header = f"Steps: {steps}/{max_steps}{time_txt}{energy_txt}"
 
         return "\n\n".join(
             p for p in [

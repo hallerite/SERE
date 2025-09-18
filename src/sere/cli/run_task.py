@@ -39,13 +39,6 @@ def main():
     # First observation (current, volatile state)
     print("\n" + obs)
 
-    # Optional: top-up energy for convenience if the fluent exists
-    try:
-        cur = env.world.get_fluent("energy", ("r1",))
-        env.world.set_fluent("energy", ("r1",), max(cur, 10))
-    except Exception:
-        pass
-
     while True:
         try:
             move = input("\n<move> ").strip()

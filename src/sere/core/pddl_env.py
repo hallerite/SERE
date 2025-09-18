@@ -290,6 +290,9 @@ class PDDLEnv:
             for ne in act.num_eff:
                 apply_num_eff(self.world, ne, bind, info)
 
+        # Enforce battery bounds after base numeric updates
+        self._enforce_energy_bounds()
+
         # ---------- Stochastic outcomes ----------
         if self.enable_stochastic and getattr(act, "outcomes", None):
             valid = []
@@ -338,6 +341,9 @@ class PDDLEnv:
                 info["stochastic_outcome"] = getattr(choice, "name", "chosen")
                 info["stochastic_roll"] = roll
                 info["stochastic_total_p"] = totp
+
+        # Re-enforce bounds after any stochastic numeric updates
+        self._enforce_energy_bounds()
 
         # ---------- Base action messages (after effects so probes see new state) ----------
         for msg in getattr(act, "messages", []) or []:
@@ -517,3 +523,22 @@ class PDDLEnv:
 
     def _rs_phi(self, world: WorldState) -> float:
         return sum(w for (expr, w, _) in self.rs_milestones if self._eval_expr(expr))
+
+    def _energy_cap(self, r: str) -> float | None:
+        if not self.enable_numeric:
+            return None
+        cap = self.world.get_fluent("battery-cap", (r,))
+        return cap if (cap > 0.0 or ("battery-cap", (r,)) in self.world.fluents) else None
+
+    def _enforce_energy_bounds(self):
+        """Clamp energy to [0, battery-cap] for all robots (if modeled)."""
+        if not self.enable_numeric:
+            return
+        for r in self._robots():
+            e = self.world.get_fluent("energy", (r,))
+            if e < 0.0:
+                self.world.set_fluent("energy", (r,), 0.0)
+                continue
+            cap = self._energy_cap(r)
+            if cap is not None and e > cap:
+                self.world.set_fluent("energy", (r,), cap)
