@@ -113,7 +113,25 @@ def eval_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: D
     # numeric guard?
     if enable_numeric and NUM_CMP.match(s):
         return eval_num_pre(world, s, bind)
-    # negation?
+
+    # built-in: (distinct a b [c ...]) — true iff all bound tokens are pairwise different
+    if s.startswith("(distinct"):
+        try:
+            assert s.endswith(")")
+            inner = s[1:-1].strip()        # drop surrounding parens
+            parts = inner.split()          # ["distinct", "X", "Y", ...]
+            if len(parts) < 3:             # need at least two terms after 'distinct'
+                return False
+            terms = parts[1:]
+            vals = []
+            for t in terms:
+                v = bind.get(t[1:], t) if t.startswith("?") else t
+                vals.append(v)
+            return len(vals) == len(set(vals))
+        except Exception:
+            return False
+
+    # negation
     if s.startswith("(not"):
         # "(not X)" -> extract X
         assert s.endswith(")")

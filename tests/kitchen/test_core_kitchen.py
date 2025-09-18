@@ -712,3 +712,75 @@ def test_action_messages_and_probes_kitchen(basic_task_file):
     obs, r, done, info = close_(env, "mug1")
     msgs = "\n".join(info.get("messages") or [])
     assert "mug1 is now closed." in msgs
+
+# ==================== DISTINCT PRECONDITIONS ====================
+
+def test_affordances_hide_pour_with_same_source_and_target(basic_task_file):
+    """
+    After moving to the kitchen (co-location satisfied), affordances should
+    include a valid pour (kettle1 -> mug1) but NEVER offer (mug1 -> mug1).
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+    # get co-location with both containers
+    obs, r, done, info = move(env, "hallway", "kitchen")
+
+    # sanity: valid pour is offered
+    assert "(pour r1 kettle1 mug1)" in obs
+
+    # critical: nonsense same-arg pour is NOT offered
+    assert "(pour r1 mug1 mug1)" not in obs
+
+
+def test_execution_rejects_same_source_and_target_with_distinct_error(basic_task_file):
+    """
+    Even if a user types the bad action manually, step() should reject it with a
+    precondition failure that names the (distinct ?k ?m) guard.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+
+    obs, r, done, info = env.step("<move>(pour r1 mug1 mug1)</move>")
+    assert done and info.get("outcome") == "invalid_move"
+    assert "Precondition failed" in info.get("error", "")
+    assert "(distinct ?k ?m)" in info.get("error", "")
+
+
+def test_move_same_from_to_rejected_specifically_by_distinct(basic_task_file):
+    """
+    Make adjacency(from,to) true for kitchen->kitchen so that the ONLY failing
+    guard is (distinct ?from ?to). This isolates the distinct check.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=10)
+    # add adjacency(kitchen,kitchen) so adjacency won't be the blocker
+    reset_with(env, extra_statics=[lit("adjacent", "kitchen", "kitchen")])
+
+    # move to kitchen first
+    move(env, "hallway", "kitchen")
+
+    # now attempt the degenerate move
+    obs, r, done, info = move(env, "kitchen", "kitchen")
+    assert done and info.get("outcome") == "invalid_move"
+    assert "Precondition failed" in info.get("error", "")
+    assert "(distinct ?from ?to)" in info.get("error", "")
+
+
+def test_affordances_hide_move_same_location_even_if_adjacent_is_true(basic_task_file):
+    """
+    With adjacency(kitchen,kitchen) forced true, affordances STILL must not
+    propose (move r1 kitchen kitchen) because of (distinct ?from ?to).
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=10)
+    reset_with(env, extra_statics=[lit("adjacent", "kitchen", "kitchen")])
+
+    # go to kitchen so (at r1 kitchen) and any other movement preconds hold
+    obs, r, done, info = move(env, "hallway", "kitchen")
+
+    # affordances list is in obs text; it must not include the degenerate move
+    assert "(move r1 kitchen kitchen)" not in obs
+
+    # …but it should include non-degenerate neighbors (hallway/pantry/table if adjacent)
+    # We only know hallway<->kitchen is adjacent in this fixture:
+    # from kitchen, moving back to hallway should be offered
+    assert "(move r1 kitchen hallway)" in obs

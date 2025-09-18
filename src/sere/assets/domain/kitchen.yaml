@@ -107,7 +107,11 @@ actions:
 
   - name: move
     params: [{r: robot}, {from: location}, {to: location}]
-    pre: ["(at ?r ?from)", "(adjacent ?from ?to)", "(>= (energy ?r) 1)"]
+    pre:
+      - "(at ?r ?from)"
+      - "(adjacent ?from ?to)"
+      - "(>= (energy ?r) 1)"
+      - "(distinct ?from ?to)"
     add: ["(at ?r ?to)"]
     del: ["(at ?r ?from)"]
     num_eff: ["(decrease (energy ?r) 1)"]
@@ -209,6 +213,7 @@ actions:
       - "(co-located ?r ?k)"
       - "(co-located ?r ?m)"
       - "(or (not (needs-open ?k)) (open ?k))"
+      - "(distinct ?k ?m)"
     cond:
       - when: ["(needs-open ?m)", "(not (open ?m))"]
         add: ["(spilled ?m)"]
