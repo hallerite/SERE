@@ -104,6 +104,16 @@ def pour(env, k, m):
 def steep(env, tb, m):
     return env.step(f"<move>(steep-tea r1 {tb} {m})</move>")
 
+def _affordances(env):
+    # Ask the same generator the UI uses and RETURN it.
+    aff = env.formatter.generate_affordances(
+        env.world, env.static_facts, enable_numeric=env.enable_numeric
+    )
+    # Cheap sanity check so this never bites you again:
+    assert isinstance(aff, list), f"affordances should be list, got {type(aff)}"
+    return aff
+
+
 # --------------------------------------------------------------------------------------
 # Core semantics: derived preds, wildcard deletes, add inference
 # --------------------------------------------------------------------------------------
@@ -717,33 +727,33 @@ def test_action_messages_and_probes_kitchen(basic_task_file):
 
 def test_affordances_hide_pour_with_same_source_and_target(basic_task_file):
     """
-    After moving to the kitchen (co-location satisfied), affordances should
-    include a valid pour (kettle1 -> mug1) but NEVER offer (mug1 -> mug1).
-    """
-    env, _ = load_task(None, str(basic_task_file), max_steps=20)
-    reset_with(env)
-    # get co-location with both containers
-    obs, r, done, info = move(env, "hallway", "kitchen")
-
-    # sanity: valid pour is offered
-    assert "(pour r1 kettle1 mug1)" in obs
-
-    # critical: nonsense same-arg pour is NOT offered
-    assert "(pour r1 mug1 mug1)" not in obs
-
-
-def test_execution_rejects_same_source_and_target_with_distinct_error(basic_task_file):
-    """
-    Even if a user types the bad action manually, step() should reject it with a
-    precondition failure that names the (distinct ?k ?m) guard.
+    After moving to the kitchen (co-location satisfied), the affordance set
+    should contain a valid pour (kettle1 -> mug1) and NEVER (mug1 -> mug1).
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
     move(env, "hallway", "kitchen")
 
+    aff = _affordances(env)
+    assert "(pour r1 kettle1 mug1)" in aff
+    assert "(pour r1 mug1 mug1)" not in aff
+
+
+
+def test_execution_rejects_same_source_and_target_with_distinct_error(basic_task_file):
+    """
+    Ensure all other pour preconditions are satisfied so (distinct ?k ?m)
+    is the one that fails. In this fixture, mug1 has (needs-open), so open it.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=20)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+    open_(env, "mug1")  # satisfy target-open guard
+
     obs, r, done, info = env.step("<move>(pour r1 mug1 mug1)</move>")
     assert done and info.get("outcome") == "invalid_move"
     assert "Precondition failed" in info.get("error", "")
+    # The engine reports the specific failing clause; now it should be distinct.
     assert "(distinct ?k ?m)" in info.get("error", "")
 
 
@@ -768,19 +778,14 @@ def test_move_same_from_to_rejected_specifically_by_distinct(basic_task_file):
 
 def test_affordances_hide_move_same_location_even_if_adjacent_is_true(basic_task_file):
     """
-    With adjacency(kitchen,kitchen) forced true, affordances STILL must not
-    propose (move r1 kitchen kitchen) because of (distinct ?from ?to).
+    Even if adjacency(kitchen,kitchen) is true, (move r1 kitchen kitchen)
+    must be suppressed by (distinct ?from ?to). Non-degenerate moves remain.
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=10)
     reset_with(env, extra_statics=[lit("adjacent", "kitchen", "kitchen")])
+    move(env, "hallway", "kitchen")
 
-    # go to kitchen so (at r1 kitchen) and any other movement preconds hold
-    obs, r, done, info = move(env, "hallway", "kitchen")
+    aff = _affordances(env)
+    assert "(move r1 kitchen kitchen)" not in aff
+    assert "(move r1 kitchen hallway)" in aff
 
-    # affordances list is in obs text; it must not include the degenerate move
-    assert "(move r1 kitchen kitchen)" not in obs
-
-    # …but it should include non-degenerate neighbors (hallway/pantry/table if adjacent)
-    # We only know hallway<->kitchen is adjacent in this fixture:
-    # from kitchen, moving back to hallway should be offered
-    assert "(move r1 kitchen hallway)" in obs

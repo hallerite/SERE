@@ -398,7 +398,12 @@ class PDDLEnv:
     # --- helpers ---
         # ----- Energy/outcome helpers -----
     def _robots(self) -> list[str]:
-        return [sym for sym, typ in self.world.objects.items() if typ.lower() == "robot"]
+        robots = []
+        for sym, types in self.world.objects.items():
+            if any(t.lower() == "robot" for t in (types or [])):
+                robots.append(sym)
+        return robots
+
 
     def _robot_loc(self, r: str) -> Optional[str]:
         locs = [a[1] for (pred, a) in self.world.facts if pred == "at" and len(a) == 2 and a[0] == r]

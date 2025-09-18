@@ -8,12 +8,14 @@ def lit(p: str, *args: str) -> Predicate:
 @dataclass
 class WorldState:
     domain: DomainSpec
-    objects: Dict[str, str] = field(default_factory=dict)   # symbol -> type
+    # symbol -> set of types (multi-typing)
+    objects: Dict[str, Set[str]] = field(default_factory=dict)
     facts: Set[Predicate] = field(default_factory=set)
     fluents: Dict[Tuple[str, Tuple[str, ...]], float] = field(default_factory=dict)
 
     def add_object(self, sym: str, typ: str):
-        self.objects[sym] = typ
+        s = self.objects.setdefault(sym, set())
+        s.add(typ)
 
     def holds(self, p: Predicate) -> bool:
         name, args = p

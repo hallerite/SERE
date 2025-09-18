@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Dict, Set, Optional
+from typing import List, Tuple, Dict, Set, Optional, List
 from ..pddl.domain_spec import DomainSpec, Predicate
 from ..pddl.nl_mapper import NLMapper
 from .world_state import WorldState
@@ -168,34 +168,75 @@ class PromptFormatter:
         static_facts: Set[Predicate],
         enable_numeric: bool = True,
     ) -> List[str]:
+        """
+        Produce grounded actions that satisfy an action's preconditions under the
+        *current* world + statics. Supports objects with multiple types:
+          - world.objects[sym] may be a str (single type) OR an iterable (set/list/tuple)
+            of types; we treat membership accordingly.
+        Returns a (possibly empty) list. Never returns None.
+        """
         if not self.cfg.show_affordances:
             return []
+
+        # --- helper: type membership that tolerates multi-typed objects ---
+        def _is_type(sym: str, typ: str) -> bool:
+            t = world.objects.get(sym)
+            if isinstance(t, str):
+                return t == typ
+            if isinstance(t, (set, list, tuple)):
+                return typ in t
+            return False  # unknown/odd entry → not of this type
+
+        # Build pools per *declared* param type using the world objects.
         by_type: Dict[str, List[str]] = {}
-        for sym, typ in world.objects.items():
-            by_type.setdefault(typ, []).append(sym)
+        for sym in world.objects.keys():
+            t = world.objects[sym]
+            if isinstance(t, str):
+                by_type.setdefault(t, []).append(sym)
+            elif isinstance(t, (set, list, tuple)):
+                for tt in t:
+                    by_type.setdefault(str(tt), []).append(sym)
 
         def cartesian(lists: List[List[str]]) -> List[List[str]]:
             res = [[]]
             for lst in lists:
+                # guard against empty pools to avoid exploding combinations
+                if not lst:
+                    return []
                 res = [r + [x] for r in res for x in lst]
             return res
 
         afford: List[str] = []
         for act in sorted(self.domain.actions.values(), key=lambda x: x.name):
-            pools = [by_type.get(typ, []) for _, typ in act.params]
-            if any(not pool for pool in pools):
+            # Construct candidate pools in the order of act.params
+            pools: List[List[str]] = []
+            for _, typ in act.params:
+                # Prefer the fast lookup from by_type; fall back to scanning for safety
+                pool = by_type.get(typ)
+                if pool is None:
+                    pool = [s for s in world.objects if _is_type(s, typ)]
+                pools.append(pool)
+
+            combos = cartesian(pools)
+            if not combos:
                 continue
-            for args in cartesian(pools):
+
+            for args in combos:
                 bind = {var: val for (var, _), val in zip(act.params, args)}
+
+                # Precondition check (supports numeric, (not ...), (or ...), etc.)
                 ok = True
-                for pre in act.pre:
+                for pre in act.pre or []:
                     if not eval_clause(world, static_facts, pre, bind, enable_numeric=enable_numeric):
                         ok = False
                         break
                 if not ok:
                     continue
+
                 afford.append(f"({act.name} {' '.join(args)})")
+
         return afford
+
 
     # ---------- Helpers ----------
     def _format_action_catalog(self) -> str:
@@ -207,19 +248,24 @@ class PromptFormatter:
 
     def _format_objects_nl(self, world: WorldState) -> str:
         by_type: Dict[str, List[str]] = {}
-        for sym, typ in sorted(world.objects.items()):
-            by_type.setdefault(typ, []).append(sym)
-        return "\n".join(f"- {t}: {', '.join(sorted(syms))}" for t, syms in sorted(by_type.items())) or "(none)"
+        for sym, types in sorted(world.objects.items()):
+            for t in sorted(types or []):
+                by_type.setdefault(t, []).append(sym)
+        return "\n".join(
+            f"- {t}: {', '.join(sorted(syms))}"
+            for t, syms in sorted(by_type.items())
+        ) or "(none)"
+
 
     def _format_objects_pddl(self, world: WorldState) -> str:
-        # PDDL-style :objects section (one line, grouped by type)
+        # Group symbols under every type they claim
         by_type: Dict[str, List[str]] = {}
-        for sym, typ in sorted(world.objects.items()):
-            by_type.setdefault(typ, []).append(sym)
-        chunks = []
-        for t, syms in sorted(by_type.items()):
-            chunks.append(f"{' '.join(sorted(syms))} - {t}")
+        for sym, types in sorted(world.objects.items()):
+            for t in sorted(types or []):
+                by_type.setdefault(t, []).append(sym)
+        chunks = [f"{' '.join(sorted(syms))} - {t}" for t, syms in sorted(by_type.items())]
         return "(:objects " + " ".join(chunks) + ")"
+
 
     def _format_state_nl(self, facts: Set[Predicate]) -> str:
         lines: List[str] = []
