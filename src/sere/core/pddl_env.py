@@ -126,12 +126,17 @@ class PDDLEnv:
         self.steps, self.done = 0, False
         self.time = 0.0
         errs = self.world.validate_invariants()
-        for pl in self.plugins: errs += pl.validate(self.world)
+        for pl in self.plugins:
+            errs += pl.validate(self.world)
         if errs:
             raise ValueError(f"Invariant errors: {errs}")
 
         self.messages.clear()
-        self._system_prompt_cache = self.formatter.build_system_prompt(world=self.world)
+        self._system_prompt_cache = self.formatter.build_system_prompt(
+            world=self.world,
+            time_limit=self.time_limit,
+        )
+
         # reward shaping
         self._rs_seen.clear()
         self._rs_phi_prev = self._rs_phi(self.world)
@@ -145,10 +150,11 @@ class PDDLEnv:
                 numeric=self.enable_numeric,
                 conditional=self.enable_conditional,
                 durations=self.enable_durations,
-                stochastic=self.enable_stochastic
-            )
+                stochastic=self.enable_stochastic,
+            ),
         }
         return obs_text, info
+
 
 
     def step(self, text: str):
@@ -512,6 +518,7 @@ class PDDLEnv:
             messages=self.messages[-self.max_messages:],
             prev_fluents=self._prev_fluents,
             affordances=aff,
+            time_limit=self.time_limit,
         )
 
     def _eval_expr(self, s: str) -> bool:

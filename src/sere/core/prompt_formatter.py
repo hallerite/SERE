@@ -51,7 +51,7 @@ class PromptFormatter:
         return f"- {pddl_str}" if not (self.cfg.display_nl and nl_str) else f"- {pddl_str} – {nl_str}"
 
 
-    def build_system_prompt(self, *, world: WorldState) -> str:
+    def build_system_prompt(self, *, world: WorldState, time_limit: float | None = None) -> str:
         if not self.cfg.show_briefing:
             return ""
 
@@ -80,8 +80,15 @@ class PromptFormatter:
                 )
             if has_time:
                 expl.append(
-                    "Each action takes time. The header shows Time: value. Some tasks set a maximum time limit. "
-                    "If total time exceeds the limit the task fails. Choose efficient actions to stay within the time limit."
+                    "Each action takes time. The header shows Time: value. "
+                    + (
+                        f"This task has a strict time limit of {time_limit:.2f}. "
+                        "If the total time exceeds this value the task fails. "
+                        if time_limit is not None else
+                        "Some tasks may set a maximum time limit. "
+                        "If total time exceeds the limit the task fails. "
+                    )
+                    + "Choose efficient actions to stay within the time limit."
                 )
             expl.append(
                 "The header always shows the current step number and the maximum allowed steps. "
@@ -128,6 +135,7 @@ class PromptFormatter:
         messages: List[str],
         prev_fluents: Dict[Tuple[str, Tuple[str, ...]], float],
         affordances: List[str],
+        time_limit: float | None,          # <-- NEW
     ) -> str:
         # ----- State (compact inline: PDDL – NL) -----
         facts = [fa for fa in sorted(world.facts) if fa[0] != "adjacent"]
@@ -184,7 +192,8 @@ class PromptFormatter:
             aff_txt = "Valid moves:\n" + "\n".join(lines)
 
         # ----- Header + stitch -----
-        time_txt = f" | Time: {time_val:.2f}" if durations_on else ""
+        limit = "" if time_limit is None else f"/{time_limit:.2f}"
+        time_txt = f" | Time: {time_val:.2f}{limit}" if durations_on else ""
         # Energy summary: rX cur[/cap]
         energy_bits = []
         for sym, types in sorted(world.objects.items()):
@@ -210,6 +219,7 @@ class PromptFormatter:
                 "Reply with <move>(action args)</move>."
             ] if p
         ).strip()
+
 
     def _format_fluents(
         self,
