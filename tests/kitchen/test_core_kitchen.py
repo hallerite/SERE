@@ -789,3 +789,89 @@ def test_affordances_hide_move_same_location_even_if_adjacent_is_true(basic_task
     assert "(move r1 kitchen kitchen)" not in aff
     assert "(move r1 kitchen hallway)" in aff
 
+# ==================== INVALID MOVE RETRIES ====================
+
+def test_invalid_retry_zero_terminates_immediately(basic_task_file):
+    env, _ = load_task(None, str(basic_task_file), max_steps=5, invalid_penalty=-0.1)
+    # Hard fail policy: zero retries
+    env.illegal_move_retries = 0
+    reset_with(env)
+    # Invalid from hallway: not co-located with kettle
+    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert done and info.get("outcome") == "invalid_move"
+    assert r == -0.1
+    # Next step must raise
+    import pytest
+    with pytest.raises(RuntimeError):
+        env.step("<move>(move r1 hallway kitchen)</move>")
+
+def test_invalid_retry_one_allows_retry_without_advancing_state(basic_task_file):
+    env, _ = load_task(None, str(basic_task_file), max_steps=5, invalid_penalty=-0.1)
+    env.illegal_move_retries = 1          # allow exactly one mulligan
+    env.invalid_retry_penalty = 0.0       # make it easy to assert reward path
+    reset_with(env)
+
+    steps0 = env.steps
+    time0  = env.time
+    facts0 = set(env.world.facts)
+
+    # 1st invalid → NOT done, same state, warning in obs
+    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert not done
+    assert "Invalid:" in obs and "Retries left" in obs
+    assert env.steps == steps0, "invalid retry must not increment steps"
+    assert env.time == time0, "invalid retry must not advance time"
+    assert env.world.facts == facts0, "invalid retry must not mutate world"
+    assert info.get("invalid_move") is True
+
+    # Now issue a valid move → should progress and clear retry counter
+    obs, r, done, info = env.step("<move>(move r1 hallway kitchen)</move>")
+    assert info.get("outcome") in ("ongoing", "timeout", "success")
+    # a valid transition increments steps and may change world/time
+    assert env.steps == steps0 + 1
+    # retry counter should clear so a future invalid gets full allowance again
+    assert getattr(env, "_retries_used_this_turn", -999) == 0
+
+def test_invalid_retry_exhausts_then_terminates(basic_task_file):
+    env, _ = load_task(None, str(basic_task_file), max_steps=5, invalid_penalty=-0.2)
+    env.illegal_move_retries = 2   # two mulligans; the third invalid should end it
+    reset_with(env)
+
+    # 1st invalid (ok)
+    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert not done
+    # 2nd invalid (still ok)
+    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert not done
+    # 3rd invalid (exhausted -> terminal)
+    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert done and info.get("outcome") == "invalid_move"
+    assert r == -0.2
+
+def test_invalid_retry_penalty_applied_on_nonterminal(basic_task_file):
+    env, _ = load_task(None, str(basic_task_file), max_steps=5, invalid_penalty=-1.0)
+    env.illegal_move_retries = 1
+    env.invalid_retry_penalty = -0.05
+    reset_with(env)
+
+    # First invalid → nonterminal, gets retry-penalty (not invalid_penalty)
+    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert not done
+    assert r == -0.05
+
+    # Second invalid → terminal, gets invalid_penalty
+    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert done and r == -1.0
+
+def test_invalid_retry_keeps_observation_constant(basic_task_file):
+    env, _ = load_task(None, str(basic_task_file), max_steps=5)
+    env.illegal_move_retries = 1
+    reset_with(env)
+
+    # Grab baseline obs (strip the dynamic warning later)
+    base_obs = env._obs()
+    obs1, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert not done
+    # Remove the warning header and compare the trailing observation section
+    tail1 = obs1.split("\n\n", 1)[-1]
+    assert tail1 == base_obs, "nonterminal invalid must echo the same underlying observation"

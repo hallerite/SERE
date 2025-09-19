@@ -51,23 +51,25 @@ def _format_msg(template: str, bind: Dict[str, str], world: WorldState) -> str:
 
 class PDDLEnv:
     def __init__(self, domain: DomainSpec, world: WorldState,
-                 static_facts: set, goal: List[tuple],
-                 formatter_config: Optional[dict] = None,
-                 formatter_obj: Optional[PromptFormatter] = None,
-                 plugins: Optional[List[InvariantPlugin]] = None,
-                 max_steps: int = 40, step_penalty: float = -0.01,
-                 invalid_penalty: float = -0.1, goal_reward: float = 1.0,
-                 *,
-                 enable_numeric: bool = False,
-                 enable_conditional: bool = False,
-                 enable_durations: bool = False,
-                 enable_stochastic: bool = True, 
-                 max_messages: int = 8,
-                 time_limit: Optional[float] = None,
+        static_facts: set, goal: List[tuple],
+        formatter_config: Optional[dict] = None,
+        formatter_obj: Optional[PromptFormatter] = None,
+        plugins: Optional[List[InvariantPlugin]] = None,
+        max_steps: int = 40, step_penalty: float = -0.01,
+        invalid_penalty: float = -0.1, goal_reward: float = 1.0,
+        *,
+        illegal_move_retries: int = 0,
+        invalid_retry_penalty: float = 0.0,
+        enable_numeric: bool = False,
+        enable_conditional: bool = False,
+        enable_durations: bool = False,
+        enable_stochastic: bool = True, 
+        max_messages: int = 8,
+        time_limit: Optional[float] = None,
+        default_duration: float = 1.0,
+        seed: Optional[int] = None,
+        reward_shaping: Optional[dict] = None):
 
-                 default_duration: float = 1.0,
-                 seed: Optional[int] = None,
-                 reward_shaping: Optional[dict] = None):
         self.domain, self.world = domain, world
         self.static_facts, self.goal = static_facts, goal
 
@@ -94,6 +96,10 @@ class PDDLEnv:
         self.enable_conditional = enable_conditional
         self.enable_durations = enable_durations
         self.enable_stochastic = enable_stochastic
+
+        self.illegal_move_retries = max(0, int(illegal_move_retries))
+        self.invalid_retry_penalty = float(invalid_retry_penalty)
+        self._retries_used_this_turn = 0
 
         self.default_duration = float(default_duration)
         self.time_limit = time_limit
@@ -130,6 +136,8 @@ class PDDLEnv:
             errs += pl.validate(self.world)
         if errs:
             raise ValueError(f"Invariant errors: {errs}")
+
+        self._retries_used_this_turn = 0
 
         self.messages.clear()
         self._system_prompt_cache = self.formatter.build_system_prompt(
@@ -381,7 +389,6 @@ class PDDLEnv:
                 return self._illegal(f"Postcondition violated: {errs}", info)
 
         # ---------- Bookkeeping / termination ----------
-                # ---------- Bookkeeping / termination ----------
         self.steps += 1
         obs, base_r, done, info = self._post_apply_success(info)
 
@@ -402,6 +409,8 @@ class PDDLEnv:
                             self._rs_seen.add(i)
         if abs(rs_bonus) > 0:
             info["shaping_bonus"] = rs_bonus
+
+        self._retries_used_this_turn = 0
 
         return obs, base_r + rs_bonus, done, info
 
@@ -492,14 +501,29 @@ class PDDLEnv:
 
     
     def _illegal(self, msg, info):
+        self._retries_used_this_turn += 1
+
         info.update({
             "invalid_move": True,
             "error": msg,
             "outcome": "invalid_move",
-            "messages": self.messages[-self.max_messages:],  # add
+            "messages": self.messages[-self.max_messages:],
         })
-        self.done = True
-        return f"Invalid: {msg}\nGame Over.", self.invalid_penalty, True, info
+
+        # Exhausted when count > allowed retries.
+        # Example: retries=0 → first invalid (count=1) is terminal.
+        exhausted = (self._retries_used_this_turn > self.illegal_move_retries)
+        if exhausted:
+            self.done = True
+            return f"Invalid: {msg}\nGame Over.", self.invalid_penalty, True, info
+
+        # Non-terminal retry: same observation with a warning; do NOT advance world/time/steps.
+        retries_left = max(self.illegal_move_retries - self._retries_used_this_turn + 1, 0)
+        retry_hdr = (
+            f"Invalid: {msg}\n"
+            f"Please try again. Retries left this turn: {retries_left}\n\n"
+        )
+        return retry_hdr + self._obs(), self.invalid_retry_penalty, False, info
 
     def _obs(self) -> str:
         # affordances (on/off decided by formatter)
