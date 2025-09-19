@@ -14,7 +14,7 @@ meta:
   seed: 206
   init_fluents:
     - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 10]
+    - ["energy", ["r1"], 8]
     - ["water-temp", ["kettle1"], 90.0]
   reward_shaping:
     mode: instant
