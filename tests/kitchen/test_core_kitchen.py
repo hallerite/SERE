@@ -875,3 +875,12 @@ def test_invalid_retry_keeps_observation_constant(basic_task_file):
     # Remove the warning header and compare the trailing observation section
     tail1 = obs1.split("\n\n", 1)[-1]
     assert tail1 == base_obs, "nonterminal invalid must echo the same underlying observation"
+
+def test_arity_mismatch_is_invalid_not_crash(basic_task_file):
+    env, _ = load_task(None, str(basic_task_file), max_steps=5)
+    env.illegal_move_retries = 0  # fail fast for clarity
+    reset_with(env)
+    # too many args for a 3-ary action
+    obs, r, done, info = env.step("<move>(steep-tea r1 teabag1 mug1 kitchen)</move>")
+    assert done and info.get("outcome") == "invalid_move"
+    assert "Arity mismatch" in info.get("error", "")

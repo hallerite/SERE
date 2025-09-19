@@ -186,6 +186,12 @@ class PDDLEnv:
             return self._illegal(f"Unknown action '{name}'", info)
 
         act: ActionSpec = self.domain.actions[name]
+
+        # ---- Arity check ----
+        expected = len(act.params)
+        got = len(args)
+        if got != expected:
+            return self._illegal(f"Arity mismatch for action '{name}': expected {expected}, got {got}", info)
         bind = {var: val for (var, _), val in zip(act.params, args)}
         
         # Validate duration_var if present: must parse as float > 0
