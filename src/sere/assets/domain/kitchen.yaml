@@ -203,7 +203,7 @@ actions:
     num_eff: ["(increase (water-temp ?k) 15*?n)"]
     duration_var: "n"
     duration_unit: 0.5
-    nl: "Heat {k} for {n} ticks"
+    nl: "Heat {k} for {n} ticks (each tick increases water temp by 15°C)"
     messages:
       - "Heating {k}. Water temperature is now (water-temp ?k)°C."
 
@@ -235,7 +235,7 @@ actions:
     pre: ["(co-located ?r ?m)", "(in ?tb ?m)", "(>= (water-temp ?m) 80)"]
     add: ["(tea-ready ?m)"]
     duration: 2.0
-    nl: "Steep tea in {m}"
+    nl: "Steep tea in {m} (requires water ≥80°C)"
     messages:
       - "Tea steeped. {m} is ready."
 
