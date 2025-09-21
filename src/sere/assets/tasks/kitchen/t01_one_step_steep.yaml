@@ -9,8 +9,8 @@ meta:
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
-  max_steps: 5
-  time_limit: 5
+  max_steps: 3
+  time_limit: 4
   seed: 201
   init_fluents:
     - ["battery-cap", ["r1"], 8]
