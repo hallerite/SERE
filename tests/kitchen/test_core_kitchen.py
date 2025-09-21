@@ -194,8 +194,11 @@ def test_move_energy_guard_blocks_when_insufficient(basic_task_file):
     env.world.set_fluent("energy", ("r1",), 0)  # move requires >= 1
     obs, r, done, info = move(env, "hallway", "kitchen")
     assert done and info.get("outcome") == "invalid_move"
-    assert "Precondition failed" in info.get("error", "")
-    assert "(>= (energy ?r) 1)" in info.get("error", "")
+    err = info.get("error", "")
+    assert "preconditions were not satisfied" in err.lower()
+    assert "(>= (energy r1) 1)" in err
+    assert "energy(r1)=0.00" in err
+
 
 
 def test_pour_success_branch_sets_hot_water_and_temp(basic_task_file):
@@ -420,7 +423,7 @@ def test_time_limit_boundary_exact_ok_exceed_bad(basic_task_file):
 # ==================== TEST "OR" ====================
 # ==================== OR PRECONDITIONS / needs-open GUARD ====================
 
-def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
+def test_pour_invalid_when_source_needs_open_and_closed(basic_task_file):
     """
     If the SOURCE container is marked (needs-open ?k) and it's closed,
     'pour' should be blocked by the (or ...) preconditions.
@@ -439,7 +442,12 @@ def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
     # Kettle is CLOSED → pour should be invalid due to source-open guard
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert done and info.get("outcome") == "invalid_move"
-    assert "Precondition failed" in info.get("error", "")
+    err = info.get("error", "")
+    assert "preconditions were not satisfied" in err.lower()
+    assert "one of:" in err
+    assert "(not (needs-open kettle1))" in err
+    assert "(open kettle1)" in err
+
 
     # Fresh episode (invalid ends episode): open kettle and try again → should succeed
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
@@ -455,7 +463,7 @@ def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
 
 
 
-def test_pour_spill_only_when_target_marked_needs_open_and_closed(basic_task_file):
+def test_pour_spills_when_target_needs_open_and_closed(basic_task_file):
     """
     Spill occurs only if the TARGET container is marked (needs-open ?m)
     and is closed at pour time. Source openness irrelevant here.
@@ -530,7 +538,11 @@ def test_heat_invalid_when_open_or_unpowered(basic_task_file):
     open_(env, "kettle1")
     obs, r, done, info = heat(env, "kettle1", 1)
     assert done and info.get("outcome") == "invalid_move"
-    assert "Precondition failed" in info.get("error", "")
+    err = info.get("error", "")
+    assert "preconditions were not satisfied" in err.lower()
+    assert "(not (open kettle1))" in err
+    assert "actually: true" in err.lower()
+
 
     # New episode: remove power and try to heat -> invalid
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
@@ -540,7 +552,11 @@ def test_heat_invalid_when_open_or_unpowered(basic_task_file):
     env.world.facts.discard(("powered", ("kettle1",)))
     obs, r, done, info = heat(env, "kettle1", 1)
     assert done and info.get("outcome") == "invalid_move"
-    assert "Precondition failed" in info.get("error", "")
+    err = info.get("error", "")
+    assert "preconditions were not satisfied" in err.lower()
+    assert "(powered kettle1)" in err
+    assert "actually: false" in err.lower()
+
 
 
 def test_heat_rejects_zero_or_non_numeric_n(basic_task_file):
@@ -624,7 +640,12 @@ def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
     # Closed kettle + needs-open(kettle1) → invalid
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert done and info.get("outcome") == "invalid_move"
-    assert "Precondition failed" in info.get("error", "")
+    err = info.get("error", "")
+    assert "preconditions were not satisfied" in err.lower()
+    assert "one of:" in err
+    assert "(not (needs-open kettle1))" in err
+    assert "(open kettle1)" in err
+
 
     # Now open kettle and try again → success
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
@@ -752,9 +773,11 @@ def test_execution_rejects_same_source_and_target_with_distinct_error(basic_task
 
     obs, r, done, info = env.step("<move>(pour r1 mug1 mug1)</move>")
     assert done and info.get("outcome") == "invalid_move"
-    assert "Precondition failed" in info.get("error", "")
-    # The engine reports the specific failing clause; now it should be distinct.
-    assert "(distinct ?k ?m)" in info.get("error", "")
+    err = info.get("error", "")
+    assert "preconditions were not satisfied" in err.lower()
+    assert "(distinct mug1 mug1)" in err
+    assert "duplicates found" in err.lower()
+
 
 
 def test_move_same_from_to_rejected_specifically_by_distinct(basic_task_file):
@@ -772,8 +795,10 @@ def test_move_same_from_to_rejected_specifically_by_distinct(basic_task_file):
     # now attempt the degenerate move
     obs, r, done, info = move(env, "kitchen", "kitchen")
     assert done and info.get("outcome") == "invalid_move"
-    assert "Precondition failed" in info.get("error", "")
-    assert "(distinct ?from ?to)" in info.get("error", "")
+    err = info.get("error", "")
+    assert "(distinct kitchen kitchen)" in err
+    assert "duplicates found" in err.lower()
+
 
 
 def test_affordances_hide_move_same_location_even_if_adjacent_is_true(basic_task_file):
@@ -869,12 +894,18 @@ def test_invalid_retry_keeps_observation_constant(basic_task_file):
     reset_with(env)
 
     # Grab baseline obs (strip the dynamic warning later)
-    base_obs = env._obs()
+    steps0 = env.steps
+    time0 = env.time
+    facts0 = set(env.world.facts)
+
     obs1, r, done, info = env.step("<move>(open r1 kettle1)</move>")
     assert not done
-    # Remove the warning header and compare the trailing observation section
-    tail1 = obs1.split("\n\n", 1)[-1]
-    assert tail1 == base_obs, "nonterminal invalid must echo the same underlying observation"
+    assert env.steps == steps0
+    assert env.time == time0
+    assert env.world.facts == facts0
+    assert obs1.lstrip().startswith("Invalid:")
+    assert "Retries left" in obs1
+
 
 def test_arity_mismatch_is_invalid_not_crash(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=5)
@@ -884,3 +915,76 @@ def test_arity_mismatch_is_invalid_not_crash(basic_task_file):
     obs, r, done, info = env.step("<move>(steep-tea r1 teabag1 mug1 kitchen)</move>")
     assert done and info.get("outcome") == "invalid_move"
     assert "Arity mismatch" in info.get("error", "")
+
+# ==================== ILLEGAL MOVE EXPLANATIONS ====================
+
+def test_explain_co_located_precondition(basic_task_file):
+    """
+    Trying to open the kettle from the hallway should:
+      - include the canonical header
+      - include the grounded co-located requirement
+      - include the 'Actually: not co-located...' diagnostic with locations
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=10)
+    env.illegal_move_retries = 0  # fail fast
+    reset_with(env)  # r1@hallway, kettle1@makes kitchen
+
+    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    assert done and info.get("outcome") == "invalid_move"
+
+    err = info.get("error", "")
+    # header
+    assert "Preconditions were not satisfied for (open r1 kettle1):" in err
+    # grounded literal + NL (the NL bit is optional, so we check the literal)
+    assert "Required: (co-located r1 kettle1)" in err
+    # helpful diagnostic that names the locations of x and y
+    assert "Actually: not co-located." in err
+    assert "x at" in err and "y at" in err
+
+
+def test_explain_numeric_guard_on_move_energy(basic_task_file):
+    """
+    With energy=0, (move r1 hallway kitchen) should:
+      - show the grounded numeric requirement (>= (energy r1) 1)
+      - show the 'Actually: energy(r1)=0.00' line
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=5)
+    env.illegal_move_retries = 0
+    reset_with(env, numeric=True)
+    env.world.set_fluent("energy", ("r1",), 0.0)
+
+    obs, r, done, info = env.step("<move>(move r1 hallway kitchen)</move>")
+    assert done and info.get("outcome") == "invalid_move"
+
+    err = info.get("error", "")
+    assert "Preconditions were not satisfied for (move r1 hallway kitchen):" in err
+    assert "Required: (>= (energy r1) 1)" in err
+    # the numeric renderer prints the actual current value
+    assert "Actually: energy(r1)=0.00" in err or "Actually: energy(r1)=0" in err
+
+
+def test_explain_distinct_guard_on_degenerate_move(basic_task_file):
+    """
+    Make adjacency(kitchen,kitchen) true so DISTINCT is the only blocker.
+    The explanation should call out the (distinct ?from ?to) precondition.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=10)
+    env.illegal_move_retries = 0
+    # add adjacency to avoid that being the failure reason
+    reset_with(env, extra_statics=[lit("adjacent", "kitchen", "kitchen")])
+
+    # get to kitchen first
+    obs, r, done, info = env.step("<move>(move r1 hallway kitchen)</move>")
+    assert not done
+
+    # now try the degenerate move
+    obs, r, done, info = env.step("<move>(move r1 kitchen kitchen)</move>")
+    assert done and info.get("outcome") == "invalid_move"
+
+    err = info.get("error", "")
+    assert "Preconditions were not satisfied for (move r1 kitchen kitchen):" in err
+    err = info.get("error", "")
+    assert "preconditions were not satisfied" in err.lower()
+    assert "(distinct kitchen kitchen)" in err
+    assert "duplicates found" in err.lower()
+

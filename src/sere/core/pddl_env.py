@@ -3,7 +3,7 @@ import re, random
 from ..pddl.domain_spec import DomainSpec, ActionSpec, Predicate
 from ..pddl.grounding import parse_grounded, instantiate, ground_literal
 from .prompt_formatter import PromptFormatter, PromptFormatterConfig
-from .semantics import eval_num_pre, apply_num_eff, eval_clause
+from .semantics import eval_num_pre, apply_num_eff, eval_clause, trace_clause, EvalNode
 from .world_state import WorldState
 from .invariants import InvariantPlugin
 
@@ -207,9 +207,13 @@ class PDDLEnv:
 
 
         # ---------- Preconditions (supports (or ...) and (not ...)) ----------
+        failures: List[EvalNode] = []
         for s in (act.pre or []):
-            if not eval_clause(self.world, self.static_facts, s, bind, enable_numeric=self.enable_numeric):
-                return self._illegal(f"Precondition failed: {s}", info)
+            node = trace_clause(self.world, self.static_facts, s, bind, enable_numeric=self.enable_numeric)
+            if not node.satisfied:
+                failures.append(node)
+        if failures:
+            return self._illegal(self._format_invalid_report(name, args, failures), info)
 
         # ---------- Apply base effects ----------
         _, add, dele = instantiate(self.domain, act, args)
@@ -579,3 +583,79 @@ class PDDLEnv:
             cap = self._energy_cap(r)
             if cap is not None and e > cap:
                 self.world.set_fluent("energy", (r,), cap)
+
+    # ---------- Invalid report rendering ----------
+    def _format_invalid_report(self, act_name: str, args: Tuple[str, ...], failures: List[EvalNode]) -> str:
+        """Pretty, grounded, NL+PDDL explanation of *why* a move is invalid."""
+        # Best-effort NL mapper (predicates only)
+        from ..pddl.nl_mapper import NLMapper
+        nl = NLMapper(self.domain)
+
+        def _pred_nl(grounded: str) -> Optional[str]:
+            # try to NL-ify "(pred a b)" when it's a known predicate
+            try:
+                from ..pddl.grounding import parse_grounded
+                name, gargs = parse_grounded(grounded)
+                if name in self.domain.predicates:
+                    return nl.pred_to_text((name, gargs))
+            except Exception:
+                pass
+            return None
+
+        def _fmt_node(n: EvalNode, indent: int = 0) -> List[str]:
+            pad = "  " * indent
+            lines: List[str] = []
+            bullet = f"{pad}- "
+            if n.kind == "num":
+                grounded = n.grounded or n.expr
+                cur = n.details.get("current")
+                lines.append(f"{bullet}Required: {grounded}")
+                lines.append(f"{pad}    Actually: {n.details.get('fluent')}({', '.join(n.details.get('args') or [])})={cur:.2f}")
+            elif n.kind == "distinct":
+                grounded = n.grounded or n.expr
+                dups = n.details.get("duplicates") or []
+                lines.append(f"{bullet}Required: {grounded}")
+                if n.satisfied:
+                    lines.append(f"{pad}    Actually: OK.")
+                else:
+                    lines.append(f"{pad}    Actually: duplicates found → {', '.join(dups)}.")
+            elif n.kind == "not":
+                # show child and say it's true
+                child = n.children[0] if n.children else None
+                if child and child.grounded:
+                    ground = child.grounded
+                    lines.append(f"{bullet}Required: (not {ground})")
+                    maybe = _pred_nl(ground)
+                    if maybe:
+                        lines.append(f"{pad}    NL: {maybe}")
+                    lines.append(f"{pad}    Actually: true.")
+                else:
+                    lines.append(f"{bullet}Required: {n.expr}")
+                    lines.append(f"{pad}    Actually: violated.")
+            elif n.kind == "or":
+                lines.append(f"{bullet}Required: one of:")
+                for c in n.children:
+                    g = c.grounded or c.expr
+                    lines.append(f"{pad}    • {g}  — {'OK' if c.satisfied else 'false'}")
+            else:
+                # literal
+                g = n.grounded or n.expr
+                nl_line = _pred_nl(g)
+                lines.append(f"{bullet}Required: {g}" + (f" — \"{nl_line}\"" if nl_line else ""))
+                if n.satisfied:
+                    lines.append(f"{pad}    Actually: OK.")
+                else:
+                    # try to provide a hint for some common patterns
+                    if g.startswith("(co-located"):
+                        xs = n.details.get("locs_x", [])
+                        ys = n.details.get("locs_y", [])
+                        lines.append(f"{pad}    Actually: not co-located. x at {xs or '∅'}, y at {ys or '∅'}.")
+                    else:
+                        lines.append(f"{pad}    Actually: false.")
+            return lines
+
+        head = f"Preconditions were not satisfied for ({act_name} {' '.join(args)}):"
+        body_lines: List[str] = []
+        for n in failures:
+            body_lines.extend(_fmt_node(n))
+        return head + "\n\n" + "\n".join(body_lines)
