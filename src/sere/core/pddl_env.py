@@ -106,9 +106,9 @@ class PDDLEnv:
         self.time_limit = time_limit
         self.time = 0.0
         
-        self.messages: List[str] = []
+        self.messages: List[str] = []          # full log (kept for info/debug)
+        self._step_messages: List[str] = []     # last-turn-only buffer
         self.max_messages = int(max_messages)
-
 
         self.rng = random.Random(seed)
 
@@ -133,9 +133,9 @@ class PDDLEnv:
                 reward=float(r.get("reward", 0.0)),
             ))
 
-
         self._rs_seen: set = set()      # indices of milestones achieved (instant)
         self._rs_phi_prev: float = 0.0  # potential at previous state
+
 
     def reset(self, *, seed: Optional[int] = None):
         if seed is not None:
@@ -151,6 +151,7 @@ class PDDLEnv:
         self._retries_used_this_turn = 0
 
         self.messages.clear()
+        self._step_messages.clear()   # <-- clear last-turn buffer
         self._system_prompt_cache = self.formatter.build_system_prompt(
             world=self.world,
             time_limit=self.time_limit,
@@ -159,7 +160,6 @@ class PDDLEnv:
         # reward shaping
         self._rs_seen.clear()
         self._rs_phi_prev = self._rs_phi(self.world)
-
 
         obs_text = self._obs()  # PLAIN TEXT ONLY
         info = {
@@ -212,8 +212,7 @@ class PDDLEnv:
             if dur_multiplier <= 0.0:
                 return self._illegal(f"Duration multiplier '{n_name}' must be > 0.", info)
 
-
-        # ---------- Preconditions (supports (or ...) and (not ...)) ----------
+        # ---------- Preconditions ----------
         failures: List[EvalNode] = []
         for s in (act.pre or []):
             node = trace_clause(self.world, self.static_facts, s, bind, enable_numeric=self.enable_numeric)
@@ -225,7 +224,6 @@ class PDDLEnv:
         # ---------- Apply base effects ----------
         _, add, dele = instantiate(self.domain, act, args)
 
-        # Engine niceties (wildcard deletes & inferring robot location for obj-at adds)
         def _is_unbound(x: Any) -> bool:
             return isinstance(x, str) and x.startswith("?")
 
@@ -314,7 +312,7 @@ class PDDLEnv:
                         for ne in cb.num_eff:
                             apply_num_eff(self.world, ne, bind, info)
                     for m in cb.messages:
-                        self.messages.append(_format_msg(m, bind, self.world))
+                        self._push_msg(_format_msg(m, bind, self.world))
 
         # ---------- Numeric effects (unconditional) ----------
         if self.enable_numeric and act.num_eff:
@@ -367,7 +365,7 @@ class PDDLEnv:
                         apply_num_eff(self.world, ne, bind, info)
 
                 for m in choice.messages or []:
-                    self.messages.append(_format_msg(m, bind, self.world))
+                    self._push_msg(_format_msg(m, bind, self.world))     # CHANGED
 
                 info["stochastic_outcome"] = getattr(choice, "name", "chosen")
                 info["stochastic_roll"] = roll
@@ -378,7 +376,7 @@ class PDDLEnv:
 
         # ---------- Base action messages (after effects so probes see new state) ----------
         for msg in getattr(act, "messages", []) or []:
-            self.messages.append(_format_msg(msg, bind, self.world))
+            self._push_msg(_format_msg(msg, bind, self.world))            # CHANGED
 
         # ---------- Time / duration ----------
         if self.enable_durations:
@@ -397,7 +395,6 @@ class PDDLEnv:
                 dur = float(act.duration) if (act.duration is not None) else self.default_duration
 
             self._advance_time(dur, info)
-
 
         # ---------- Plugins (post) ----------
         for pl in self.plugins:
@@ -430,6 +427,7 @@ class PDDLEnv:
         self._retries_used_this_turn = 0
 
         return obs, base_r + rs_bonus, done, info
+
 
 
 
@@ -491,7 +489,6 @@ class PDDLEnv:
         # Already terminal (e.g., timeout flagged in _advance_time)
         if self.done:
             pass
-
         else:
             # Rule-based termination (success/failure/alt endings)
             for r in self.termination_rules:
@@ -520,8 +517,12 @@ class PDDLEnv:
         if not self.done and "outcome" not in info:
             info["outcome"] = "ongoing"
 
-        info["messages"] = self.messages[-self.max_messages:]
-        return self._obs(), reward, self.done, info
+        # snapshot last-turn messages BEFORE obs clears the per-step buffer
+        last_turn = self._step_messages[:]
+        obs = self._obs()
+        info["messages"] = last_turn
+        return obs, reward, self.done, info
+
 
     
     def _illegal(self, msg, info):
@@ -555,17 +556,27 @@ class PDDLEnv:
             self.world, self.static_facts, enable_numeric=self.enable_numeric
         )
 
-        return self.formatter.format_obs(
+        # Show ONLY last-turn messages in the obs, then clear the per-step buffer
+        step_msgs = self._step_messages[:]
+        text = self.formatter.format_obs(
             world=self.world,
             steps=self.steps,
             max_steps=self.max_steps,
             time_val=self.time,
             durations_on=self.enable_durations,
-            messages=self.messages[-self.max_messages:],
+            messages=step_msgs,
             affordances=aff,
             time_limit=self.time_limit,
             termination_rules=self.termination_rules,
-        )  
+        )
+        self._step_messages.clear()
+        return text
+
+
+    def _push_msg(self, s: str):
+        """Append a message to the last-turn buffer and the full log."""
+        self._step_messages.append(s)
+        self.messages.append(s)
 
     def _eval_expr(self, s: str) -> bool:
         # uses existing clause evaluator (supports numeric & boolean)
