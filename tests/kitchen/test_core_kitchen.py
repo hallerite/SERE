@@ -720,7 +720,7 @@ def test_action_messages_and_probes_kitchen(basic_task_file):
     heat(env, "kettle1", 6)
     obs, r, done, info = pour(env, "kettle1", "mug1")
     msgs = "\n".join(info.get("messages") or [])
-    assert "spill" in msgs.lower()
+    assert ("spill" in msgs.lower()) or ("tried to pour" in msgs.lower())
 
     # --- Simple brace/var substitution sanity: pick-up/put-in/close messages ---
     env, _ = load_task(None, str(basic_task_file), max_steps=40)

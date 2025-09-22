@@ -136,10 +136,23 @@ def eval_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: D
         assert s.endswith(")")
         inner = s[4:-1].strip()
         return not eval_clause(world, static_facts, inner, bind, enable_numeric=enable_numeric)
-    # disjunction?
+
+    # conjunction
+    if s.startswith("(and"):
+        children = _split_top_level(s)
+        return all(
+            eval_clause(world, static_facts, c, bind, enable_numeric=enable_numeric)
+            for c in children
+        )
+
+    # disjunction
     if s.startswith("(or"):
         children = _split_top_level(s)
-        return any(eval_clause(world, static_facts, c, bind, enable_numeric=enable_numeric) for c in children)
+        return any(
+            eval_clause(world, static_facts, c, bind, enable_numeric=enable_numeric)
+            for c in children
+        )
+
     # plain literal
     try:
         is_neg, litp = ground_literal(s, bind)
@@ -223,6 +236,18 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
             children=[child],
         )
 
+    # conjunction
+    if s.startswith("(and"):
+        parts = _split_top_level(s)
+        kids = [trace_clause(world, static_facts, c, bind, enable_numeric=enable_numeric) for c in parts]
+        sat = all(k.satisfied for k in kids)
+        return EvalNode(
+            expr=_bind_infix(s, bind),
+            satisfied=sat,
+            kind="and",
+            children=kids,
+        )
+
     # disjunction
     if s.startswith("(or"):
         parts = _split_top_level(s)
@@ -234,6 +259,7 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
             kind="or",
             children=kids,
         )
+
 
     # plain literal (positive or negated via ground_literal)
     try:

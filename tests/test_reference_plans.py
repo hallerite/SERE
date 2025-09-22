@@ -21,6 +21,35 @@ def _iter_task_ids():
 ALL_TASKS = _iter_task_ids()
 
 
+# ---------------------------------------------------------------------
+# Contract tests for new termination model
+# ---------------------------------------------------------------------
+
+@pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
+def test_has_single_success_goal_rule_under_termination(task_id: str):
+    """Every task must define exactly one success goal under the `termination` key."""
+    env, meta = load_task(None, task_id)
+
+    # Must come from YAML `termination:` (loader should pass it through)
+    term_meta = meta.get("termination")
+    assert isinstance(term_meta, list), f"{task_id}: `termination:` key missing or not a list"
+
+    # Env must expose parsed rules
+    rules = getattr(env, "termination_rules", [])
+    assert isinstance(rules, list) and rules, f"{task_id}: no termination rules parsed into env"
+
+    success = [r for r in rules if str(r.get("outcome", "")).lower() == "success"]
+    assert len(success) == 1, f"{task_id}: expected exactly ONE success rule, found {len(success)}"
+
+    # Optional: the success rule should have a boolean/expr condition string
+    cond = str(success[0].get("when", "")).strip()
+    assert cond, f"{task_id}: success rule must specify a non-empty `when` expression"
+
+    # Optional: name "goal" is recommended (not strictly required; warn if missing)
+    # If you want to enforce it, uncomment the assert below.
+    # assert success[0].get("name") == "goal", f"{task_id}: success rule should be named 'goal'"
+
+
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_reference_plan_succeeds_and_reward_matches(task_id: str):
     env, meta = load_task(None, task_id)
@@ -34,6 +63,12 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
     plan = meta.get("reference_plan") or []
     if not plan:
         pytest.xfail(f"{task_id} has no reference_plan")
+
+    # success is defined via a single termination rule with outcome=success
+    term_rules = getattr(env, "termination_rules", [])
+    success_rules = [r for r in term_rules if str(r.get("outcome", "")).lower() == "success"]
+    assert len(success_rules) == 1, f"{task_id}: exactly one success rule required"
+    success_reward = float(success_rules[0].get("reward", 0.0))
 
     total_reward = 0.0
     shaping_total_observed = 0.0
@@ -83,7 +118,7 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
     assert step_info.get("outcome") == "success"
 
     # Baseline reward check
-    baseline = env.step_penalty * n_steps_executed + env.goal_reward
+    baseline = env.step_penalty * n_steps_executed + success_reward
     assert total_reward == pytest.approx(baseline + shaping_total_observed, rel=1e-12, abs=1e-12)
 
     # Instant-mode shaping should match our dynamic mirror (not final-state truth!)

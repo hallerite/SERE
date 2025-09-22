@@ -33,9 +33,11 @@ init:
   - (aligned p1 asm1)
   - (clear-hand r1)
 
-goal:
-  - (installed p1 asm1)
-  - (fastened p1 asm1)
+termination:
+  - name: goal
+    when: "(and (installed p1 asm1) (fastened p1 asm1))"
+    outcome: success
+    reward: 1.0
 
 reference_plan:
   - (pick-up r1 drv)

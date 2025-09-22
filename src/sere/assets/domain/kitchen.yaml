@@ -219,7 +219,7 @@ actions:
         add: ["(spilled ?m)"]
         del: ["(has-hot-water ?m)"]
         messages:
-          - "You poured into {m} while closed → spill."
+          - "You tried to pour into {m} while {m} was closed. You first need to open {m}."
       - when:
           - "(or (not (needs-open ?m)) (open ?m))"
           - "(>= (water-temp ?k) 80)"

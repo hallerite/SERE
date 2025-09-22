@@ -47,8 +47,16 @@ init:
   - (obj-at teabag1 pantry)
   - (clear-hand r1)
 
-goal:
-  - (tea-ready mug1)
+termination:
+  - name: success_tea
+    when: "(tea-ready mug1)"
+    outcome: success
+    reward: 1.0
+  - name: spill_fail
+    when: "(spilled mug1)"
+    outcome: spilled
+    reward: -1.0
+
 
 reference_plan:
   - (move r1 hallway kitchen)

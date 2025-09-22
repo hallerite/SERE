@@ -126,16 +126,14 @@ class PromptFormatter:
         self,
         *,
         world: WorldState,
-        static_facts: Set[Predicate],
-        goal: List[Predicate],
         steps: int,
         max_steps: int,
         time_val: float,
         durations_on: bool,
         messages: List[str],
-        prev_fluents: Dict[Tuple[str, Tuple[str, ...]], float],
         affordances: List[str],
-        time_limit: float | None,          # <-- NEW
+        time_limit: float | None,
+        termination_rules: Optional[List[dict]] = None,
     ) -> str:
         # ----- State (compact inline: PDDL – NL) -----
         facts = [fa for fa in sorted(world.facts) if fa[0] != "adjacent"]
@@ -146,23 +144,11 @@ class PromptFormatter:
             state_lines.append(self._inline(pddl, nl))
         state_txt = "State:\n" + ("\n".join(state_lines) if state_lines else "(none)")
 
-        # ----- Goal (compact inline: PDDL – NL) -----
+        # ----- Goal (derived from termination_rules only) -----
         goal_txt = ""
-        if self.cfg.show_goal and goal:
-            g_lines: List[str] = []
-            for (name, args) in goal:
-                pddl = self._pddl((name, args))
-                nl = None
-                if self.cfg.display_nl:
-                    spec = self.domain.predicates.get(name)
-                    if spec:
-                        try:
-                            mapping = {spec.args[i][0]: args[i] for i in range(len(spec.args))}
-                            nl = spec.nl.format(**mapping)
-                        except Exception:
-                            nl = None
-                g_lines.append(self._inline(pddl, nl))
-            goal_txt = "Goal:\n" + ("\n".join(g_lines) if g_lines else "")
+        success_line = self._render_success_goal_line(termination_rules)
+        if success_line:
+            goal_txt = "Goal:\n" + success_line
 
         # ----- Messages -----
         msg_txt = ""
@@ -379,3 +365,72 @@ class PromptFormatter:
                     pass
             out.append(f"({name} {' '.join(args)})")
         return "\n".join(f"- {x}" for x in out) if out else ""
+
+    # ---------- Success goal rendering from termination_rules ----------
+    def _render_success_goal_line(self, termination_rules: Optional[List[dict]]) -> str:
+        """
+        If termination_rules contains a rule with outcome=='success', render a single
+        Goal line describing that rule. Supports:
+          - when: "<pddl-literal>"
+          - when: { any: ["<lit>", "<lit2>", ...] }  -> "lit or lit2"
+          - when: { all: ["<lit>", "<lit2>", ...] }  -> "lit and lit2"
+        Returns "" if nothing to render.
+        """
+        if not self.cfg.show_goal or not termination_rules:
+            return ""
+
+        # Find first success rule
+        success = None
+        for r in termination_rules:
+            if str(r.get("outcome", "")).lower() == "success":
+                success = r
+                break
+        if not success:
+            return ""
+
+        when = success.get("when")
+        if when is None:
+            return ""
+
+        # Normalize to (mode, exprs)
+        mode = "single"
+        exprs: List[str] = []
+        if isinstance(when, str):
+            exprs = [when]
+        elif isinstance(when, dict):
+            if "any" in when and isinstance(when["any"], list):
+                mode = "any"
+                exprs = [str(x) for x in when["any"]]
+            elif "all" in when and isinstance(when["all"], list):
+                mode = "all"
+                exprs = [str(x) for x in when["all"]]
+        if not exprs:
+            return ""
+
+        # Build PDDL string
+        joiner = " or " if mode == "any" else (" and " if mode == "all" else "")
+        pddl_joined = joiner.join(exprs)
+
+        # Try to build NL for simple literals only; if any fail, omit NL
+        nl_parts: List[str] = []
+        if self.cfg.display_nl:
+            try:
+                from ..pddl.grounding import parse_grounded
+                for s in exprs:
+                    n, a = parse_grounded(s)  # may raise for non-literals
+                    # only map when it's a known predicate
+                    if n in self.domain.predicates:
+                        nl_parts.append(self.nl.pred_to_text((n, a)))
+                    else:
+                        nl_parts = []
+                        break
+                if nl_parts:
+                    nl_joined = joiner.join(nl_parts)
+                else:
+                    nl_joined = None
+            except Exception:
+                nl_joined = None
+        else:
+            nl_joined = None
+
+        return self._inline(pddl_joined, nl_joined)

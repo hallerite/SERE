@@ -1,4 +1,3 @@
-# tasks/kitchen/t03_open_thermos_pour_steep.yaml
 id: t03_open_thermos_pour_steep
 name: Three steps; open thermos, pour, steep
 description: |
@@ -43,8 +42,15 @@ init:
   - (in teabag1 thermos1)
   - (clear-hand r1)
 
-goal:
-  - (tea-ready thermos1)
+termination:
+  - name: goal
+    when: "(tea-ready thermos1)"
+    outcome: success
+    reward: 1.0
+  - name: spill_fail
+    when: "(spilled thermos1)"
+    outcome: failure
+    reward: -0.4
 
 reference_plan:
   - (open r1 thermos1)

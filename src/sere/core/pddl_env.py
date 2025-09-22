@@ -51,12 +51,13 @@ def _format_msg(template: str, bind: Dict[str, str], world: WorldState) -> str:
 
 class PDDLEnv:
     def __init__(self, domain: DomainSpec, world: WorldState,
-        static_facts: set, goal: List[tuple],
+        static_facts: set,
         formatter_config: Optional[dict] = None,
         formatter_obj: Optional[PromptFormatter] = None,
         plugins: Optional[List[InvariantPlugin]] = None,
         max_steps: int = 40, step_penalty: float = -0.01,
-        invalid_penalty: float = -0.1, goal_reward: float = 1.0,
+        invalid_penalty: float = -0.1,
+        termination_rules: Optional[List[dict]] = None,
         *,
         illegal_move_retries: int = 0,
         invalid_retry_penalty: float = 0.0,
@@ -71,7 +72,7 @@ class PDDLEnv:
         reward_shaping: Optional[dict] = None):
 
         self.domain, self.world = domain, world
-        self.static_facts, self.goal = static_facts, goal
+        self.static_facts = static_facts
 
         # formatter
         if formatter_obj is not None:
@@ -89,7 +90,7 @@ class PDDLEnv:
 
         self.plugins = plugins or []
         self.max_steps = max_steps
-        self.step_penalty, self.invalid_penalty, self.goal_reward = step_penalty, invalid_penalty, goal_reward
+        self.step_penalty, self.invalid_penalty = step_penalty, invalid_penalty
         self.steps = 0
         self.done = False
         self.enable_numeric = enable_numeric
@@ -105,8 +106,6 @@ class PDDLEnv:
         self.time_limit = time_limit
         self.time = 0.0
         
-        self._prev_fluents: Dict[Tuple[str, Tuple[str,...]], float] = {}
-
         self.messages: List[str] = []
         self.max_messages = int(max_messages)
 
@@ -123,6 +122,18 @@ class PDDLEnv:
             for m in rs.get("milestones", [])
             if m and m.get("expr") is not None
         ]
+
+        # ----- Define Terminal States -----
+        self.termination_rules: List[dict] = []
+        for r in (termination_rules or []):
+            self.termination_rules.append(dict(
+                name=str(r.get("name", "term")),
+                when=str(r["when"]),
+                outcome=str(r.get("outcome", "terminal")),
+                reward=float(r.get("reward", 0.0)),
+            ))
+
+
         self._rs_seen: set = set()      # indices of milestones achieved (instant)
         self._rs_phi_prev: float = 0.0  # potential at previous state
 
@@ -153,7 +164,6 @@ class PDDLEnv:
         obs_text = self._obs()  # PLAIN TEXT ONLY
         info = {
             "system_prompt": self._system_prompt_cache,
-            "problem_pddl": self.world.to_problem_pddl("instance", self.static_facts, self.goal),
             "features": dict(
                 numeric=self.enable_numeric,
                 conditional=self.enable_conditional,
@@ -168,9 +178,6 @@ class PDDLEnv:
     def step(self, text: str):
         if self.done:
             raise RuntimeError("Episode finished. Call reset().")
-
-        # snapshot fluents for delta display (formatter may use prev_fluents)
-        self._prev_fluents = dict(self.world.fluents)
 
         info: Dict[str, Any] = {}
         move = extract_tag(text, "move")
@@ -481,29 +488,36 @@ class PDDLEnv:
     def _post_apply_success(self, info: Dict[str, Any]):
         reward = self.step_penalty
 
-        # Goal reached → success
-        if self.goal and all(self.world.holds(g) for g in self.goal):
-            self.done = True
-            reward += self.goal_reward
-            info["outcome"] = "success"
-
-        # Energy exhaustion (only if not already terminal)
-        elif not self.done and self._energy_depleted_unrecoverable():
-            self.done = True
-            info["outcome"] = "out_of_energy"
-            info["reason"] = "energy_depleted"
-
         # Already terminal (e.g., timeout flagged in _advance_time)
-        elif self.done:
+        if self.done:
             pass
 
-        # Step cap → timeout
-        elif self.steps >= self.max_steps:
-            self.done = True
-            info["outcome"] = "timeout"
-            info["reason"] = "max_steps_exceeded"
-
         else:
+            # Rule-based termination (success/failure/alt endings)
+            for r in self.termination_rules:
+                try:
+                    if self._eval_expr(r["when"]):
+                        self.done = True
+                        info["outcome"] = r.get("outcome", "terminal")
+                        info["terminal_rule"] = r.get("name", "term")
+                        reward += float(r.get("reward", 0.0))
+                        break
+                except Exception:
+                    continue
+
+            # Energy exhaustion (only if not already terminal)
+            if not self.done and self._energy_depleted_unrecoverable():
+                self.done = True
+                info["outcome"] = "out_of_energy"
+                info["reason"] = "energy_depleted"
+
+            # Step cap → timeout (only if not already terminal)
+            elif not self.done and self.steps >= self.max_steps:
+                self.done = True
+                info["outcome"] = "timeout"
+                info["reason"] = "max_steps_exceeded"
+
+        if not self.done and "outcome" not in info:
             info["outcome"] = "ongoing"
 
         info["messages"] = self.messages[-self.max_messages:]
@@ -543,17 +557,15 @@ class PDDLEnv:
 
         return self.formatter.format_obs(
             world=self.world,
-            static_facts=self.static_facts,
-            goal=self.goal,
             steps=self.steps,
             max_steps=self.max_steps,
             time_val=self.time,
             durations_on=self.enable_durations,
             messages=self.messages[-self.max_messages:],
-            prev_fluents=self._prev_fluents,
             affordances=aff,
             time_limit=self.time_limit,
-        )
+            termination_rules=self.termination_rules,
+        )  
 
     def _eval_expr(self, s: str) -> bool:
         # uses existing clause evaluator (supports numeric & boolean)

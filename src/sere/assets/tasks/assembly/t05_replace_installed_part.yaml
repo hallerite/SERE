@@ -36,10 +36,11 @@ init:
   - (installed p_bad asm1)
   - (clear-hand r1)
 
-goal:
-  - (installed p_good asm1)
-  - (fastened p_good asm1)
-  - (obj-at p_bad bench)
+termination:
+  - name: goal
+    when: "(and (installed p_good asm1) (fastened p_good asm1) (obj-at p_bad bench))"
+    outcome: success
+    reward: 1.0
 
 reference_plan:
   - (pick-up r1 drv)

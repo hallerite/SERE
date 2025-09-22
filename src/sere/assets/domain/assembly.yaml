@@ -16,6 +16,7 @@ types:
     parent: object
   - name: machine
     parent: object
+  - name: number
 
 # ---------- Predicates ----------
 predicates:

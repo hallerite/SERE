@@ -94,6 +94,17 @@ def _load_invariants_plugin(domain_name: str):
     pl = getattr(invmod, cname, None)
     return [pl()] if pl else []
 
+def _parse_termination(yaml_block):
+    rules = []
+    for r in (yaml_block or []):
+        rules.append(dict(
+            name=str(r.get("name", "term")),
+            when=str(r["when"]),
+            outcome=str(r.get("outcome", "terminal")),
+            reward=float(r.get("reward", 0.0)),
+        ))
+    return rules
+
 def load_task(
     domain_path: Optional[str],
     task_path: str,
@@ -106,6 +117,7 @@ def load_task(
     Caller can still override via domain_path or plugins.
     """
     y = _load_yaml_from_task(task_path)
+    termination_rules = _parse_termination(y.get("termination"))
 
     meta = y.get("meta", {}) or {}
 
@@ -130,7 +142,6 @@ def load_task(
     static_facts: Set[tuple] = set(_parse_lit(x) for x in y.get("static_facts", []))
     for fact in y.get("init", []):
         w.facts.add(_parse_lit(fact))
-    goals = [_parse_lit(g) for g in y["goal"]]
 
     # Optional initial fluents
     init_fluents = meta.get("init_fluents", [])
@@ -142,7 +153,6 @@ def load_task(
         "max_steps":           meta.get("max_steps", 40),
         "step_penalty":        meta.get("step_penalty", -0.01),
         "invalid_penalty":     meta.get("invalid_penalty", -0.1),
-        "goal_reward":         meta.get("goal_reward", 1.0),
         "enable_numeric":      meta.get("enable_numeric", False),
         "enable_conditional":  meta.get("enable_conditional", False),
         "enable_durations":    meta.get("enable_durations", False),
@@ -172,7 +182,11 @@ def load_task(
 
     env_cfg.update(env_kwargs or {})
 
-    env = PDDLEnv(dom, w, static_facts, goals, plugins=plugins or [], **env_cfg)
+    env = PDDLEnv(dom, w, static_facts,
+        plugins=plugins or [],
+        termination_rules=termination_rules,
+        **env_cfg)
+
 
     task_meta = {
         "id": y["id"],
@@ -189,5 +203,6 @@ def load_task(
         "reference_plan": y.get("reference_plan", []),
         "path": task_path,
         "domain": domain_hint or dom_file.stem,
+        "termination": termination_rules,
     }
     return env, task_meta
