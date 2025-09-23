@@ -13,19 +13,21 @@ meta:
   max_steps: 20
   seed: 104
   init_fluents:
-    - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 2]     # too low for all required moves → must recharge
+    - ["battery-cap", ["robot"], 8]
+    - ["energy", ["robot"], 2]     # too low for all required moves → must recharge
 
 objects:
-  robot: [r1]
-  location: [dock, cell, bench]
-  container: [bin1]
-  tool: [drv]
-  part: [p1]
-  assembly: [asm1]
+  robot:  {types: [robot],    variants: [r1, bot, assembler]}
+  dock:   {types: [location], variants: [dock, charger, bay]}
+  cell:   {types: [location], variants: [cell, workstation, cellA]}
+  bench:  {types: [location], variants: [bench, workbench, table]}
+  bin:    {types: [container], variants: [bin1, tote, crate, box]}
+  tool:   {types: [tool],     variants: [drv, screwdriver, driver, wrench]}
+  part:   {types: [part],     variants: [p1, partA, plate]}
+  asm:    {types: [assembly], variants: [asm1, frame, chassis]}
 
 static_facts:
-  - (tool-for drv asm1)
+  - (tool-for tool asm)
   - (adjacent dock cell)
   - (adjacent cell dock)
   - (adjacent cell bench)
@@ -33,26 +35,26 @@ static_facts:
   - (has-charger dock)
 
 init:
-  - (at r1 cell)
-  - (obj-at bin1 cell)
-  - (in drv bin1)          # tool is in the bin
-  - (obj-at p1 bench)
-  - (obj-at asm1 bench)
-  - (clear-hand r1)
+  - (at robot cell)
+  - (obj-at bin cell)
+  - (in tool bin)          # tool is in the bin
+  - (obj-at part bench)
+  - (obj-at asm bench)
+  - (clear-hand robot)
 
 termination:
   - name: goal
-    when: "(and (installed p1 asm1) (fastened p1 asm1))"
+    when: "(and (installed part asm) (fastened part asm))"
     outcome: success
     reward: 1.0
 
 reference_plan:
-  - (move r1 cell dock)
-  - (recharge r1 dock)
-  - (move r1 dock cell)
-  - (open r1 bin1)
-  - (take-out r1 drv bin1)
-  - (equip-tool r1 drv)
-  - (move r1 cell bench)
-  - (align r1 p1 asm1)
-  - (fasten r1 p1 asm1 drv)
+  - (move robot cell dock)
+  - (recharge robot dock)
+  - (move robot dock cell)
+  - (open robot bin)
+  - (take-out robot tool bin)
+  - (equip-tool robot tool)
+  - (move robot cell bench)
+  - (align robot part asm)
+  - (fasten robot part asm tool)

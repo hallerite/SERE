@@ -1,4 +1,3 @@
-# tasks/kitchen/t01_one_step_steep.yaml
 id: t01_one_step_steep
 name: One-step; steep the tea
 description: |
@@ -15,35 +14,42 @@ meta:
   init_fluents:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 8]
-    - ["water-temp", ["mug1"], 100.0]
+    - ["water-temp", ["cup"], 100.0]
 
 objects:
-  robot: [r1]
-  location: [kitchen]
-  container: [mug1, kettle1]
-  appliance: [kettle1]
-  object: [teabag1]
+  r1:
+    types: [robot]
+    variants: [bot, robot, r1]
+  kitchen: location
+  cup:
+    types: [container]
+    variants: [mug, cup, beaker, tumbler]
+  heater:
+    types: [container, appliance]
+    variants: [kettle, boiler, samovar, urn]
+  leaf:
+    types: [object]
+    variants: [teabag, sachet]
 
 static_facts: []
 
 init:
   - (at r1 kitchen)
-  - (obj-at mug1 kitchen)
-  - (obj-at kettle1 kitchen)
-  - (in teabag1 mug1)       # teabag already in mug
-  - (has-hot-water mug1)    # mug already has hot water
+  - (obj-at cup kitchen)
+  - (obj-at heater kitchen)
+  - (in leaf cup)
+  - (has-hot-water cup)
   - (clear-hand r1)
 
 termination:
   - name: goal
-    when: "(tea-ready mug1)"
+    when: "(tea-ready cup)"
     outcome: success
     reward: 1.0
   - name: spill_fail
-    when: "(spilled mug1)"
+    when: "(spilled cup)"
     outcome: spilled
     reward: -1.0
 
-
 reference_plan:
-  - (steep-tea r1 teabag1 mug1)
+  - (steep-tea r1 leaf cup)

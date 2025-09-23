@@ -13,32 +13,32 @@ meta:
   max_steps: 3
   seed: 101
   init_fluents:
-    - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 8]
+    - ["battery-cap", ["robot"], 8]
+    - ["energy", ["robot"], 8]
 
 objects:
-  robot: [r1]
-  location: [bench]
-  tool: [drv]
-  part: [p1]
-  assembly: [asm1]
+  robot: {types: [robot], variants: [r1, bot, helper, assembler]}
+  bench: {types: [location], variants: [bench, workbench, table]}
+  tool:  {types: [tool], variants: [drv, screwdriver, wrench]}
+  part:  {types: [part], variants: [p1, partA, plate, bracket]}
+  asm:   {types: [assembly], variants: [asm1, frame, chassis]}
 
 static_facts:
-  - (tool-for drv asm1)
+  - (tool-for tool asm)
 
 init:
-  - (at r1 bench)
-  - (obj-at p1 bench)
-  - (obj-at asm1 bench)
-  - (equipped r1 drv)
-  - (aligned p1 asm1)
-  - (clear-hand r1)
+  - (at robot bench)
+  - (obj-at part bench)
+  - (obj-at asm bench)
+  - (equipped robot tool)
+  - (aligned part asm)
+  - (clear-hand robot)
 
 termination:
   - name: goal
-    when: "(and (installed p1 asm1) (fastened p1 asm1))"
+    when: "(installed part asm)"
     outcome: success
     reward: 1.0
 
 reference_plan:
-  - (fasten r1 p1 asm1 drv)
+  - (fasten robot part asm tool)

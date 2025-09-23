@@ -11,13 +11,17 @@ meta:
   domain: assembly
 
 objects:
-  robot: [r1]
-  location: [bench, cell, dock]
-  container: [bin1]
-  tool: [drv]
-  part: [p1, p_bad, p_good]
-  assembly: [asm1]
-  machine: [m1]
+  r1: robot
+  bench: location
+  cell: location
+  dock: location
+  bin1: container
+  drv: tool
+  p1: part
+  p_bad: part
+  p_good: part
+  asm1: assembly
+  m1: machine
 
 static_facts:
   - (tool-for drv asm1)
@@ -38,7 +42,7 @@ init:
   - (clear-hand r1)
 
 goal:
-  - (installed p1 asm1)   # not used in most tests; each test asserts what it needs
+  - (installed p1 asm1)
 """
 
 @pytest.fixture(scope="session")
@@ -248,3 +252,145 @@ def test_co_located_truth_table_simple(asm_task_file):
     # move back
     M(env,"cell","bench")
     assert env.world.holds(lit("co-located","r1","asm1"))
+
+# ==============================================================================
+# TASK LOADER RENAMING / VARIANT REALIZATION TESTS
+# ==============================================================================
+
+def test_termination_and_reference_plan_are_renamed_and_executable(tmp_path):
+    """
+    Minimal assembly task with placeholders + variants:
+    - termination.when uses (and ...)
+    - reference_plan uses placeholders
+    We assert loader rewrites both and env reaches SUCCESS.
+    """
+    yaml_text = f"""
+id: t_loader_asm
+name: loader_renaming
+meta:
+  domain: assembly
+  seed: 1
+objects:
+  r:    {{types: [robot], variants: [r1]}}
+  bench: {{types: [location], variants: [bench]}}
+  asm:  {{types: [assembly], variants: [asm1]}}
+  p:    {{types: [part], variants: [p1]}}
+  drv:  {{types: [tool], variants: [drv]}}
+static_facts:
+  - (tool-for drv asm)
+  - (adjacent bench bench)   # degenerate but allows "move bench bench" no-op
+init:
+  - (at r bench)
+  - (obj-at asm bench)
+  - (obj-at p bench)
+  - (obj-at drv bench)
+  - (clear-hand r)
+termination:
+  - name: goal
+    when: "(and (fastened p asm) (equipped r drv))"
+    outcome: success
+reference_plan:
+  - (pick-up r drv)
+  - (equip-tool r drv)
+  - (align r p asm)
+  - (fasten r p asm drv)
+"""
+    p = tmp_path / "t_loader_asm.yaml"
+    p.write_text(yaml_text)
+    env, meta = load_task(None, str(p), max_steps=15)
+
+    # --- Ensure rename applied (placeholders gone)
+    when = meta["termination"][0]["when"]
+    assert "p " not in when and "asm " not in when and "r " not in when
+    assert "(fastened p1 asm1)" in when or "(equipped r1 drv)" in when
+
+    plan = meta["reference_plan"]
+    assert any("pick-up r1 drv" in step for step in plan)
+
+    # --- Execute plan: should hit SUCCESS at end
+    obs, info = env.reset()
+    for step in plan:
+        obs, r, done, info = env.step(f"<move>{step}</move>")
+        if done:
+            break
+    assert done and info.get("outcome") == "success"
+
+
+def test_init_fluents_args_get_renamed(tmp_path):
+    """
+    Placeholders in init_fluents args must be rewritten to chosen variant names.
+    """
+    yaml_text = """
+id: t_loader_fluents
+name: loader_fluents
+meta:
+  domain: assembly
+  init_fluents:
+    - ["energy", ["r"], 5]
+objects:
+  r: {types: [robot], variants: [r1]}
+  bench: {types: [location], variants: [bench]}
+static_facts: []
+init: ["(at r bench)"]
+termination: []
+"""
+    p = tmp_path / "t_loader_fluents.yaml"
+    p.write_text(yaml_text)
+    env, _ = load_task(None, str(p))
+    obs, info = env.reset()
+    assert env.world.get_fluent("energy", ("r1",)) == 5.0
+
+
+def test_variant_pool_collision_raises(tmp_path):
+    """
+    Two placeholders forced to share a single variant -> should raise ValueError.
+    """
+    yaml_text = """
+id: t_loader_collision
+name: loader_collision
+meta:
+  domain: assembly
+objects:
+  a: {types: [part], variants: [dup]}
+  b: {types: [part], variants: [dup]}
+static_facts: []
+init: []
+termination: []
+"""
+    p = tmp_path / "t_loader_collision.yaml"
+    p.write_text(yaml_text)
+    with pytest.raises(ValueError):
+        load_task(None, str(p))
+
+
+def test_head_symbols_not_renamed(tmp_path):
+    """
+    Verify that only object atoms are renamed, not predicate/function heads.
+    Uses heads that exist in the assembly domain: and, not, >=, damaged, quality.
+    """
+    yaml_text = """
+id: t_loader_heads
+name: loader_heads
+meta:
+  domain: assembly
+objects:
+  a: {types: [part], variants: [p1]}
+static_facts: []
+init: []
+termination:
+  - name: goal
+    when: "(and (not (damaged a)) (>= (quality a) 0))"
+    outcome: terminal
+"""
+    p = tmp_path / "t_loader_heads.yaml"
+    p.write_text(yaml_text)
+    env, meta = load_task(None, str(p))
+    when = meta["termination"][0]["when"]
+
+    # Heads should remain intact
+    for head in ("and", "not", "damaged", ">=", "quality"):
+        assert head in when, f"Expected head '{head}' to remain in: {when}"
+
+    # Placeholder should be renamed to its variant
+    assert " a)" not in when
+    assert " p1)" in when

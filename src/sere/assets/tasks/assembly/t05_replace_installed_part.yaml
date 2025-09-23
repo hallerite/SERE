@@ -1,8 +1,8 @@
 id: t05_replace_installed_part
 name: Disassemble wrong part and install correct one
 description: |
-  A wrong part (p_bad) is already installed on the assembly. Remove it, place it on the bench,
-  then align and fasten the correct part (p_good).
+  A wrong part is already installed on the assembly. Remove it, place it on the bench,
+  then align and fasten the correct part.
 
 meta:
   domain: assembly
@@ -13,39 +13,40 @@ meta:
   max_steps: 25
   seed: 105
   init_fluents:
-    - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 8]
+    - ["battery-cap", ["robot"], 8]
+    - ["energy", ["robot"], 8]
 
 objects:
-  robot: [r1]
-  location: [bench]
-  tool: [drv]
-  part: [p_bad, p_good]
-  assembly: [asm1]
+  robot: {types: [robot],    variants: [r1, bot, assembler]}
+  bench: {types: [location], variants: [bench, workbench, table]}
+  tool:  {types: [tool],     variants: [drv, screwdriver, driver, wrench]}
+  bad:   {types: [part],     variants: [p_bad, bad_part, defective, scrap]}
+  good:  {types: [part],     variants: [p_good, spare, good_part, p_ok]}
+  asm:   {types: [assembly], variants: [asm1, frame, chassis]}
 
 static_facts:
-  - (tool-for drv asm1)
+  - (tool-for tool asm)
 
 init:
-  - (at r1 bench)
-  - (obj-at p_good bench)
-  - (obj-at asm1 bench)
-  - (obj-at p_bad bench) 
-  - (obj-at drv bench)
-  - (fastened p_bad asm1)
-  - (installed p_bad asm1)
-  - (clear-hand r1)
+  - (at robot bench)
+  - (obj-at good bench)
+  - (obj-at asm bench)
+  - (obj-at bad bench)
+  - (obj-at tool bench)
+  - (fastened bad asm)
+  - (installed bad asm)
+  - (clear-hand robot)
 
 termination:
   - name: goal
-    when: "(and (installed p_good asm1) (fastened p_good asm1) (obj-at p_bad bench))"
+    when: "(and (installed good asm) (fastened good asm) (obj-at bad bench))"
     outcome: success
     reward: 1.0
 
 reference_plan:
-  - (pick-up r1 drv)
-  - (equip-tool r1 drv)
-  - (unfasten r1 p_bad asm1 drv)
-  - (place-on-bench r1 p_bad)
-  - (align r1 p_good asm1)
-  - (fasten r1 p_good asm1 drv)
+  - (pick-up robot tool)
+  - (equip-tool robot tool)
+  - (unfasten robot bad asm tool)
+  - (place-on-bench robot bad)
+  - (align robot good asm)
+  - (fasten robot good asm tool)

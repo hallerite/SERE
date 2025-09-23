@@ -1,4 +1,3 @@
-# tasks/kitchen/t02_pour_then_steep.yaml
 id: t02_pour_then_steep
 name: Two steps; pour then steep
 description: |
@@ -15,42 +14,46 @@ meta:
   init_fluents:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 8]
-    - ["water-temp", ["kettle1"], 90.0]
+    - ["water-temp", ["kettle"], 90.0]
   reward_shaping:
     mode: instant
     milestones:
-      - {expr: "(has-hot-water mug1)", reward: 0.10, once: true}
-
+      - {expr: "(has-hot-water mug)", reward: 0.10, once: true}
 
 objects:
-  robot: [r1]
-  location: [kitchen]
-  container: [mug1, kettle1]
-  appliance: [kettle1]
-  object: [teabag1]
+  r1: robot
+  kitchen: location
+  mug:
+    types: [container]
+    variants: [mug1, cup, beaker, tumbler]
+  kettle:
+    types: [container, appliance]
+    variants: [kettle1, boiler, samovar, urn]
+  sachet:
+    types: [object]
+    variants: [teabag1, sachet, bag]
 
 static_facts:
-  - (openable kettle1)
+  - (openable kettle)
 
 init:
   - (at r1 kitchen)
-  - (obj-at mug1 kitchen)
-  - (obj-at kettle1 kitchen)
-  - (open kettle1)
-  - (in teabag1 mug1)
+  - (obj-at mug kitchen)
+  - (obj-at kettle kitchen)
+  - (open kettle)
+  - (in sachet mug)
   - (clear-hand r1)
 
 termination:
   - name: success_tea
-    when: "(tea-ready mug1)"
+    when: "(tea-ready mug)"
     outcome: success
     reward: 1.0
   - name: spill_fail
-    when: "(spilled mug1)"
+    when: "(spilled mug)"
     outcome: spilled
     reward: -1.0
 
-
 reference_plan:
-  - (pour r1 kettle1 mug1)
-  - (steep-tea r1 teabag1 mug1)
+  - (pour r1 kettle mug)
+  - (steep-tea r1 sachet mug)

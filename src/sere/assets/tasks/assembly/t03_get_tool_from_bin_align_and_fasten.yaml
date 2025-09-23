@@ -13,38 +13,39 @@ meta:
   max_steps: 10
   seed: 103
   init_fluents:
-    - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 8]
+    - ["battery-cap", ["robot"], 8]
+    - ["energy", ["robot"], 8]
 
 objects:
-  robot: [r1]
-  location: [bench]
-  container: [bin1]
-  tool: [drv]
-  part: [p1]
-  assembly: [asm1]
+  robot:  {types: [robot],    variants: [r1, bot, assembler]}
+  bench:  {types: [location], variants: [bench, workbench, table]}
+  bin:    {types: [container], variants: [bin1, bin, tote, crate, box]}
+  tool:   {types: [tool],     variants: [drv, screwdriver, driver, wrench]}
+  part:   {types: [part],     variants: [p1, partA, plate]}
+  asm:    {types: [assembly], variants: [asm1, frame, chassis]}
 
 static_facts:
-  - (tool-for drv asm1)
+  - (tool-for tool asm)
 
 init:
-  - (at r1 bench)
-  - (obj-at bin1 bench)
-  - (obj-at p1 bench)
-  - (obj-at asm1 bench)
-  - (in drv bin1)
-  - (clear-hand r1)
+  - (at robot bench)
+  - (obj-at bin bench)
+  - (obj-at part bench)
+  - (obj-at asm bench)
+  - (in tool bin)
+  - (clear-hand robot)
+  # bin starts closed implicitly (no (open bin))
 
 termination:
   - name: goal
-    when: "(and (installed p1 asm1) (fastened p1 asm1))"
+    when: "(and (installed part asm) (fastened part asm))"
     outcome: success
     reward: 1.0
 
 reference_plan:
-  - (open r1 bin1)
-  - (take-out r1 drv bin1)
-  - (equip-tool r1 drv)
-  - (align r1 p1 asm1)
-  - (fasten r1 p1 asm1 drv)
-  # (close r1 bin1)  # optional; not required for goal
+  - (open robot bin)
+  - (take-out robot tool bin)
+  - (equip-tool robot tool)
+  - (align robot part asm)
+  - (fasten robot part asm tool)
+  # - (close robot bin)  # optional; not required for goal

@@ -12,47 +12,56 @@ meta:
   time_limit: 6.5
   seed: 203
   init_fluents:
-    - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 8]
-    - ["water-temp", ["kettle1"], 90.0]
+    - ["battery-cap", ["robot"], 8]
+    - ["energy", ["robot"], 8]
+    - ["water-temp", ["heater"], 90.0]
   reward_shaping:
     mode: instant
     milestones:
-      - {expr: "(open thermos1)", reward: 0.10, once: true}
-      - {expr: "(has-hot-water thermos1)", reward: 0.10, once: true}
-
+      - {expr: "(open thermos)", reward: 0.10, once: true}
+      - {expr: "(has-hot-water thermos)", reward: 0.10, once: true}
 
 objects:
-  robot: [r1]
-  location: [kitchen]
-  container: [thermos1, kettle1]
-  appliance: [kettle1]
-  object: [teabag1]
+  robot:
+    types: [robot]
+    variants: [r1]
+  room:
+    types: [location]
+    variants: [kitchen]
+  thermos:
+    types: [container]
+    variants: [thermos1, thermos, flask, tumbler]
+  heater:
+    types: [container, appliance]
+    variants: [kettle1, kettle, boiler, samovar, urn]
+  sachet:
+    types: [object]
+    variants: [teabag1, sachet, bag]
 
 static_facts:
-  - (needs-open thermos1)
-  - (openable thermos1)
-  - (openable kettle1)
+  - (needs-open thermos)
+  - (openable thermos)
+  - (openable heater)
 
 init:
-  - (at r1 kitchen)
-  - (obj-at thermos1 kitchen)
-  - (obj-at kettle1 kitchen)
-  - (open kettle1)
-  - (in teabag1 thermos1)
-  - (clear-hand r1)
+  - (at robot room)
+  - (obj-at thermos room)
+  - (obj-at heater room)
+  - (open heater)
+  - (in sachet thermos)
+  - (clear-hand robot)
 
 termination:
   - name: goal
-    when: "(tea-ready thermos1)"
+    when: "(tea-ready thermos)"
     outcome: success
     reward: 1.0
   - name: spill_fail
-    when: "(spilled thermos1)"
+    when: "(spilled thermos)"
     outcome: failure
     reward: -0.4
 
 reference_plan:
-  - (open r1 thermos1)
-  - (pour r1 kettle1 thermos1)
-  - (steep-tea r1 teabag1 thermos1)
+  - (open robot thermos)
+  - (pour robot heater thermos)
+  - (steep-tea robot sachet thermos)

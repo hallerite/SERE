@@ -1,4 +1,3 @@
-# tasks/kitchen/t05_heat_once_then_pour_steep.yaml
 id: t05_heat_once_then_pour_steep
 name: Five steps; heat once, open mug, pour, steep
 description: |
@@ -16,44 +15,49 @@ meta:
   init_fluents:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 8]
-    - ["water-temp", ["kettle1"], 60.0]
+    - ["water-temp", ["heater"], 60.0]
   reward_shaping:
     mode: instant
     milestones:
-      - {expr: "(>= (water-temp kettle1) 80)", reward: 0.10, once: true}
-      - {expr: "(has-hot-water mug1)", reward: 0.10, once: true}
-
+      - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
+      - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
 
 objects:
-  robot: [r1]
-  location: [kitchen]
-  container: [mug1, kettle1]
-  appliance: [kettle1]
-  object: [teabag1]
+  r1: robot
+  kitchen: location
+  cup:
+    types: [container]
+    variants: [mug1, cup, beaker, tumbler]
+  heater:
+    types: [container, appliance]
+    variants: [kettle1, boiler, samovar, urn]
+  leaf:
+    types: [object]
+    variants: [teabag1, sachet]
 
 static_facts:
-  - (openable kettle1)
+  - (openable heater)
 
 init:
   - (at r1 kitchen)
-  - (obj-at mug1 kitchen)
-  - (obj-at kettle1 kitchen)
-  - (powered kettle1)
-  - (in teabag1 mug1)
+  - (obj-at cup kitchen)
+  - (obj-at heater kitchen)
+  - (powered heater)
+  - (in leaf cup)
   - (clear-hand r1)
 
 termination:
   - name: success_tea
-    when: "(tea-ready mug1)"
+    when: "(tea-ready cup)"
     outcome: success
     reward: 1.0
   - name: spill_fail
-    when: "(spilled mug1)"
+    when: "(spilled cup)"
     outcome: spilled
     reward: -1.0
 
-
 reference_plan:
-  - (heat-kettle r1 kettle1 2)     # 60 -> 90
-  - (pour r1 kettle1 mug1)
-  - (steep-tea r1 teabag1 mug1)
+  - (heat-kettle r1 heater 2) # 60 -> 90
+  - (open r1 heater)
+  - (pour r1 heater cup)
+  - (steep-tea r1 leaf cup)

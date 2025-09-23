@@ -1,4 +1,14 @@
-import yaml, re
+"""
+Task loader: resolves domain, realizes variants, renames atoms in S‑expressions,
+hydrates WorldState, and returns a PDDLEnv + task metadata.
+"""
+
+from __future__ import annotations
+
+import yaml
+import re
+import random
+import copy
 from pathlib import Path
 from typing import Tuple, Set, Optional, Dict, Any, List
 from importlib.resources import files as pkg_files, as_file
@@ -7,25 +17,66 @@ from sere.pddl.domain_spec import DomainSpec
 from sere.core.world_state import WorldState
 from sere.core.pddl_env import PDDLEnv
 
-def _parse_lit(s: str):
-    s = s.strip()
-    assert s.startswith("(") and s.endswith(")"), f"Bad literal: {s}"
-    toks = s[1:-1].split()
-    return toks[0], tuple(toks[1:])
 
-def _apply_init_fluents(world: WorldState, init_fluents: List[list]):
-    for entry in init_fluents:
-        if not (isinstance(entry, list) and len(entry) == 3):
-            raise ValueError(f"Bad init_fluents entry (want [name, [args...], value]): {entry}")
-        fname, args, val = entry
-        if not isinstance(args, list):
-            raise ValueError(f"init_fluents args must be a list: {entry}")
-        world.set_fluent(str(fname), tuple(str(a) for a in args), float(val))
+# =========================
+#  Asset I/O helpers
+# =========================
+
+def _strip_leading(part: Path, prefix: str) -> Path:
+    parts = part.parts
+    if parts and parts[0] == prefix:
+        return Path(*parts[1:])
+    return part
+
+
+def _load_yaml_from_task(task_path: str) -> Dict[str, Any]:
+    """Load a task YAML from filesystem or from the packaged 'sere.assets.tasks'."""
+    p = Path(task_path)
+    if p.exists():
+        with open(p, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    # package lookup (logical id like 'kitchen/foo.yaml' or 'tasks/kitchen/foo.yaml')
+    rel = _strip_leading(Path(task_path), "tasks")
+    cand = pkg_files("sere.assets.tasks") / str(rel)
+    if cand.is_file():
+        with cand.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    raise FileNotFoundError(
+        f"Task not found: {task_path} (looked on disk and under sere.assets.tasks/{rel})"
+    )
+
+
+def _resolve_domain_file(dom_path: str) -> Path:
+    """
+    Return a real filesystem Path to the domain YAML, resolving against packaged
+    sere.assets.domain if not present on disk. Uses as_file() so DomainSpec.from_yaml
+    can consume a path string.
+    """
+    p = Path(dom_path)
+    if p.exists():
+        return p
+    # allow 'domain/...' or 'domains/...'
+    rel = Path(dom_path)
+    if rel.parts and rel.parts[0] in {"domain", "domains"}:
+        rel = Path(*rel.parts[1:])
+    cand = pkg_files("sere.assets.domain") / str(rel)
+    if not cand.is_file():
+        raise FileNotFoundError(
+            f"Domain file not found: {dom_path} (looked on disk and under sere.assets.domain/{rel})"
+        )
+    with as_file(cand) as real_path:
+        return Path(real_path)
+
+
+# =========================
+#  Domain resolution
+# =========================
 
 def _infer_domain_from_path(task_path: str) -> Optional[str]:
     p = task_path.replace("\\", "/").lower()
     m = re.search(r"/assets/tasks/([^/]+)/", p)
     return m.group(1) if m else None
+
 
 def _resolve_domain_path(domain_hint: Optional[str], task_path: str, domain_path: Optional[str]) -> str:
     # 1) explicit path wins
@@ -39,137 +90,431 @@ def _resolve_domain_path(domain_hint: Optional[str], task_path: str, domain_path
     inferred = _infer_domain_from_path(task_path)
     if inferred:
         return f"domain/{inferred}.yaml"
-    raise ValueError("Cannot determine domain. Set meta.domain in the task YAML or pass domain_path explicitly.")
+    raise ValueError(
+        "Cannot determine domain. Set meta.domain in the task YAML or pass domain_path explicitly."
+    )
 
-# --- tiny helpers to read from packaged assets when files aren't on disk ---
 
-def _strip_leading(part: Path, prefix: str) -> Path:
-    parts = part.parts
-    if parts and parts[0] == prefix:
-        return Path(*parts[1:])
-    return part
+# =========================
+#  Parsing primitives
+# =========================
 
-def _load_yaml_from_task(task_path: str) -> Dict[str, Any]:
-    """Try filesystem first; else load from package sere.assets.tasks (supports legacy 'tasks/...')."""
-    p = Path(task_path)
-    if p.exists():
-        with open(p, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
-    # package lookup (logical id like 'kitchen/foo.yaml' or legacy 'tasks/kitchen/foo.yaml')
-    rel = _strip_leading(Path(task_path), "tasks")
-    cand = pkg_files("sere.assets.tasks") / str(rel)
-    if cand.is_file():
-        with cand.open("r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
-    raise FileNotFoundError(f"Task not found: {task_path} (looked on disk and under sere.assets.tasks/{rel})")
+def _parse_lit(s: str) -> Tuple[str, Tuple[str, ...]]:
+    s = s.strip()
+    if not (s.startswith("(") and s.endswith(")")):
+        raise ValueError(f"Bad literal: {s!r}")
+    parts = s[1:-1].split()
+    if not parts:
+        raise ValueError(f"Bad literal: {s!r}")
+    head, args = parts[0], parts[1:]
+    return head, tuple(args)
 
-def _resolve_domain_file(dom_path: str) -> Path:
+
+def _apply_init_fluents(world: WorldState, init_fluents: List[list]) -> None:
+    for entry in init_fluents:
+        if not (isinstance(entry, list) and len(entry) == 3):
+            raise ValueError(
+                f"Bad init_fluents entry (want [name, [args...], value]): {entry}"
+            )
+        fname, args, val = entry
+        if not isinstance(args, list):
+            raise ValueError(f"init_fluents args must be a list: {entry}")
+        world.set_fluent(str(fname), tuple(str(a) for a in args), float(val))
+
+
+# =========================
+#  Object schema + variants (STRICT new schema only)
+# =========================
+
+def _normalize_objects_strict(objs: dict, domain: DomainSpec) -> tuple[Dict[str, Set[str]], Dict[str, List[str]]]:
     """
-    Return a real filesystem Path to the domain YAML, resolving against
-    packaged sere.assets.domain if not present on disk. Uses as_file() so
-    DomainSpec.from_yaml can consume a path string.
+    Strictly accept the NEW schema only:
+      objects:
+        roleA: type | [type, ...] | {types:[...], variants:[...]}
+        roleB: {types:[...]}                      # variants optional
+    Returns:
+      - types_by_sym: {placeholder -> set(types)}
+      - variants_by_sym: {placeholder -> [variants]}  (may be empty)
+    Raises if any type isn’t declared in the domain.
     """
-    p = Path(dom_path)
-    if p.exists():
-        return p
-    # allow 'domain/...' or 'domains/...'
-    rel = Path(dom_path)
-    if rel.parts and rel.parts[0] in {"domain", "domains"}:
-        rel = Path(*rel.parts[1:])
-    cand = pkg_files("sere.assets.domain") / str(rel)
-    if not cand.is_file():
-        raise FileNotFoundError(f"Domain file not found: {dom_path} (looked on disk and under sere.assets.domain/{rel})")
-    # materialize to a real path for downstream code
-    with as_file(cand) as real_path:
-        return Path(real_path)
+    if not isinstance(objs, dict) or not objs:
+        raise ValueError(
+            "objects must be a non-empty mapping of role -> type(s) or {types, variants}."
+        )
 
-def _load_invariants_plugin(domain_name: str):
+    valid_types = set(domain.types.keys())
+
+    types_by_sym: Dict[str, Set[str]] = {}
+    variants_by_sym: Dict[str, List[str]] = {}
+
+    for sym, val in objs.items():
+        if isinstance(val, str):
+            if val not in valid_types:
+                raise ValueError(
+                    f"objects[{sym}] = {val!r} is not a declared type. Valid: {sorted(valid_types)}"
+                )
+            types_by_sym.setdefault(sym, set()).add(val)
+
+        elif isinstance(val, list):
+            if not val or not all(isinstance(t, str) for t in val):
+                raise ValueError(f"objects[{sym}] list must contain type strings.")
+            bad = [t for t in val if t not in valid_types]
+            if bad:
+                raise ValueError(
+                    f"objects[{sym}] has unknown types {bad}. Valid: {sorted(valid_types)}"
+                )
+            for t in val:
+                types_by_sym.setdefault(sym, set()).add(t)
+
+        elif isinstance(val, dict):
+            ts = val.get("types")
+            if ts is None:
+                raise ValueError(f"objects[{sym}] dict must contain 'types'.")
+            if isinstance(ts, str):
+                ts = [ts]
+            if not (isinstance(ts, list) and ts and all(isinstance(t, str) for t in ts)):
+                raise ValueError(
+                    f"objects[{sym}].types must be a non-empty string or list of strings."
+                )
+            bad = [t for t in ts if t not in valid_types]
+            if bad:
+                raise ValueError(
+                    f"objects[{sym}].types has unknown types {bad}. Valid: {sorted(valid_types)}"
+                )
+            types_by_sym[sym] = set(ts)
+
+            vs = val.get("variants") or []
+            if not isinstance(vs, list) or (vs and not all(isinstance(x, str) for x in vs)):
+                raise ValueError(
+                    f"objects[{sym}].variants must be a list of strings if provided."
+                )
+            if vs:
+                variants_by_sym[sym] = vs
+
+        else:
+            raise ValueError(f"objects[{sym}] must be str | list[str] | dict.")
+
+    return types_by_sym, variants_by_sym
+
+
+def _choose_variant_names_strict(
+    placeholders: List[str],
+    variants_by_sym: Dict[str, List[str]],
+    rng: random.Random,
+    protect: Optional[Set[str]] = None,
+) -> Dict[str, str]:
+    """
+    For each placeholder that has a 'variants' pool, pick a concrete name.
+    Enforce global uniqueness across chosen names and against `protect`.
+    Raise ValueError on collision or if a pool is empty.
+    """
+    used: Set[str] = set(protect or set())
+    mapping: Dict[str, str] = {}
+
+    for ph in placeholders:
+        pool = variants_by_sym.get(ph, [])
+        if not pool:
+            continue  # placeholder without variants → stays as-is
+        # Filter out protected collisions; if nothing left, raise.
+        avail = [v for v in pool if v not in used]
+        if not avail:
+            raise ValueError(
+                f"No available variant for placeholder '{ph}'. Pool={pool}, already used={sorted(used)}"
+            )
+        chosen = rng.choice(avail)
+        if chosen in used:
+            # Shouldn't happen given filtering; keep the guard.
+            raise ValueError(f"Variant collision: '{chosen}' already used.")
+        mapping[ph] = chosen
+        used.add(chosen)
+
+    return mapping
+
+
+# =========================
+#  Rename utilities
+# =========================
+
+# Atom = letters/digits/underscore/hyphen only (no '?' vars, no dots).
+# Preceded by start or whitespace, NOT directly by '('; followed by )/space/end.
+_ATOM_RX = re.compile(r"(?:(?<=\s)|(?<=^))([A-Za-z0-9_-]+)(?=(?=[()\s])|$)")
+
+
+def _rename_atoms_nonheads_in_sexpr(s: str, mapping: Dict[str, str]) -> str:
+    """
+    Rename object symbols inside any S-expression, but NEVER rename head symbols.
+    Works for nested forms: (and (p a) (q b)) and numeric: (>= (f x) 10)
+    Strategy: replace any atom token that is preceded by space/start (not '(')
+    and followed by space/paren/end. This excludes heads (which follow '(').
+    We also exclude ?vars and numeric atoms.
+    """
+    if not isinstance(s, str):
+        return s
+
+    def _sub(m: re.Match[str]) -> str:
+        tok = m.group(1)
+        if not tok:
+            return tok
+        if tok[0] == "?":  # variables untouched
+            return tok
+        if tok[0].isdigit():  # numbers untouched
+            return tok
+        return mapping.get(tok, tok)
+
+    return _ATOM_RX.sub(_sub, s)
+
+
+def _tokenwise_replace_lit(s: str, mapping: Dict[str, str]) -> str:
+    """Replace whole tokens inside a single S-expr string (literal only)."""
+    s = s.strip()
+    if not (s.startswith("(") and s.endswith(")")):
+        return s
+    parts = s[1:-1].split()
+    if not parts:
+        return s
+    head, args = parts[0], parts[1:]
+    args2 = [mapping.get(t, t) for t in args]
+    return "(" + " ".join([head] + args2) + ")"
+
+
+def _rename_everywhere(task: Dict[str, Any], mapping: Dict[str, str]) -> Dict[str, Any]:
+    y = copy.deepcopy(task)
+
+    # 1) objects: rename KEYS, strip variants in finalized form
+    new_objs: Dict[str, Any] = {}
+    for sym, val in (y.get("objects") or {}).items():
+        new_key = mapping.get(sym, sym)
+        if new_key in new_objs and new_key != sym:
+            raise ValueError(f"Object name collision after mapping: {sym} -> {new_key}")
+        if isinstance(val, dict):
+            val = {k: v for k, v in val.items() if k != "variants"}
+        new_objs[new_key] = val
+    y["objects"] = new_objs
+
+    # 2) S-expr arrays with single literals → keep literal replacer
+    for key in ("init", "static_facts", "reference_plan"):
+        if isinstance(y.get(key), list):
+            y[key] = [_tokenwise_replace_lit(s, mapping) for s in y[key]]
+
+    # 3) termination.when may be a complex clause; rename non-head atoms everywhere
+    if isinstance(y.get("termination"), list):
+        for r in y["termination"]:
+            w = r.get("when")
+            if isinstance(w, str):
+                r["when"] = _rename_atoms_nonheads_in_sexpr(w, mapping)
+
+    # 4) meta.init_fluents (args)
+    mf = ((y.get("meta") or {}).get("init_fluents") or [])
+    out: List[list] = []
+    for entry in mf:
+        if isinstance(entry, list) and len(entry) == 3:
+            fname, args, val = entry
+            args = [mapping.get(a, a) for a in args]
+            out.append([fname, args, val])
+        else:
+            out.append(entry)
+    if out:
+        y.setdefault("meta", {})["init_fluents"] = out
+
+    # 5) reward shaping milestone expressions may be full clauses; fix them too
+    rs = (y.get("meta") or {}).get("reward_shaping") or {}
+    ms = rs.get("milestones") or []
+    changed = False
+    new_ms: List[dict] = []
+    for m in ms:
+        if not isinstance(m, dict):
+            new_ms.append(m)
+            continue
+        expr = m.get("expr")
+        if isinstance(expr, str):
+            m = dict(m)
+            m["expr"] = _rename_atoms_nonheads_in_sexpr(expr, mapping)
+            changed = True
+        new_ms.append(m)
+    if changed:
+        y.setdefault("meta", {}).setdefault("reward_shaping", {})["milestones"] = new_ms
+
+    return y
+
+
+# =========================
+#  Termination parsing
+# =========================
+
+def _parse_termination(yaml_block) -> List[dict]:
+    rules = []
+    for r in (yaml_block or []):
+        rules.append(
+            dict(
+                name=str(r.get("name", "term")),
+                when=str(r["when"]),
+                outcome=str(r.get("outcome", "terminal")),
+                reward=float(r.get("reward", 0.0)),
+            )
+        )
+    return rules
+
+
+# =========================
+#  Plugins
+# =========================
+
+def _load_invariants_plugin(domain_name: str) -> List[Any]:
     """Tries to load core.invariants.{DomainName}Invariants by naming convention."""
     try:
         from ..core import invariants as invmod
     except Exception:
         return []
-    # Accept 'assembly' -> 'AssemblyInvariants', 'kitchen' -> 'KitchenInvariants'
     cname = f"{domain_name.capitalize()}Invariants"
     pl = getattr(invmod, cname, None)
     return [pl()] if pl else []
 
-def _parse_termination(yaml_block):
-    rules = []
-    for r in (yaml_block or []):
-        rules.append(dict(
-            name=str(r.get("name", "term")),
-            when=str(r["when"]),
-            outcome=str(r.get("outcome", "terminal")),
-            reward=float(r.get("reward", 0.0)),
-        ))
-    return rules
 
-def load_task(
-    domain_path: Optional[str],
-    task_path: str,
-    plugins=None,
-    **env_kwargs
-) -> Tuple[PDDLEnv, dict]:
+# =========================
+#  Validation helpers (optional but recommended)
+# =========================
+
+# Symbols we treat as non-object heads/ops across expressions
+_BUILTIN_HEADS = {
+    "and", "or", "not", "<", ">", "<=", ">=", "=",
+}
+
+
+def _symbols_in_sexpr(s: str) -> Set[str]:
+    """Collect atom-like tokens; does not parse, best-effort for validation."""
+    toks = set(re.findall(r"[A-Za-z0-9_-]+", s or ""))
+    # Keep words that aren't obviously numeric
+    return {t for t in toks if not t[0].isdigit()}
+
+
+def _validate_expr_symbols_exist(
+    expr: str,
+    *,
+    declared_objects: Set[str],
+    domain: DomainSpec,
+    where: str,
+) -> None:
     """
-    Load a task YAML and construct a PDDLEnv using the convention:
-      domain file at 'domain/{meta.domain}.yaml'
-    Caller can still override via domain_path or plugins.
+    Best-effort guardrail: ensure that any atoms present in an expression are either
+    declared objects (post-rename), predicate/ fluent names, or known operators.
     """
+    if not isinstance(expr, str):
+        return
+    toks = _symbols_in_sexpr(expr)
+    known_preds = set(domain.predicates.keys())
+    known_fl = set(domain.fluents.keys())
+    unknown = toks - declared_objects - known_preds - known_fl - _BUILTIN_HEADS
+    if unknown:
+        # Don't false-positive on obvious location/var words if user forgot to declare.
+        raise ValueError(f"Unknown symbols in {where}: {sorted(unknown)}")
+
+
+# =========================
+#  Main loader
+# =========================
+
+def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kwargs) -> Tuple[PDDLEnv, dict]:
     y = _load_yaml_from_task(task_path)
-    termination_rules = _parse_termination(y.get("termination"))
 
+    # ---- Domain hint BEFORE rename is fine
     meta = y.get("meta", {}) or {}
-
     domain_hint = (meta.get("domain") or "").strip().lower() or None
     dom_path = _resolve_domain_path(domain_hint, task_path, domain_path)
-
     dom_file = _resolve_domain_file(dom_path)
-
     dom = DomainSpec.from_yaml(str(dom_file))
 
-    # Plugins: caller override > convention > none
+    # ---- Plugins
     if plugins is None:
         dn = domain_hint or _infer_domain_from_path(task_path) or dom_file.stem
         plugins = _load_invariants_plugin(dn)
 
+    # ---- RNG
+    seed = meta.get("seed", None)
+    rng = random.Random(seed)
+
+    # ---- Objects (STRICT) + variant realization
+    types_by_placeholder, variants_by_placeholder = _normalize_objects_strict(
+        y.get("objects") or {}, dom
+    )
+
+    protected_names: Set[str] = {
+        sym for sym in types_by_placeholder if sym not in variants_by_placeholder
+    }
+
+    mapping = _choose_variant_names_strict(
+        placeholders=list(variants_by_placeholder.keys()),
+        variants_by_sym=variants_by_placeholder,
+        rng=rng,
+        protect=protected_names,
+    )
+
+    # ---- APPLY RENAME FIRST
+    if mapping:
+        y = _rename_everywhere(y, mapping)
+        # Recompute types AFTER rename
+        types_by_placeholder, _ = _normalize_objects_strict(y.get("objects") or {}, dom)
+
+    # re-read meta & termination AFTER rename
+    meta = y.get("meta", {}) or {}
+    termination_rules = _parse_termination(y.get("termination"))
+
+    # ---- Validate expressions refer to declared objects (post-rename)
+    declared_objects = set(types_by_placeholder.keys())
+    for i, r in enumerate(termination_rules):
+        _validate_expr_symbols_exist(
+            r.get("when", ""),
+            declared_objects=declared_objects,
+            domain=dom,
+            where=f"termination[{i}].when",
+        )
+    rs_cfg_tmp = (y.get("meta", {}) or {}).get("reward_shaping") or {}
+    for j, m in enumerate(rs_cfg_tmp.get("milestones", []) or []):
+        if isinstance(m, dict) and isinstance(m.get("expr"), str):
+            _validate_expr_symbols_exist(
+                m["expr"],
+                declared_objects=declared_objects,
+                domain=dom,
+                where=f"reward_shaping.milestones[{j}].expr",
+            )
+
     # --- world & objects ---
     w = WorldState(dom)
-    for typ, ids in y["objects"].items():
-        for sym in ids:
-            w.add_object(sym, typ)
+    for sym, tys in types_by_placeholder.items():
+        for t in tys:
+            w.add_object(sym, t)
 
-    static_facts: Set[tuple] = set(_parse_lit(x) for x in y.get("static_facts", []))
-    for fact in y.get("init", []):
+    # --- facts
+    static_facts: Set[tuple] = set(_parse_lit(x) for x in (y.get("static_facts") or []))
+    for fact in (y.get("init") or []):
         w.facts.add(_parse_lit(fact))
 
-    # Optional initial fluents
-    init_fluents = meta.get("init_fluents", [])
+    # --- fluents (now renamed)
+    init_fluents = (meta.get("init_fluents") or [])
     if init_fluents:
         _apply_init_fluents(w, init_fluents)
 
-    # --- Env config (YAML meta < explicit kwargs) ---
-    env_cfg = {
-        "max_steps":           meta.get("max_steps", 40),
-        "step_penalty":        meta.get("step_penalty", -0.01),
-        "invalid_penalty":     meta.get("invalid_penalty", -0.1),
-        "enable_numeric":      meta.get("enable_numeric", False),
-        "enable_conditional":  meta.get("enable_conditional", False),
-        "enable_durations":    meta.get("enable_durations", False),
-        "enable_stochastic":   meta.get("enable_stochastic", False),
-        "time_limit":          meta.get("time_limit", None),
-        "default_duration":    meta.get("default_duration", 1.0),
-        "seed":                meta.get("seed", None),
-        "max_messages":        meta.get("max_messages", 8),
+    # --- Env config
+    env_cfg: Dict[str, Any] = {
+        "max_steps": meta.get("max_steps", 40),
+        "step_penalty": meta.get("step_penalty", -0.01),
+        "invalid_penalty": meta.get("invalid_penalty", -0.1),
+        "enable_numeric": meta.get("enable_numeric", False),
+        "enable_conditional": meta.get("enable_conditional", False),
+        "enable_durations": meta.get("enable_durations", False),
+        "enable_stochastic": meta.get("enable_stochastic", False),
+        "time_limit": meta.get("time_limit", None),
+        "default_duration": meta.get("default_duration", 1.0),
+        "seed": meta.get("seed", None),
+        "max_messages": meta.get("max_messages", 8),
     }
 
-    # --- Reward shaping config (optional) ---
+    # --- Reward shaping
     rs_cfg = meta.get("reward_shaping") or {}
     if rs_cfg:
         env_cfg["reward_shaping"] = dict(
-            mode = (rs_cfg.get("mode") or "instant"),
-            gamma = float(rs_cfg.get("gamma", 1.0)),
-            milestones = [
+            mode=(rs_cfg.get("mode") or "instant"),
+            gamma=float(rs_cfg.get("gamma", 1.0)),
+            milestones=[
                 dict(
                     expr=str(m.get("expr")),
                     reward=float(m.get("reward", 0.0)),
@@ -182,11 +527,14 @@ def load_task(
 
     env_cfg.update(env_kwargs or {})
 
-    env = PDDLEnv(dom, w, static_facts,
+    env = PDDLEnv(
+        dom,
+        w,
+        static_facts,
         plugins=plugins or [],
-        termination_rules=termination_rules,
-        **env_cfg)
-
+        termination_rules=termination_rules,  # <-- renamed & validated version
+        **env_cfg,
+    )
 
     task_meta = {
         "id": y["id"],
@@ -204,5 +552,6 @@ def load_task(
         "path": task_path,
         "domain": domain_hint or dom_file.stem,
         "termination": termination_rules,
+        "realized_names": mapping,  # handy for tests/asserts
     }
     return env, task_meta

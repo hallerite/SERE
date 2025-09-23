@@ -9,12 +9,18 @@ description: Basic kitchen layout for unit tests.
 
 meta:
   domain: kitchen
+
 objects:
-  robot: [r1]
-  location: [hallway, kitchen, pantry, table]
-  container: [kettle1, mug1]
-  appliance: [kettle1]
-  object: [teabag1]
+  r1: robot
+  hallway: location
+  kitchen: location
+  pantry: location
+  table: location
+  kettle1:
+    types: [container, appliance]
+  mug1:
+    types: [container]
+  teabag1: object
 
 static_facts:
   - (adjacent hallway kitchen)
@@ -35,6 +41,7 @@ init:
   - (obj-at teabag1 pantry)
   - (clear-hand r1)
 
+# (Optional) not used by the engine in these tests, but harmless to keep
 goal:
   - (tea-ready mug1)
   - (at r1 table)
@@ -988,3 +995,134 @@ def test_explain_distinct_guard_on_degenerate_move(basic_task_file):
     assert "(distinct kitchen kitchen)" in err
     assert "duplicates found" in err.lower()
 
+# ==================== TASK-LOADER / RENAME TESTS ====================
+
+def _write_yaml(tmp_path, name, text):
+    p = tmp_path / name
+    p.write_text(text)
+    return str(p)
+
+def _run_plan(env, plan):
+    """Run a list of raw S-exprs through the environment."""
+    for a in plan:
+        obs, r, done, info = env.step(f"<move>{a}</move>")
+        if done and info.get("outcome") == "invalid_move":
+            # bubble a helpful assertion for easier debugging
+            raise AssertionError(f"Plan step failed: {a}\nerror:\n{info.get('error','')}")
+    return env
+
+def test_termination_nested_and_renamed_and_reached(tmp_path):
+    """
+    Kitchen task that uses placeholders + variants and a nested (and …) goal.
+    We initialize energy so the reference plan's first move is valid.
+    """
+    yaml_text = """
+id: t_loader_kitchen
+name: loader_renaming_kitchen
+meta:
+  domain: kitchen
+  enable_numeric: true
+  seed: 1
+  init_fluents:
+    - ["energy", ["r"], 10]
+    - ["water-temp", ["mug1"], 80]
+objects:
+  r:      {types: [robot],    variants: [r1]}
+  h:      {types: [location], variants: [hallway]}
+  k:      {types: [location], variants: [kitchen]}
+  p:      {types: [location], variants: [pantry]}
+  t:      {types: [location], variants: [table]}
+  kettle: {types: [appliance, container], variants: [kettle1]}
+  cup:    {types: [container], variants: [mug1]}
+  tb:     {types: [object],   variants: [teabag1]}
+static_facts:
+  - (adjacent h k)
+  - (adjacent k h)
+  - (adjacent k p)
+  - (adjacent p k)
+  - (adjacent k t)
+  - (adjacent t k)
+  - (openable kettle)
+  - (openable cup)
+  - (needs-open cup)
+  - (powered kettle)
+init:
+  - (at r h)
+  - (obj-at kettle k)
+  - (obj-at cup k)
+  - (obj-at tb p)
+  - (clear-hand r)
+termination:
+  - name: goal
+    when: "(and (tea-ready cup) (at r t))"
+    outcome: success
+reference_plan:
+  - (move r h k)
+  - (open r cup)
+  - (heat-kettle r kettle 6)
+  - (pour r kettle cup)
+  - (move r k p)
+  - (pick-up r tb)
+  - (move r p k)
+  - (put-in r tb cup)
+  - (steep-tea r tb cup)
+  - (move r k t)
+"""
+    p = tmp_path / "t_loader_kitchen.yaml"
+    p.write_text(yaml_text)
+
+    env, meta = load_task(None, str(p), max_steps=50)
+
+    # placeholders should be renamed inside the nested (and …) goal
+    goal_when = meta["termination"][0]["when"]
+    assert "(tea-ready mug1)" in goal_when
+    assert "(at r1 table)" in goal_when
+    assert " cup)" not in goal_when and " r)" not in goal_when
+
+    # --- Run the plan (seed energy explicitly after reset) ---
+    obs, info = env.reset()
+
+    for step in meta["reference_plan"]:
+        obs, r, done, info = env.step(f"<move>{step}</move>")
+        if done and info.get("outcome") == "invalid_move":
+            raise AssertionError(f"Plan step failed: {step}\nerror:\n{info.get('error','')}")
+        if done:
+            break
+
+    assert done and info.get("outcome") == "success"
+
+
+
+def test_rename_does_not_touch_heads_kitchen(tmp_path):
+    """
+    Heads like 'and', 'or', '>=', 'open', 'needs-open', and 'water-temp' must remain unchanged,
+    while the placeholder object 'cup' is renamed to its chosen variant.
+    """
+    yaml_text = """\
+id: t_loader_heads_untouched
+name: loader_heads_untouched
+meta:
+  domain: kitchen
+objects:
+  cup:
+    types: [container]
+    variants: [mug1]
+static_facts: []
+init: []
+termination:
+  - name: term
+    when: "(and (or (needs-open cup) (open cup)) (>= (water-temp cup) 80))"
+    outcome: terminal
+"""
+    path = _write_yaml(tmp_path, "t_loader_heads_untouched.yaml", yaml_text)
+    env, meta = load_task(None, path)
+
+    when = meta["termination"][0]["when"]
+
+    # Placeholder renamed
+    assert "cup" not in when
+    assert "mug1" in when
+
+    # Heads not renamed
+    for head in ("and", "or", "needs-open", "open", ">=", "water-temp"):
+        assert head in when, f"Expected head '{head}' to remain in: {when}"

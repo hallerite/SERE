@@ -1,4 +1,3 @@
-# tasks/kitchen/t10_full_constraints_time_energy_power.yaml
 id: t10_full_constraints_time_energy_power
 name: Full constraints; time + energy + power
 description: |
@@ -11,28 +10,38 @@ meta:
   enable_conditional: true
   enable_durations: true
   max_steps: 28
-  time_limit: 22
+  time_limit: 23
   seed: 210
   init_fluents:
-    - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 2]
-    - ["water-temp", ["kettle1"], 40.0]
+    - ["battery-cap", ["robot"], 8]
+    - ["energy", ["robot"], 2]
+    - ["water-temp", ["heater"], 40.0]
   reward_shaping:
     mode: instant
     milestones:
-      - {expr: "(>= (energy r1) 5)",           reward: 0.05, once: true}   # recharge happened
-      - {expr: "(powered kettle1)",            reward: 0.05, once: true}
-      - {expr: "(>= (water-temp kettle1) 80)", reward: 0.10, once: true}
-      - {expr: "(in teabag1 mug1)",            reward: 0.05, once: true}
-      - {expr: "(has-hot-water mug1)",         reward: 0.10, once: true}
-
+      - {expr: "(>= (energy robot) 5)", reward: 0.05, once: true}
+      - {expr: "(powered heater)", reward: 0.05, once: true}
+      - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
+      - {expr: "(in leaf cup)", reward: 0.05, once: true}
+      - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
 
 objects:
-  robot: [r1]
-  location: [hallway, kitchen, pantry, table]
-  container: [mug1, kettle1]
-  appliance: [kettle1]
-  object: [teabag1]
+  robot:
+    types: [robot]
+    variants: [r1, bot]
+  hallway: location
+  kitchen: location
+  pantry: location
+  table: location
+  cup:
+    types: [container]
+    variants: [mug, cup, beaker, tumbler]
+  heater:
+    types: [container, appliance]
+    variants: [kettle, boiler, samovar, urn]
+  leaf:
+    types: [object]
+    variants: [teabag, sachet]
 
 static_facts:
   - (has-charger hallway)
@@ -42,34 +51,35 @@ static_facts:
   - (adjacent pantry kitchen)
   - (adjacent kitchen table)
   - (adjacent table kitchen)
-  - (openable kettle1)
+  - (openable heater)
 
 init:
-  - (at r1 hallway)
-  - (obj-at kettle1 kitchen)
-  - (obj-at mug1 kitchen)
-  - (obj-at teabag1 pantry)
-  - (clear-hand r1)
+  - (at robot hallway)
+  - (obj-at heater kitchen)
+  - (obj-at cup kitchen)
+  - (obj-at leaf pantry)
+  - (clear-hand robot)
 
 termination:
   - name: goal
-    when: "(and (tea-ready mug1) (at r1 table))"
+    when: "(and (tea-ready cup) (at robot table))"
     outcome: success
     reward: 1.0
   - name: spill_fail
-    when: "(spilled mug1)"
+    when: "(spilled cup)"
     outcome: spilled
     reward: -1.0
 
 reference_plan:
-  - (recharge r1 hallway)           # energy gate
-  - (move r1 hallway kitchen)       # +1s
-  - (power-on r1 kettle1)
-  - (heat-kettle r1 kettle1 3)
-  - (move r1 kitchen pantry)        # +1s
-  - (pick-up r1 teabag1)            # +0.5s
-  - (move r1 pantry kitchen)        # +1s
-  - (put-in r1 teabag1 mug1)        # +0.5s
-  - (pour r1 kettle1 mug1)          # +1s
-  - (steep-tea r1 teabag1 mug1)     # +2s
-  - (move r1 kitchen table)         # +1s   (~18–20s total, within 26s)
+  - (recharge robot hallway)
+  - (move robot hallway kitchen)
+  - (power-on robot heater)
+  - (heat-kettle robot heater 3)
+  - (open robot heater)
+  - (move robot kitchen pantry)
+  - (pick-up robot leaf)
+  - (move robot pantry kitchen)
+  - (put-in robot leaf cup)
+  - (pour robot heater cup)
+  - (steep-tea robot leaf cup)
+  - (move robot kitchen table)
