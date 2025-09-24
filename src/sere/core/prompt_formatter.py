@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Dict, Set, Optional, List
+from typing import List, Tuple, Dict, Set, Optional
 from ..pddl.domain_spec import DomainSpec, Predicate
 from ..pddl.nl_mapper import NLMapper
 from .world_state import WorldState
@@ -51,6 +51,18 @@ class PromptFormatter:
     def _inline(self, pddl_str: str, nl_str: str | None) -> str:
         return f"- {pddl_str}" if not (self.cfg.display_nl and nl_str) else f"- {pddl_str} – {nl_str}"
 
+    def _format_objects_name_type(self, world: WorldState) -> str:
+        """
+        Render objects as 'name: {type1, type2}'.
+        Example:
+        urn: {appliance, container}
+        bot: {robot}
+        """
+        lines = []
+        for sym, types in sorted(world.objects.items()):
+            type_str = ", ".join(sorted(types)) if types else "untyped"
+            lines.append(f"{sym}: {{{type_str}}}")
+        return "\n".join(lines) if lines else "(none)"
 
     def build_system_prompt(self, *, world: WorldState, time_limit: float | None = None) -> str:
         if not self.cfg.show_briefing:
@@ -115,9 +127,7 @@ class PromptFormatter:
 
         # -------- Objects listing --------
         if self.cfg.show_objects_in_sysprompt:
-            parts += ["", "Objects (PDDL):", self._format_objects_pddl(world)]
-            if self.cfg.display_nl:
-                parts += ["", "Objects (NL):", self._format_objects_nl(world)]
+            parts += ["", "Objects (name - type):", self._format_objects_name_type(world)]
 
         return "\n".join(parts)
 
@@ -317,55 +327,6 @@ class PromptFormatter:
             sig = f"{a.name}(" + ", ".join(f"{v}:{t}" for v, t in a.params) + ")"
             rows.append(f"- {sig} — {a.nl}")
         return "\n".join(rows)
-
-    def _format_objects_nl(self, world: WorldState) -> str:
-        by_type: Dict[str, List[str]] = {}
-        for sym, types in sorted(world.objects.items()):
-            for t in sorted(types or []):
-                by_type.setdefault(t, []).append(sym)
-        return "\n".join(
-            f"- {t}: {', '.join(sorted(syms))}"
-            for t, syms in sorted(by_type.items())
-        ) or "(none)"
-
-
-    def _format_objects_pddl(self, world: WorldState) -> str:
-        # Group symbols under every type they claim
-        by_type: Dict[str, List[str]] = {}
-        for sym, types in sorted(world.objects.items()):
-            for t in sorted(types or []):
-                by_type.setdefault(t, []).append(sym)
-        chunks = [f"{' '.join(sorted(syms))} - {t}" for t, syms in sorted(by_type.items())]
-        return "(:objects " + " ".join(chunks) + ")"
-
-
-    def _format_state_nl(self, facts: Set[Predicate]) -> str:
-        lines: List[str] = []
-        for i, (p, a) in enumerate(sorted(facts)):
-            if p == "adjacent":
-                continue
-            if i >= self.cfg.nl_max_facts:
-                lines.append("... (truncated)")
-                break
-            try:
-                lines.append(self.nl.pred_to_text((p, a)))
-            except Exception:
-                lines.append(f"({p} {' '.join(a)})")
-        return "\n".join(f"- {x}" for x in lines) if lines else "(none)"
-
-    def _format_goal_nl(self, goal: List[Predicate]) -> str:
-        out: List[str] = []
-        for (name, args) in goal:
-            spec = self.domain.predicates.get(name)
-            if spec:
-                try:
-                    mapping = {spec.args[i][0]: args[i] for i in range(len(spec.args))}
-                    out.append(spec.nl.format(**mapping))
-                    continue
-                except Exception:
-                    pass
-            out.append(f"({name} {' '.join(args)})")
-        return "\n".join(f"- {x}" for x in out) if out else ""
 
     # ---------- Success goal rendering from termination_rules ----------
     def _render_success_goal_line(self, termination_rules: Optional[List[dict]]) -> str:
