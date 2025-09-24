@@ -53,22 +53,51 @@ class WorldState:
 
 
     def validate_invariants(self) -> List[str]:
-        errs = []
-        loc_map, in_map = {}, {}
+        errs: List[str] = []
+        loc_map: Dict[str, Set[str]] = {}
+        in_map: Dict[str, Set[str]] = {}
+        holding_map: Dict[str, Set[str]] = {}
+        robot_loc: Dict[str, Set[str]] = {}
+
         for (pred, args) in self.facts:
             if pred == "obj-at":
                 loc_map.setdefault(args[0], set()).add(args[1])
-            if pred == "in":
+            elif pred == "in":
                 in_map.setdefault(args[0], set()).add(args[1])
+            elif pred == "holding":
+                # args = (r, o) → index 1 is the object
+                holding_map.setdefault(args[1], set()).add(args[0])
+            elif pred == "at" and len(args) == 2:
+                robot_loc.setdefault(args[0], set()).add(args[1])
 
+        # object cannot be at multiple locations
         for o, locs in loc_map.items():
             if len(locs) > 1:
                 errs.append(f"{o}: multiple 'obj-at' locations {sorted(locs)}")
 
+        # object cannot be both at a location and inside a container
         for o in set(loc_map) & set(in_map):
             errs.append(f"{o}: both 'obj-at' and 'in' present")
 
+        # held object cannot also be 'in' or 'obj-at'
+        for o in holding_map:
+            if o in loc_map:
+                errs.append(f"{o}: held and also 'obj-at' present")
+            if o in in_map:
+                errs.append(f"{o}: held and also 'in' present")
+
+        # object cannot be inside multiple containers
+        for o, cs in in_map.items():
+            if len(cs) > 1:
+                errs.append(f"{o}: in multiple containers {sorted(cs)}")
+
+        # robot must be at exactly one location
+        for r, locs in robot_loc.items():
+            if len(locs) != 1:
+                errs.append(f"{r}: robot has {len(locs)} locations {sorted(locs)}")
+
         return errs
+
 
     def to_problem_pddl(self, name: str, static_facts: Set[Predicate], goals: List[Predicate]) -> str:
         init = self.facts | static_facts

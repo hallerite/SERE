@@ -144,7 +144,7 @@ class PDDLEnv:
         self.time = 0.0
         errs = self.world.validate_invariants()
         for pl in self.plugins:
-            errs += pl.validate(self.world)
+            errs += pl.validate(self.world, self.static_facts)
         if errs:
             raise ValueError(f"Invariant errors: {errs}")
 
@@ -398,10 +398,9 @@ class PDDLEnv:
 
         # ---------- Plugins (post) ----------
         for pl in self.plugins:
-            errs = pl.validate(self.world)
+            errs = pl.validate(self.world, self.static_facts)
             if errs:
                 return self._illegal(f"Postcondition violated: {errs}", info)
-
         # ---------- Bookkeeping / termination ----------
         self.steps += 1
         obs, base_r, done, info = self._post_apply_success(info)
