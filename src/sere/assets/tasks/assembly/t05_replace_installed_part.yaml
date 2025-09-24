@@ -15,6 +15,14 @@ meta:
   init_fluents:
     - ["battery-cap", ["robot"], 8]
     - ["energy", ["robot"], 8]
+  reward_shaping:
+    mode: instant
+    milestones:
+      - {expr: "(not (fastened bad asm))", reward: 0.25, once: true}
+      - {expr: "(obj-at bad bench)",        reward: 0.20, once: true}
+      - {expr: "(equipped robot tool)",     reward: 0.10, once: true}
+      - {expr: "(aligned good asm)",        reward: 0.25, once: true}
+
 
 objects:
   robot: {types: [robot],    variants: [r1, bot, assembler]}

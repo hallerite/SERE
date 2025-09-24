@@ -15,6 +15,16 @@ meta:
   init_fluents:
     - ["battery-cap", ["robot"], 8]
     - ["energy", ["robot"], 2]     # too low for all required moves → must recharge
+  reward_shaping:
+    mode: instant
+    milestones:
+      - {expr: "(at robot dock)",       reward: 0.15, once: true}
+      - {expr: "(>= (energy robot) 6)", reward: 0.15, once: true}
+      - {expr: "(open bin)",            reward: 0.10, once: true}
+      - {expr: "(holding robot tool)",  reward: 0.15, once: true}
+      - {expr: "(equipped robot tool)", reward: 0.15, once: true}
+      - {expr: "(aligned part asm)",    reward: 0.15, once: true}
+
 
 objects:
   robot:  {types: [robot],    variants: [r1, bot, assembler]}
