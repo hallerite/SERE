@@ -111,6 +111,10 @@ predicates:
 # ---------- Fluents (numeric state) ----------
 fluents:
 
+  - name: battery-cap
+    args: [{name: r, type: robot}]
+    nl: "Battery capacity of {r}"
+
   - name: energy
     args: [{name: r, type: robot}]
     nl: "Energy of {r}"
@@ -158,7 +162,7 @@ actions:
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(not (open ?c))"]
     add: ["(open ?c)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.2)"]
     duration: 0.3
     messages:
       - "{c} is now open."
@@ -167,7 +171,7 @@ actions:
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(open ?c)"]
     del: ["(open ?c)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.2)"]
     duration: 0.3
     messages:
       - "{c} is now closed."
@@ -178,7 +182,7 @@ actions:
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     messages:
       - "Picked up {o}."
@@ -188,10 +192,11 @@ actions:
     pre: ["(holding ?r ?o)"]
     add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     messages:
       - "Placed {o} on the bench at your current location."
+
 
   # storage
   - name: put-in
@@ -199,20 +204,22 @@ actions:
     pre: ["(co-located ?r ?c)", "(holding ?r ?o)", "(open ?c)"]
     add: ["(in ?o ?c)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     messages:
       - "{o} is now in {c}."
+
 
   - name: take-out
     params: [{r: robot}, {o: object}, {c: container}]
     pre: ["(co-located ?r ?c)", "(in ?o ?c)", "(open ?c)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(in ?o ?c)", "(clear-hand ?r)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     messages:
       - "Took {o} out of {c}."
+
 
   # tool management
   - name: equip-tool
@@ -220,37 +227,40 @@ actions:
     pre: ["(holding ?r ?t)"]
     add: ["(equipped ?r ?t)", "(clear-hand ?r)"]
     del: ["(holding ?r ?t)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.2)"]
     duration: 0.4
     messages:
       - "{t} equipped."
+
 
   - name: unequip-tool
     params: [{r: robot}, {t: tool}]
     pre: ["(equipped ?r ?t)", "(clear-hand ?r)"]
     add: ["(holding ?r ?t)"]
     del: ["(equipped ?r ?t)", "(clear-hand ?r)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.2)"]
     duration: 0.4
     messages:
       - "{t} unequipped."
+
 
   # preparation & alignment
   - name: align
     params: [{r: robot}, {p: part}, {a: assembly}]
     pre: ["(co-located ?r ?p)", "(co-located ?r ?a)"]
     add: ["(aligned ?p ?a)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.5)"]
     duration: 1.0
     messages:
       - "{p} aligned with {a}."
+
 
   # assembly (fasten/attach) with conditionals
   - name: fasten
     params: [{r: robot}, {p: part}, {a: assembly}, {t: tool}]
     pre: ["(equipped ?r ?t)", "(tool-for ?t ?a)", "(aligned ?p ?a)", "(co-located ?r ?p)", "(co-located ?r ?a)"]
     add: ["(fastened ?p ?a)", "(installed ?p ?a)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 1.0)"]
     duration: 2.0
     messages:
       - "Fastened {p} to {a}."
@@ -277,15 +287,17 @@ actions:
         messages:
           - "QC: ?a passed. Quality=good."
 
+
   # optional: torque setting influences nothing structural but gives room for curricula
   - name: set-torque
     params: [{r: robot}, {t: tool}, {lvl: object}]
     pre: ["(equipped ?r ?t)"]
     add: []
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.1)"]
     duration: 0.2
     messages:
       - "Torque on {t} set to {lvl}."
+
 
   # disassembly (unfasten & detach) – yields the part in-hand
   - name: unfasten
@@ -293,10 +305,11 @@ actions:
     pre: ["(equipped ?r ?t)", "(tool-for ?t ?a)", "(fastened ?p ?a)", "(co-located ?r ?p)", "(co-located ?r ?a)", "(clear-hand ?r)"]
     add: ["(holding ?r ?p)"]
     del: ["(fastened ?p ?a)", "(installed ?p ?a)", "(clear-hand ?r)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 1.0)"]
     duration: 2.0
     messages:
       - "Unfastened {p} from {a}; now holding {p}."
+
 
   # place subassemblies back onto bench (explicit convenience primitive)
   - name: place-on-bench
@@ -304,20 +317,22 @@ actions:
     pre: ["(holding ?r ?o)"]
     add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     messages:
       - "Placed {o} on the bench."
+
 
   # machines (e.g., power screwdriver station) – optional affordance
   - name: power-on
     params: [{r: robot}, {m: machine}]
     pre: ["(co-located ?r ?m)", "(not (powered ?m))"]
     add: ["(powered ?m)"]
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.2)"]
     duration: 0.5
     messages:
       - "{m} is now powered."
+
 
   # resource maintenance
   - name: recharge
@@ -343,7 +358,7 @@ actions:
     pre: ["(co-located ?r ?p)", "(co-located ?r ?a)"]
     add: ["(aligned ?p ?a)"]
     delete: []
-    num_eff: []
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     messages:
       - "Realigned {p} with {a}."

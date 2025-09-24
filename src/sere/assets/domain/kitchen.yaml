@@ -87,6 +87,10 @@ fluents:
     args: [{name: r, type: robot}]
     nl: "Energy of {r}"
 
+  - name: battery-cap
+    args: [{name: r, type: robot}]
+    nl: "Battery capacity of {r}"
+
   - name: water-temp
     args: [{name: v, type: container}]
     nl: "Water temperature in {v}"
@@ -124,39 +128,47 @@ actions:
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(openable ?c)", "(not (open ?c))"]
     add: ["(open ?c)"]
+    num_eff: ["(decrease (energy ?r) 0.2)"]
     duration: 0.5
     nl: "Open {c}"
     messages:
       - "{c} is now open."
 
+
   - name: close
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(openable ?c)", "(open ?c)"]
     del: ["(open ?c)"]
+    num_eff: ["(decrease (energy ?r) 0.2)"]
     duration: 0.5
     nl: "Close {c}"
     messages:
       - "{c} is now closed."
+
 
   - name: pick-up
     params: [{r: robot}, {o: object}]
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
     add: ["(holding ?r ?o)"]
     del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     nl: "Pick up {o}"
     messages:
       - "Picked up {o}."
+
 
   - name: put-down
     params: [{r: robot}, {o: object}]
     pre: ["(holding ?r ?o)"]
     add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)"]
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     nl: "Put down {o}"
     messages:
       - "Placed {o} down."
+
 
   - name: put-in
     params: [{r: robot}, {o: object}, {c: container}]
@@ -166,10 +178,12 @@ actions:
       - "(or (not (needs-open ?c)) (open ?c))"
     add: ["(in ?o ?c)", "(clear-hand ?r)"]
     del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     nl: "Put {o} into {c}"
     messages:
       - "{o} is now in {c}."
+
 
   - name: take-out
     params: [{r: robot}, {o: object}, {c: container}]
@@ -180,19 +194,23 @@ actions:
       - "(or (not (needs-open ?c)) (open ?c))"
     add: ["(holding ?r ?o)"]
     del: ["(in ?o ?c)", "(clear-hand ?r)"]
+    num_eff: ["(decrease (energy ?r) 0.3)"]
     duration: 0.5
     nl: "Take {o} out of {c}"
     messages:
       - "Took {o} out of {c}."
 
+
   - name: power-on
     params: [{r: robot}, {a: appliance}]
     pre: ["(co-located ?r ?a)", "(not (powered ?a))"]
     add: ["(powered ?a)"]
+    num_eff: ["(decrease (energy ?r) 0.2)"]
     duration: 0.5
     nl: "Power on {a}"
     messages:
       - "{a} is now powered."
+
 
   - name: heat-kettle
     params: [{r: robot}, {k: appliance}, {n: number}]
@@ -234,10 +252,13 @@ actions:
     params: [{r: robot}, {tb: object}, {m: container}]
     pre: ["(co-located ?r ?m)", "(in ?tb ?m)", "(>= (water-temp ?m) 80)"]
     add: ["(tea-ready ?m)"]
+    del: ["(spilled ?m)"]
+    num_eff: ["(decrease (energy ?r) 0.5)"]
     duration: 2.0
     nl: "Steep tea in {m} (requires water ≥80°C)"
     messages:
       - "Tea steeped. {m} is ready."
+
 
   - name: recharge
     params: [{r: robot}, {l: location}]
