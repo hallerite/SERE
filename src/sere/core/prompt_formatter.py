@@ -5,6 +5,7 @@ from ..pddl.nl_mapper import NLMapper
 from .world_state import WorldState
 from .semantics import eval_clause
 import fnmatch
+import re
 
 
 @dataclass
@@ -121,7 +122,7 @@ class PromptFormatter:
             f"You are controlling the robot in the '{self.domain.name}' domain.",
             "Reply with exactly one action inside <move>…</move>, e.g., <move>(move r1 A B)</move>.",
             "",
-            "Actions (signature — description):",
+            "Actions (signature — description  [costs]):",
             actions or "(none)",
         ]
 
@@ -325,8 +326,11 @@ class PromptFormatter:
         rows = []
         for a in sorted(self.domain.actions.values(), key=lambda x: x.name):
             sig = f"{a.name}(" + ", ".join(f"{v}:{t}" for v, t in a.params) + ")"
-            rows.append(f"- {sig} — {a.nl}")
+            energy = self._energy_hint(a)
+            dur = self._duration_hint(a)
+            rows.append(f"- {sig} — {a.nl}  [{energy}; {dur}]")
         return "\n".join(rows)
+
 
     # ---------- Success goal rendering from termination_rules ----------
     def _render_success_goal_line(self, termination_rules: Optional[List[dict]]) -> str:
@@ -396,3 +400,114 @@ class PromptFormatter:
             nl_joined = None
 
         return self._inline(pddl_joined, nl_joined)
+
+    # ---------- Cost/introspection helpers ----------
+    _NUM_EFF_RX = re.compile(
+        r"^\(\s*(increase|decrease|assign)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([^\s()]+)\s*\)$"
+    )
+
+    def _energy_hint(self, act) -> str:
+        """Summarize energy effect for an action.
+
+        Preference order:
+        1) Outcome named 'success' -> its num_eff
+        2) First outcome (if any)
+        3) Action-level num_eff
+        4) Default 0.0
+
+        Supports OutcomeSpec objects or plain dicts.
+        """
+
+        def _outcome_name(oc) -> str:
+            if oc is None:
+                return ""
+            if isinstance(oc, dict):
+                return str(oc.get("name", "")).lower()
+            return str(getattr(oc, "name", "")).lower()
+
+        def _outcome_num_eff(oc):
+            if oc is None:
+                return []
+            if isinstance(oc, dict):
+                return oc.get("num_eff") or []
+            return getattr(oc, "num_eff", None) or []
+
+        def _action_num_eff(a):
+            return getattr(a, "num_eff", None) or []
+
+        def render_delta(num_eff_list) -> str:
+            total = 0.0
+            symbolic = []  # keep last symbolic term for display if needed
+
+            for expr in (num_eff_list or []):
+                s = str(expr).strip()
+                m = self._NUM_EFF_RX.match(s)
+                if not m:
+                    continue
+                op, fname, _argstr, rhs = m.groups()
+                if fname != "energy":
+                    continue
+
+                if op == "assign":
+                    return f"energy \u2192 {rhs.strip()}"
+
+                rhs = rhs.strip()
+                try:
+                    val = float(rhs)
+                    if op == "increase":
+                        total += val
+                    elif op == "decrease":
+                        total -= val
+                except Exception:
+                    symbolic.append((op, rhs))
+
+            if symbolic and abs(total) < 1e-12:
+                op, rhs = symbolic[-1]
+                if op == "increase":
+                    return f"energy +{rhs}"
+                if op == "decrease":
+                    return f"energy -{rhs}"
+                if op == "assign":
+                    return f"energy \u2192 {rhs}"
+
+            sign = "+" if total >= 0 else ""
+            return f"energy {sign}{total:.3f}"
+
+        # Outcomes may be objects or dicts
+        outcomes = list(getattr(act, "outcomes", []) or [])
+
+        # 1) Prefer an outcome literally named 'success'
+        chosen = None
+        for oc in outcomes:
+            if _outcome_name(oc) == "success":
+                chosen = oc
+                break
+
+        # 2) Otherwise, use the first outcome if present
+        if chosen is None and outcomes:
+            chosen = outcomes[0]
+
+        # 3) Pull num_eff from the chosen outcome, else fall back to action-level
+        num_eff = _outcome_num_eff(chosen)
+        if not num_eff:
+            num_eff = _action_num_eff(act)
+
+        return render_delta(num_eff)
+
+
+
+    def _duration_hint(self, act) -> str:
+        """Summarize action duration in human-readable form."""
+        vname = getattr(act, "duration_var", None)
+        unit  = getattr(act, "duration_unit", None)
+        dur   = getattr(act, "duration", None)
+        if isinstance(vname, str) and isinstance(unit, (int, float)):
+            # e.g., 0.5 × n
+            # keep concise; avoid trailing .0 when possible
+            u = f"{unit:.3f}".rstrip("0").rstrip(".")
+            return f"duration {u}×{vname}"
+        if isinstance(dur, (int, float)):
+            d = f"{float(dur):.3f}".rstrip("0").rstrip(".")
+            return f"duration {d}"
+        # Unknown/default (engine will use env.default_duration)
+        return "duration default"
