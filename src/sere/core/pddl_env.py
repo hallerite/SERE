@@ -323,53 +323,79 @@ class PDDLEnv:
         self._enforce_energy_bounds()
 
         # ---------- Stochastic outcomes ----------
-        if self.enable_stochastic and getattr(act, "outcomes", None):
+        if getattr(act, "outcomes", None):
+            # Filter outcomes by their 'when' guards (only among currently valid branches)
             valid = []
             for oc in act.outcomes:
                 ok = True
-                for w in oc.when or []:
+                for w in (oc.when or []):
                     if not eval_clause(self.world, self.static_facts, w, bind, enable_numeric=self.enable_numeric):
                         ok = False
                         break
                 if ok:
                     valid.append(oc)
 
-            totp = sum(max(0.0, float(oc.p)) for oc in valid)
-            if valid and totp <= 0:
-                info["stochastic_warning"] = "nonpositive_total_probability"
-
             choice = None
-            roll = self.rng.random() * totp if totp > 0 else None
-            acc = 0.0
-            for oc in valid:
-                acc += max(0.0, float(oc.p))
-                if roll is not None and roll <= acc:
-                    choice = oc
-                    break
-            if choice is None and valid:
-                choice = valid[-1]
+            roll = None
+            totp = None
+
+            if self.enable_stochastic:
+                # Sample proportionally to p among valid outcomes
+                totp = sum(max(0.0, float(getattr(oc, "p", 0.0))) for oc in valid)
+                if valid and (totp is None or totp <= 0.0):
+                    info["stochastic_warning"] = "nonpositive_total_probability"
+                acc = 0.0
+                roll = self.rng.random() * totp if (totp and totp > 0.0) else None
+                for oc in valid:
+                    acc += max(0.0, float(getattr(oc, "p", 0.0)))
+                    if roll is not None and roll <= acc:
+                        choice = oc
+                        break
+                if choice is None and valid:
+                    # fallback to last valid if probs degenerate
+                    choice = valid[-1]
+            else:
+                # Deterministic behavior (enable_stochastic == False):
+                # 1) If exactly ONE valid outcome, take it (even if it's not named 'success').
+                #    This lets failure-only branches like 'spill' fire deterministically.
+                # 2) If MULTIPLE valid outcomes, prefer the one explicitly named 'success'.
+                #    If none is named 'success', do nothing (mis-specified domain; tests catch it).
+                if len(valid) == 1:
+                    choice = valid[0]
+                else:
+                    for oc in valid:
+                        if str(getattr(oc, "name", "")).lower() == "success":
+                            choice = oc
+                            break
+
 
             if choice:
                 add = []
                 dele = []
-                for s in choice.add or []:
-                    _, litp = ground_literal(s, bind); add.append(litp)
+                for s in (choice.add or []):
+                    _, litp = ground_literal(s, bind)
+                    add.append(litp)
                 for s in (choice.delete or []):
-                    _, litp = ground_literal(s, bind); dele.append(litp)
+                    _, litp = ground_literal(s, bind)
+                    dele.append(litp)
                 dele = _expand_delete_patterns(dele, self.world.facts)
                 add  = _expand_add_patterns(add, self.world, act, args)
                 self.world.apply(add, dele)
 
-                if self.enable_numeric and choice.num_eff:
-                    for ne in choice.num_eff:
+                if self.enable_numeric and getattr(choice, "num_eff", None):
+                    for ne in (choice.num_eff or []):
                         apply_num_eff(self.world, ne, bind, info)
 
-                for m in choice.messages or []:
-                    self._push_msg(_format_msg(m, bind, self.world))     # CHANGED
+                for m in (choice.messages or []):
+                    self._push_msg(_format_msg(m, bind, self.world))
 
-                info["stochastic_outcome"] = getattr(choice, "name", "chosen")
-                info["stochastic_roll"] = roll
-                info["stochastic_total_p"] = totp
+                # Debug info (present whether stochastic or not)
+                info["outcome_branch"] = str(getattr(choice, "name", "chosen"))
+                if self.enable_stochastic:
+                    info["stochastic_outcome"] = info["outcome_branch"]
+                    info["stochastic_roll"] = roll
+                    info["stochastic_total_p"] = totp
+
 
         # Re-enforce bounds after any stochastic numeric updates
         self._enforce_energy_bounds()

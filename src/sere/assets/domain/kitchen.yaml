@@ -106,8 +106,21 @@ actions:
     duration_var: "n"
     duration_unit: 1.0
     nl: "Wait for {n} ticks"
-    messages:
-      - "Waited {n} ticks."
+    outcomes:
+      - name: fail
+        p: 0.00
+        when: []
+        add: []
+        delete: []
+        messages:
+          - "You tried to wait, and… nothing failed. (As designed.)"
+      - name: success
+        p: 1.00
+        when: []
+        add: []
+        delete: []
+        messages:
+          - "Waited {n} ticks."
 
   - name: move
     params: [{r: robot}, {from: location}, {to: location}]
@@ -116,59 +129,128 @@ actions:
       - "(adjacent ?from ?to)"
       - "(>= (energy ?r) 1)"
       - "(distinct ?from ?to)"
-    add: ["(at ?r ?to)"]
-    del: ["(at ?r ?from)"]
-    num_eff: ["(decrease (energy ?r) 1)"]
+    add: []
+    del: []
+    num_eff: []
     duration: 1.0
     nl: "Move {r} from {from} to {to}"
-    messages:
-      - "{r} moved from {from} to {to}. Energy is now (energy ?r)."
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "{r} tried to move from {from} to {to} but got stuck. No progress."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(at ?r ?to)"]
+        delete: ["(at ?r ?from)"]
+        num_eff: ["(decrease (energy ?r) 1)"]
+        messages:
+          - "{r} moved from {from} to {to}. Energy is now (energy ?r)."
 
   - name: open
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(openable ?c)", "(not (open ?c))"]
-    add: ["(open ?c)"]
-    num_eff: ["(decrease (energy ?r) 0.2)"]
+    add: []
+    del: []
     duration: 0.5
     nl: "Open {c}"
-    messages:
-      - "{c} is now open."
-
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "You fumbled with {c}. Still closed."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(open ?c)"]
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{c} is now open."
 
   - name: close
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(openable ?c)", "(open ?c)"]
-    del: ["(open ?c)"]
-    num_eff: ["(decrease (energy ?r) 0.2)"]
+    add: []
+    del: []
     duration: 0.5
     nl: "Close {c}"
-    messages:
-      - "{c} is now closed."
-
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "You tried to close {c} but it didn’t latch."
+      - name: success
+        p: 0.95
+        when: []
+        add: []
+        delete: ["(open ?c)"]
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{c} is now closed."
 
   - name: pick-up
     params: [{r: robot}, {o: object}]
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
-    add: ["(holding ?r ?o)"]
-    del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
     nl: "Pick up {o}"
-    messages:
-      - "Picked up {o}."
-
+    outcomes:
+      - name: fail
+        p: 0.10
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "You fumbled {o}. Try again."
+      - name: success
+        p: 0.90
+        when: []
+        add: ["(holding ?r ?o)"]
+        delete: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Picked up {o}."
 
   - name: put-down
     params: [{r: robot}, {o: object}]
     pre: ["(holding ?r ?o)"]
-    add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-    del: ["(holding ?r ?o)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
     nl: "Put down {o}"
-    messages:
-      - "Placed {o} down."
-
+    outcomes:
+      - name: fail
+        p: 0.07
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "{o} slipped; still in hand."
+      - name: success
+        p: 0.93
+        when: []
+        add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+        delete: ["(holding ?r ?o)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Placed {o} down."
 
   - name: put-in
     params: [{r: robot}, {o: object}, {c: container}]
@@ -176,14 +258,27 @@ actions:
       - "(co-located ?r ?c)"
       - "(holding ?r ?o)"
       - "(or (not (needs-open ?c)) (open ?c))"
-    add: ["(in ?o ?c)", "(clear-hand ?r)"]
-    del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
     nl: "Put {o} into {c}"
-    messages:
-      - "{o} is now in {c}."
-
+    outcomes:
+      - name: fail
+        p: 0.10
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "Missed the opening on {c}. Try again."
+      - name: success
+        p: 0.90
+        when: []
+        add: ["(in ?o ?c)", "(clear-hand ?r)"]
+        delete: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "{o} is now in {c}."
 
   - name: take-out
     params: [{r: robot}, {o: object}, {c: container}]
@@ -192,25 +287,52 @@ actions:
       - "(co-located ?r ?c)"
       - "(in ?o ?c)"
       - "(or (not (needs-open ?c)) (open ?c))"
-    add: ["(holding ?r ?o)"]
-    del: ["(in ?o ?c)", "(clear-hand ?r)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
     nl: "Take {o} out of {c}"
-    messages:
-      - "Took {o} out of {c}."
-
+    outcomes:
+      - name: fail
+        p: 0.10
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "You couldn’t get a grip on {o} in {c}."
+      - name: success
+        p: 0.90
+        when: []
+        add: ["(holding ?r ?o)"]
+        delete: ["(in ?o ?c)", "(clear-hand ?r)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Took {o} out of {c}."
 
   - name: power-on
     params: [{r: robot}, {a: appliance}]
     pre: ["(co-located ?r ?a)", "(not (powered ?a))"]
-    add: ["(powered ?a)"]
-    num_eff: ["(decrease (energy ?r) 0.2)"]
+    add: []
+    del: []
     duration: 0.5
     nl: "Power on {a}"
-    messages:
-      - "{a} is now powered."
-
+    outcomes:
+      - name: fail
+        p: 0.02
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "Power button on {a} didn’t register."
+      - name: success
+        p: 0.98
+        when: []
+        add: ["(powered ?a)"]
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{a} is now powered."
 
   - name: heat-kettle
     params: [{r: robot}, {k: appliance}, {n: number}]
@@ -218,13 +340,30 @@ actions:
       - "(co-located ?r ?k)"
       - "(powered ?k)"
       - "(not (open ?k))"
-    num_eff: ["(increase (water-temp ?k) 15*?n)"]
+    add: []
+    del: []
     duration_var: "n"
     duration_unit: 0.5
     nl: "Heat {k} for {n} ticks (each tick increases water temp by 15°C)"
-    messages:
-      - "Heating {k}. Water temperature is now (water-temp ?k)°C."
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: []
+        messages:
+          - "Heating cycle on {k} failed to start."
+      - name: success
+        p: 0.95
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(increase (water-temp ?k) 15*?n)"]
+        messages:
+          - "Heating {k}. Water temperature is now (water-temp ?k)°C."
 
+  # NOTE: pour’s original conditional effects are encoded as outcome branches.
   - name: pour
     params: [{r: robot}, {k: container}, {m: container}]
     pre:
@@ -232,39 +371,76 @@ actions:
       - "(co-located ?r ?m)"
       - "(or (not (needs-open ?k)) (open ?k))"
       - "(distinct ?k ?m)"
-    cond:
-      - when: ["(needs-open ?m)", "(not (open ?m))"]
+    outcomes:
+      # Spill branch (target requires open and is closed)
+      - name: spill
+        when: ["(needs-open ?m)", "(not (open ?m))"]
         add: ["(spilled ?m)"]
-        del: ["(has-hot-water ?m)"]
+        delete: ["(has-hot-water ?m)"]
         messages:
           - "You tried to pour into {m} while {m} was closed. You first need to open {m}."
-      - when:
+        p: 1.0   # used only when enable_stochastic=True
+
+      # Success branch (target OK and source hot enough)
+      - name: success
+        when:
           - "(or (not (needs-open ?m)) (open ?m))"
           - "(>= (water-temp ?k) 80)"
         add: ["(has-hot-water ?m)"]
         num_eff: ["(assign (water-temp ?m) 100)"]
         messages:
           - "Hot water transferred to {m}."
+        p: 1.0   # used only when enable_stochastic=True
     duration: 1.0
     nl: "Pour from {k} into {m}"
+
 
   - name: steep-tea
     params: [{r: robot}, {tb: object}, {m: container}]
     pre: ["(co-located ?r ?m)", "(in ?tb ?m)", "(>= (water-temp ?m) 80)"]
-    add: ["(tea-ready ?m)"]
-    del: ["(spilled ?m)"]
-    num_eff: ["(decrease (energy ?r) 0.5)"]
+    add: []
+    del: []
     duration: 2.0
     nl: "Steep tea in {m} (requires water ≥80°C)"
-    messages:
-      - "Tea steeped. {m} is ready."
-
+    outcomes:
+      - name: fail
+        p: 0.08
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "Steeping failed—bag tore or drifted. Try again."
+      - name: success
+        p: 0.92
+        when: []
+        add: ["(tea-ready ?m)"]
+        delete: ["(spilled ?m)"]
+        num_eff: ["(decrease (energy ?r) 0.5)"]
+        messages:
+          - "Tea steeped. {m} is ready."
 
   - name: recharge
     params: [{r: robot}, {l: location}]
     pre: ["(at ?r ?l)", "(has-charger ?l)"]
-    num_eff: ["(increase (energy ?r) 5)"]
+    add: []
+    del: []
     duration: 2.0
     nl: "Recharge at {l}"
-    messages:
-      - "{r} recharged at {l}. Energy is now (energy ?r)."
+    outcomes:
+      - name: fail
+        p: 0.02
+        when: []
+        add: []
+        delete: []
+        num_eff: []
+        messages:
+          - "Charger at {l} didn’t connect properly."
+      - name: success
+        p: 0.98
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(increase (energy ?r) 5)"]
+        messages:
+          - "{r} recharged at {l}. Energy is now (energy ?r)."
