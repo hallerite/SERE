@@ -85,7 +85,18 @@ class PDDLEnv:
                         setattr(cfg, k, v)
                     else:
                         raise AttributeError(f"Unknown prompt config key: {k}")
+
+            # If caller didn't explicitly set NL stochasticity, mirror env's enable_stochastic
+            user_set_nl_stoch = bool(formatter_config and "nl_stochastic" in formatter_config)
+            if not user_set_nl_stoch:
+                cfg.nl_stochastic = bool(enable_stochastic)
+
+            # If caller didn't provide an NL RNG seed, reuse the env seed for reproducibility
+            if cfg.nl_rng_seed is None and seed is not None:
+                cfg.nl_rng_seed = int(seed)
+
             self.formatter = PromptFormatter(self.domain, cfg)
+
         self._system_prompt_cache = ""
 
         self.plugins = plugins or []

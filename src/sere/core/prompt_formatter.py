@@ -6,12 +6,16 @@ from .world_state import WorldState
 from .semantics import eval_clause
 import fnmatch
 import re
+import random
 
 
 @dataclass
 class PromptFormatterConfig:
     # Unified rendering: system prompt + observations
     display_nl: bool = True   # True → NL+PDDL; False → PDDL-only
+    # NL variation controls
+    nl_stochastic: bool = False               # False → always first NL template; True → sample a variant
+    nl_rng_seed: Optional[int] = None         # pass a seed for reproducible NL sampling (optional)
 
     # Visibility / limits
     show_briefing: bool = True
@@ -36,7 +40,8 @@ class PromptFormatter:
         if self.cfg.visible_fluents is None:
             self.cfg.visible_fluents = ["*"]
         self.domain = domain
-        self.nl = NLMapper(domain)
+        rng = random.Random(self.cfg.nl_rng_seed) if self.cfg.nl_rng_seed is not None else None
+        self.nl = NLMapper(domain, stochastic=self.cfg.nl_stochastic, rng=rng)
     
     def _pddl(self, pred):  # pred = (name, args)
         n, a = pred
@@ -184,9 +189,7 @@ class PromptFormatter:
                     try:
                         from ..pddl.grounding import parse_grounded
                         name, args = parse_grounded(a)  # -> ("move", ["r1","A","B"])
-                        action = self.domain.actions.get(name)
-                        if action:
-                            nl_desc = self._render_action_nl(action, args)
+                        nl_desc = self.nl.act_to_text(name, tuple(args))
                     except Exception:
                         nl_desc = None
                 lines.append(self._inline(shown, nl_desc))
@@ -329,12 +332,15 @@ class PromptFormatter:
         rows = []
         for a in sorted(self.domain.actions.values(), key=lambda x: x.name):
             sig = f"{a.name}(" + ", ".join(f"{v}:{t}" for v, t in a.params) + ")"
+            # Use NLMapper but preserve placeholders by passing "{var}" as the value
+            dummy_args = tuple(f"{{{v}}}" for (v, _t) in a.params)
+            catalog_nl = self.nl.act_to_text(a.name, dummy_args)
             energy = self._energy_hint(a)
             dur = self._duration_hint(a)
-            nl_text = self._pick_action_nl(a)
-            rows.append(f"- {sig} — {nl_text}  [{energy}; {dur}]")
-
+            rows.append(f"- {sig} — {catalog_nl}  [{energy}; {dur}]")
         return "\n".join(rows)
+
+
     
     # ---------- NL helpers for actions ----------
     def _pick_action_nl(self, action) -> str:
