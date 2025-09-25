@@ -8,6 +8,7 @@ meta:
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
+  enable_stochastic: false
   max_steps: 3
   time_limit: 4
   seed: 201
