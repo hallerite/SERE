@@ -120,14 +120,25 @@ def test_outcome_probabilities_present_when_stochastic(dom_path: Path):
         )
 
 
+def _has_nl(a) -> bool:
+    """
+    Accept either a single string or a list of strings for ActionSpec.nl.
+    """
+    nl = getattr(a, "nl", None)
+    if isinstance(nl, str):
+        return bool(nl.strip())
+    if isinstance(nl, list):
+        return any(isinstance(s, str) and s.strip() for s in nl)
+    return False
+
+
 @pytest.mark.parametrize("dom_path", ALL_DOMAIN_FILES, ids=lambda p: p.name)
 def test_action_nl_present(dom_path: Path):
     """
-    Ergonomics: every action should have an NL description string (used in prompts).
+    Ergonomics: every action should have an NL description (string or list of strings).
     """
     dom = _load_domain(dom_path)
-
-    bad = [name for name, a in dom.actions.items() if not getattr(a, "nl", "").strip()]
+    bad = [name for name, a in dom.actions.items() if not _has_nl(a)]
     assert not bad, f"{dom_path.name}: actions missing NL description: {bad}"
 
 

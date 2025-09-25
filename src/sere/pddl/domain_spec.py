@@ -42,7 +42,7 @@ class ActionSpec:
     pre: List[str]                  # may include "(not ...)"
     add: List[str]
     delete: List[str]
-    nl: str
+    nl: List[str]
     num_eff: List[str] = field(default_factory=list)       # numeric effects
     cond: List[ConditionalBlock] = field(default_factory=list)
     duration: Optional[float] = None
@@ -117,13 +117,22 @@ class DomainSpec:
                     when=oc.get("when", []) or [],
                     messages=oc.get("messages", []) or []
                 ))
+            # normalize action NL: allow string or list in YAML; always store as list
+            raw_nl = a.get("nl", a["name"])
+            if isinstance(raw_nl, str):
+                nl_list = [raw_nl]
+            elif isinstance(raw_nl, list):
+                nl_list = [str(x) for x in raw_nl]
+            else:
+                nl_list = [a["name"]]  # ultra-safe fallback
+
             actions[a["name"]] = ActionSpec(
                 name=a["name"],
                 params=params,
                 pre=a.get("pre", []) or [],
                 add=a.get("add", []) or [],
                 delete=a.get("del", a.get("delete", [])) or [],
-                nl=a.get("nl", a["name"]),
+                nl=nl_list,
                 num_eff=a.get("num_eff", []) or [],
                 cond=cond_blocks or [],
                 duration=a.get("duration", None),
@@ -132,4 +141,5 @@ class DomainSpec:
                 messages=a.get("messages", []) or [],
                 outcomes=outcomes or []
             )
+
         return DomainSpec(y["domain"], types, preds, actions, fls)

@@ -178,19 +178,20 @@ class PromptFormatter:
         if self.cfg.show_affordances and affordances:
             lines = []
             for a in affordances:
-                shown = a  # already parenthesized by generate_affordances
+                shown = a  # generate_affordances already returns "(act args)" — single parens
                 nl_desc = None
-                if self.cfg.display_nl:
+                if self.cfg.display_nl and ("<" not in a and ">" not in a):
                     try:
-                        # Only NL-map when fully grounded (no '<n>' placeholders)
-                        if "<" not in a and ">" not in a:
-                            from ..pddl.grounding import parse_grounded
-                            name, args = parse_grounded(a)
-                            nl_desc = self.nl.act_to_text(name, args)
+                        from ..pddl.grounding import parse_grounded
+                        name, args = parse_grounded(a)  # -> ("move", ["r1","A","B"])
+                        action = self.domain.actions.get(name)
+                        if action:
+                            nl_desc = self._render_action_nl(action, args)
                     except Exception:
                         nl_desc = None
                 lines.append(self._inline(shown, nl_desc))
             aff_txt = "Valid moves:\n" + "\n".join(lines)
+
 
         # ----- Messages (inline, no label) -----
         msg_txt = ""
@@ -330,8 +331,44 @@ class PromptFormatter:
             sig = f"{a.name}(" + ", ".join(f"{v}:{t}" for v, t in a.params) + ")"
             energy = self._energy_hint(a)
             dur = self._duration_hint(a)
-            rows.append(f"- {sig} — {a.nl}  [{energy}; {dur}]")
+            nl_text = self._pick_action_nl(a)
+            rows.append(f"- {sig} — {nl_text}  [{energy}; {dur}]")
+
         return "\n".join(rows)
+    
+    # ---------- NL helpers for actions ----------
+    def _pick_action_nl(self, action) -> str:
+        """
+        Choose an NL template for an action. Deterministic: first variant.
+        ActionSpec.nl is a List[str] after DomainSpec change, but we tolerate str for BC.
+        """
+        nl = getattr(action, "nl", None)
+        if isinstance(nl, list) and nl:
+            return str(nl[0])
+        if isinstance(nl, str):
+            return nl
+        return action.name  # ultra-safe fallback
+
+    def _render_action_nl(self, action, args: List[str]) -> Optional[str]:
+        """
+        Render a chosen NL template with grounded args.
+        We map param var names -> grounded values and .format(**mapping).
+        Returns None on any error (caller will omit NL).
+        """
+        try:
+            tmpl = self._pick_action_nl(action)
+            var_order = [v for (v, _t) in getattr(action, "params", [])]
+            mapping = {v: a for v, a in zip(var_order, args)}
+            # Also allow a common alias 'n' for numeric slots if present
+            if "n" in tmpl and "n" not in mapping and len(var_order) == len(args):
+                for v in var_order:
+                    if v.lower() == "n":
+                        mapping["n"] = mapping.get(v)
+                        break
+            return tmpl.format(**mapping)
+        except Exception:
+            return None
+
 
 
     # ---------- Success goal rendering from termination_rules ----------
