@@ -1,5 +1,5 @@
 domain: assembly
-requirements: [":strips", ":typing"]   # engine can toggle; spec stays superset
+requirements: [":strips", ":typing"]
 
 # ---------- Types ----------
 types:
@@ -110,7 +110,6 @@ predicates:
 
 # ---------- Fluents (numeric state) ----------
 fluents:
-
   - name: battery-cap
     args: [{name: r, type: robot}]
     nl: "Battery capacity of {r}"
@@ -138,8 +137,21 @@ actions:
     duration_var: "n"
     duration_unit: 1.0
     nl: "Wait for {n} ticks"
-    messages:
-      - "Waited {n} ticks."
+    outcomes:
+      - name: fail
+        p: 0.0
+        when: []
+        add: []
+        delete: []
+        messages:
+          - "Time passed but nothing changed."
+      - name: success
+        p: 1.0
+        when: []
+        add: []
+        delete: []
+        messages:
+          - "Waited {n} ticks."
 
   # movement / navigation
   - name: move
@@ -149,216 +161,464 @@ actions:
       - "(adjacent ?from ?to)"
       - "(>= (energy ?r) 1)"
       - "(distinct ?from ?to)"
-
-    add: ["(at ?r ?to)"]
-    del: ["(at ?r ?from)"]
-    num_eff: ["(decrease (energy ?r) 1)"]
+    add: []
+    del: []
     duration: 1.0
-    messages:
-      - "{r} moved from {from} to {to}. Energy is now (energy ?r)."
+    nl: "Move {r} from {from} to {to}"
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "{r} tried to move from {from} to {to} but got stuck."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(at ?r ?to)"]
+        delete: ["(at ?r ?from)"]
+        num_eff: ["(decrease (energy ?r) 1)"]
+        messages:
+          - "{r} moved from {from} to {to}. Energy is now (energy ?r)."
 
-  # container access (crates, bins, drawers)
   - name: open
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(not (open ?c))"]
-    add: ["(open ?c)"]
-    num_eff: ["(decrease (energy ?r) 0.2)"]
+    add: []
+    del: []
     duration: 0.3
-    messages:
-      - "{c} is now open."
+    nl: "Open {c}"
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "Failed to open {c}."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(open ?c)"]
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{c} is now open."
 
   - name: close
     params: [{r: robot}, {c: container}]
     pre: ["(co-located ?r ?c)", "(open ?c)"]
-    del: ["(open ?c)"]
-    num_eff: ["(decrease (energy ?r) 0.2)"]
+    add: []
+    del: []
     duration: 0.3
-    messages:
-      - "{c} is now closed."
+    nl: "Close {c}"
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "Failed to close {c}."
+      - name: success
+        p: 0.95
+        when: []
+        add: []
+        delete: ["(open ?c)"]
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{c} is now closed."
 
-  # picking & placing
   - name: pick-up
     params: [{r: robot}, {o: object}]
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
-    add: ["(holding ?r ?o)"]
-    del: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
-    messages:
-      - "Picked up {o}."
+    nl: "Pick up {o}"
+    outcomes:
+      - name: fail
+        p: 0.10
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "You fumbled {o}."
+      - name: success
+        p: 0.90
+        when: []
+        add: ["(holding ?r ?o)"]
+        delete: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Picked up {o}."
 
   - name: put-down
     params: [{r: robot}, {o: object}]
     pre: ["(holding ?r ?o)"]
-    add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-    del: ["(holding ?r ?o)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
-    messages:
-      - "Placed {o} on the bench at your current location."
+    nl: "Put down {o}"
+    outcomes:
+      - name: fail
+        p: 0.07
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "{o} slipped; still in hand."
+      - name: success
+        p: 0.93
+        when: []
+        add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+        delete: ["(holding ?r ?o)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Placed {o} down."
 
-
-  # storage
   - name: put-in
     params: [{r: robot}, {o: object}, {c: container}]
     pre: ["(co-located ?r ?c)", "(holding ?r ?o)", "(open ?c)"]
-    add: ["(in ?o ?c)", "(clear-hand ?r)"]
-    del: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
-    messages:
-      - "{o} is now in {c}."
-
+    nl: "Put {o} into {c}"
+    outcomes:
+      - name: fail
+        p: 0.10
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "Missed the opening on {c}."
+      - name: success
+        p: 0.90
+        when: []
+        add: ["(in ?o ?c)", "(clear-hand ?r)"]
+        delete: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "{o} is now in {c}."
 
   - name: take-out
     params: [{r: robot}, {o: object}, {c: container}]
     pre: ["(co-located ?r ?c)", "(in ?o ?c)", "(open ?c)", "(clear-hand ?r)"]
-    add: ["(holding ?r ?o)"]
-    del: ["(in ?o ?c)", "(clear-hand ?r)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
-    messages:
-      - "Took {o} out of {c}."
+    nl: "Take {o} out of {c}"
+    outcomes:
+      - name: fail
+        p: 0.10
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "You couldn’t get a grip on {o} in {c}."
+      - name: success
+        p: 0.90
+        when: []
+        add: ["(holding ?r ?o)"]
+        delete: ["(in ?o ?c)", "(clear-hand ?r)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Took {o} out of {c}."
 
-
-  # tool management
   - name: equip-tool
     params: [{r: robot}, {t: tool}]
     pre: ["(holding ?r ?t)"]
-    add: ["(equipped ?r ?t)", "(clear-hand ?r)"]
-    del: ["(holding ?r ?t)"]
-    num_eff: ["(decrease (energy ?r) 0.2)"]
+    add: []
+    del: []
     duration: 0.4
-    messages:
-      - "{t} equipped."
-
+    nl: "Equip {t}"
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "Failed to equip {t}."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(equipped ?r ?t)", "(clear-hand ?r)"]
+        delete: ["(holding ?r ?t)"]
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{t} equipped."
 
   - name: unequip-tool
     params: [{r: robot}, {t: tool}]
     pre: ["(equipped ?r ?t)", "(clear-hand ?r)"]
-    add: ["(holding ?r ?t)"]
-    del: ["(equipped ?r ?t)", "(clear-hand ?r)"]
-    num_eff: ["(decrease (energy ?r) 0.2)"]
+    add: []
+    del: []
     duration: 0.4
-    messages:
-      - "{t} unequipped."
+    nl: "Unequip {t}"
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "Failed to unequip {t}."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(holding ?r ?t)"]
+        delete: ["(equipped ?r ?t)", "(clear-hand ?r)"]
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{t} unequipped."
 
-
-  # preparation & alignment
   - name: align
     params: [{r: robot}, {p: part}, {a: assembly}]
     pre: ["(co-located ?r ?p)", "(co-located ?r ?a)"]
-    add: ["(aligned ?p ?a)"]
-    num_eff: ["(decrease (energy ?r) 0.5)"]
+    add: []
+    del: []
     duration: 1.0
-    messages:
-      - "{p} aligned with {a}."
+    nl: "Align {p} with {a}"
+    outcomes:
+      - name: fail
+        p: 0.10
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "Failed to align {p} with {a}."
+      - name: success
+        p: 0.90
+        when: []
+        add: ["(aligned ?p ?a)"]
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.5)"]
+        messages:
+          - "{p} aligned with {a}."
 
-
-  # assembly (fasten/attach) with conditionals
   - name: fasten
     params: [{r: robot}, {p: part}, {a: assembly}, {t: tool}]
     pre: ["(equipped ?r ?t)", "(tool-for ?t ?a)", "(aligned ?p ?a)", "(co-located ?r ?p)", "(co-located ?r ?a)"]
+    # Base effects first so cond can override when damaged
     add: ["(fastened ?p ?a)", "(installed ?p ?a)"]
-    num_eff: ["(decrease (energy ?r) 1.0)"]
+    del: []
     duration: 2.0
-    messages:
-      - "Fastened {p} to {a}."
+    nl: "Fasten {p} to {a}"
     cond:
       - when: ["(damaged ?p)"]
+        add: []
         delete: ["(installed ?p ?a)"]
+        num_eff: []
+        messages: []
     outcomes:
-      - name: "hard_defect"
+      - name: hard_defect
         p: 0.10
+        when: []
         add: ["(defective ?a)"]
-        num_eff: ["(assign (quality ?a) 0.20)"]
+        delete: []
+        num_eff: ["(assign (quality ?a) 0.20)", "(decrease (energy ?r) 1.0)"]
         messages:
-          - "QC: Hard defect on ?a detected. Disassemble and reassemble."
-      - name: "soft_defect"
+          - "QC: Hard defect on {a} detected. Disassemble and reassemble."
+      - name: soft_defect
         p: 0.30
+        when: []
         add: ["(needs-rework ?a)"]
-        num_eff: ["(assign (quality ?a) 0.65)"]
+        delete: []
+        num_eff: ["(assign (quality ?a) 0.65)", "(decrease (energy ?r) 1.0)"]
         messages:
-          - "QC: Marginal quality on ?a (rework needed). Consider unfasten → realign → refasten."
-      - name: "good"
+          - "QC: Marginal quality on {a}. Rework needed."
+      - name: success
         p: 0.60
+        when: []
+        add: []
         delete: ["(defective ?a)", "(needs-rework ?a)"]
-        num_eff: ["(assign (quality ?a) 0.95)"]
+        num_eff: ["(assign (quality ?a) 0.95)", "(decrease (energy ?r) 1.0)"]
         messages:
-          - "QC: ?a passed. Quality=good."
+          - "QC: {a} passed. Quality=good."
 
-
-  # optional: torque setting influences nothing structural but gives room for curricula
   - name: set-torque
     params: [{r: robot}, {t: tool}, {lvl: object}]
     pre: ["(equipped ?r ?t)"]
     add: []
-    num_eff: ["(decrease (energy ?r) 0.1)"]
+    del: []
     duration: 0.2
-    messages:
-      - "Torque on {t} set to {lvl}."
+    nl: "Set torque on {t} to {lvl}"
+    outcomes:
+      - name: fail
+        p: 0.00
+        when: []
+        add: []
+        delete: []
+        num_eff: []
+        messages:
+          - "Torque dial slipped; setting unchanged."
+      - name: success
+        p: 1.00
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "Torque on {t} set to {lvl}."
 
-
-  # disassembly (unfasten & detach) – yields the part in-hand
   - name: unfasten
     params: [{r: robot}, {p: part}, {a: assembly}, {t: tool}]
     pre: ["(equipped ?r ?t)", "(tool-for ?t ?a)", "(fastened ?p ?a)", "(co-located ?r ?p)", "(co-located ?r ?a)", "(clear-hand ?r)"]
-    add: ["(holding ?r ?p)"]
-    del: ["(fastened ?p ?a)", "(installed ?p ?a)", "(clear-hand ?r)"]
-    num_eff: ["(decrease (energy ?r) 1.0)"]
+    add: []
+    del: []
     duration: 2.0
-    messages:
-      - "Unfastened {p} from {a}; now holding {p}."
+    nl: "Unfasten {p} from {a}"
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "Could not break {p} loose from {a}."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(holding ?r ?p)"]
+        delete: ["(fastened ?p ?a)", "(installed ?p ?a)", "(clear-hand ?r)"]
+        num_eff: ["(decrease (energy ?r) 1.0)"]
+        messages:
+          - "Unfastened {p} from {a}; now holding {p}."
 
-
-  # place subassemblies back onto bench (explicit convenience primitive)
   - name: place-on-bench
     params: [{r: robot}, {o: object}]
     pre: ["(holding ?r ?o)"]
-    add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-    del: ["(holding ?r ?o)"]
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
-    messages:
-      - "Placed {o} on the bench."
+    nl: "Place {o} on the bench"
+    outcomes:
+      - name: fail
+        p: 0.00
+        when: []
+        add: []
+        delete: []
+        num_eff: []
+        messages:
+          - "You hesitated; still holding {o}."
+      - name: success
+        p: 1.00
+        when: []
+        add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+        delete: ["(holding ?r ?o)"]
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Placed {o} on the bench."
 
-
-  # machines (e.g., power screwdriver station) – optional affordance
   - name: power-on
     params: [{r: robot}, {m: machine}]
     pre: ["(co-located ?r ?m)", "(not (powered ?m))"]
-    add: ["(powered ?m)"]
-    num_eff: ["(decrease (energy ?r) 0.2)"]
+    add: []
+    del: []
     duration: 0.5
-    messages:
-      - "{m} is now powered."
+    nl: "Power on {m}"
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "Power button on {m} didn’t register."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(powered ?m)"]
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{m} is now powered."
 
-
-  # resource maintenance
   - name: recharge
     params: [{r: robot}, {l: location}]
     pre: ["(at ?r ?l)", "(has-charger ?l)"]
     add: []
-    num_eff: ["(increase (energy ?r) 5)"]
+    del: []
     duration: 2.0
-    messages:
-      - "{r} recharged at {l}. Energy is now (energy ?r)."
+    nl: "Recharge at {l}"
+    outcomes:
+      - name: fail
+        p: 0.02
+        when: []
+        add: []
+        delete: []
+        num_eff: []
+        messages:
+          - "Charger at {l} didn’t connect properly."
+      - name: success
+        p: 0.98
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(increase (energy ?r) 5)"]
+        messages:
+          - "{r} recharged at {l}. Energy is now (energy ?r)."
 
   - name: qc-check
     params: [{r: robot}, {a: assembly}]
     pre: ["(co-located ?r ?a)"]
     add: []
-    num_eff: []
+    del: []
     duration: 0.2
-    messages:
-      - "QC Report for ?a — quality=(quality ?a), flags: (defective ?a) (needs-rework ?a)"
+    nl: "QC check for {a}"
+    outcomes:
+      - name: fail
+        p: 0.00
+        when: []
+        add: []
+        delete: []
+        num_eff: []
+        messages:
+          - "QC device not responding."
+      - name: success
+        p: 1.00
+        when: []
+        add: []
+        delete: []
+        num_eff: []
+        messages:
+          - "QC Report for {a} — quality=(quality ?a), flags: (defective ?a) (needs-rework ?a)"
 
   - name: realign
     params: [{r: robot}, {p: part}, {a: assembly}]
     pre: ["(co-located ?r ?p)", "(co-located ?r ?a)"]
-    add: ["(aligned ?p ?a)"]
-    delete: []
-    num_eff: ["(decrease (energy ?r) 0.3)"]
+    add: []
+    del: []
     duration: 0.5
-    messages:
-      - "Realigned {p} with {a}."
+    nl: "Realign {p} with {a}"
+    outcomes:
+      - name: fail
+        p: 0.00
+        when: []
+        add: []
+        delete: []
+        num_eff: []
+        messages:
+          - "Adjustment failed; alignment unchanged."
+      - name: success
+        p: 1.00
+        when: []
+        add: ["(aligned ?p ?a)"]
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Realigned {p} with {a}."
