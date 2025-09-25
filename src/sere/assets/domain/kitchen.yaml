@@ -14,86 +14,143 @@ types:
 predicates:
   - name: co-located
     args: [{name: x, type: object}, {name: y, type: object}]
-    nl: "x and y share a location"
+    nl:
+      - "{x} and {y} share a location"
+      - "{x} is at the same place as {y}"
+      - "{x} and {y} are co-located"
 
   - name: at
     args: [{name: r, type: robot}, {name: l, type: location}]
-    nl: "{r} is at {l}"
+    nl:
+      - "{r} is at {l}"
+      - "{r} stands in {l}"
+      - "{r} is located at {l}"
 
   - name: obj-at
     args: [{name: o, type: object}, {name: l, type: location}]
-    nl: "{o} is at {l}"
+    nl:
+      - "{o} is at {l}"
+      - "{o} sits in {l}"
+      - "{o} is located at {l}"
 
   - name: holding
     args: [{name: r, type: robot}, {name: o, type: object}]
-    nl: "{r} is holding {o}"
+    nl:
+      - "{r} is holding {o}"
+      - "{r} has {o} in hand"
+      - "{r} grips {o}"
 
   - name: clear-hand
     args: [{name: r, type: robot}]
-    nl: "{r} has a free hand"
+    nl:
+      - "{r} has a free hand"
+      - "{r}'s hand is free"
+      - "{r} is not holding anything"
 
   - name: in
     args: [{name: o, type: object}, {name: c, type: container}]
-    nl: "{o} is in {c}"
+    nl:
+      - "{o} is in {c}"
+      - "{o} sits inside {c}"
+      - "{o} is contained in {c}"
 
   - name: open
     args: [{name: c, type: container}]
-    nl: "{c} is open"
+    nl:
+      - "{c} is open"
+      - "{c} stands open"
+      - "{c} is currently open"
 
   - name: powered
     args: [{name: a, type: appliance}]
-    nl: "{a} is powered"
+    nl:
+      - "{a} is powered"
+      - "{a} has power"
+      - "{a} is turned on"
 
   - name: boiled
     args: [{name: a, type: appliance}]
-    nl: "{a} has boiled water"
+    nl:
+      - "{a} has boiled water"
+      - "Water has boiled in {a}"
+      - "{a} finished boiling"
 
   - name: has-hot-water
     args: [{name: m, type: container}]
-    nl: "{m} contains hot water"
+    nl:
+      - "{m} contains hot water"
+      - "Hot water is in {m}"
+      - "{m} has hot water"
 
   - name: tea-ready
     args: [{name: m, type: container}]
-    nl: "Tea is ready in {m}"
+    nl:
+      - "Tea is ready in {m}"
+      - "{m} contains ready tea"
+      - "Tea in {m} is ready"
 
   - name: spilled
     args: [{name: m, type: container}]
-    nl: "There was a spill at {m}"
+    nl:
+      - "There was a spill at {m}"
+      - "Liquid spilled at {m}"
+      - "{m} had a spill"
 
   - name: has-charger
     args: [{name: l, type: location}]
     static: true
-    nl: "{l} has a charging station"
+    nl:
+      - "{l} has a charging station"
+      - "A charger is available at {l}"
+      - "{l} provides charging"
 
   - name: adjacent
     args: [{name: l1, type: location}, {name: l2, type: location}]
     static: true
-    nl: "{l1} is adjacent to {l2}"
+    nl:
+      - "{l1} is adjacent to {l2}"
+      - "{l1} neighbors {l2}"
+      - "{l1} is next to {l2}"
 
   - name: needs-open
     args: [{name: c, type: container}]
     static: true
-    nl: "{c} requires opening to pour"
+    nl:
+      - "{c} requires opening to pour"
+      - "{c} must be open to pour"
+      - "Pouring needs {c} to be open"
 
   - name: openable
     args: [{name: c, type: container}]
     static: true
-    nl: "{c} can be opened/closed"
+    nl:
+      - "{c} can be opened/closed"
+      - "{c} is openable"
+      - "{c} supports open/close"
 
 # ---------- Fluents (numeric state) ----------
 fluents:
 
   - name: energy
     args: [{name: r, type: robot}]
-    nl: "Energy of {r}"
+    nl:
+      - "Energy of {r}"
+      - "{r}'s energy level"
+      - "Battery level for {r}"
 
   - name: battery-cap
     args: [{name: r, type: robot}]
-    nl: "Battery capacity of {r}"
+    nl:
+      - "Battery capacity of {r}"
+      - "{r}'s maximum battery"
+      - "Max energy for {r}"
 
   - name: water-temp
     args: [{name: v, type: container}]
-    nl: "Water temperature in {v}"
+    nl:
+      - "Water temperature in {v}"
+      - "{v}'s water temperature"
+      - "Temperature of water in {v}"
 
 # ---------- Actions ----------
 actions:
@@ -105,7 +162,10 @@ actions:
     del: []
     duration_var: "n"
     duration_unit: 1.0
-    nl: "Wait for {n} ticks"
+    nl:
+      - "Wait for {n} ticks"
+      - "Pause {n} ticks"
+      - "Idle for {n} ticks"
     outcomes:
       - name: fail
         p: 0.00
@@ -133,7 +193,10 @@ actions:
     del: []
     num_eff: []
     duration: 1.0
-    nl: "Move {r} from {from} to {to}"
+    nl:
+      - "Move {r} from {from} to {to}"
+      - "Go from {from} to {to} with {r}"
+      - "{r} moves {from} → {to}"
     outcomes:
       - name: fail
         p: 0.05
@@ -158,7 +221,10 @@ actions:
     add: []
     del: []
     duration: 0.5
-    nl: "Open {c}"
+    nl:
+      - "Open {c}"
+      - "{r} opens {c}"
+      - "Open the {c}"
     outcomes:
       - name: fail
         p: 0.05
@@ -183,7 +249,10 @@ actions:
     add: []
     del: []
     duration: 0.5
-    nl: "Close {c}"
+    nl:
+      - "Close {c}"
+      - "{r} closes {c}"
+      - "Shut {c}"
     outcomes:
       - name: fail
         p: 0.05
@@ -208,7 +277,10 @@ actions:
     add: []
     del: []
     duration: 0.5
-    nl: "Pick up {o}"
+    nl:
+      - "Pick up {o}"
+      - "{r} picks up {o}"
+      - "Grab {o}"
     outcomes:
       - name: fail
         p: 0.10
@@ -233,7 +305,10 @@ actions:
     add: []
     del: []
     duration: 0.5
-    nl: "Put down {o}"
+    nl:
+      - "Put down {o}"
+      - "{r} puts down {o}"
+      - "Place {o} down"
     outcomes:
       - name: fail
         p: 0.07
@@ -261,7 +336,10 @@ actions:
     add: []
     del: []
     duration: 0.5
-    nl: "Put {o} into {c}"
+    nl:
+      - "Put {o} into {c}"
+      - "{r} inserts {o} into {c}"
+      - "Place {o} in {c}"
     outcomes:
       - name: fail
         p: 0.10
@@ -290,7 +368,10 @@ actions:
     add: []
     del: []
     duration: 0.5
-    nl: "Take {o} out of {c}"
+    nl:
+      - "Take {o} out of {c}"
+      - "{r} removes {o} from {c}"
+      - "Retrieve {o} from {c}"
     outcomes:
       - name: fail
         p: 0.10
@@ -315,7 +396,10 @@ actions:
     add: []
     del: []
     duration: 0.5
-    nl: "Power on {a}"
+    nl:
+      - "Power on {a}"
+      - "{r} turns on {a}"
+      - "Switch on {a}"
     outcomes:
       - name: fail
         p: 0.02
@@ -344,7 +428,10 @@ actions:
     del: []
     duration_var: "n"
     duration_unit: 0.5
-    nl: "Heat {k} for {n} ticks (each tick increases water temp by 15°C)"
+    nl:
+      - "Heat {k} for {n} ticks (each tick increases water temp by 15°C)"
+      - "Run {k} for {n} ticks (+15°C per tick)"
+      - "Heat cycle on {k}: {n} ticks"
     outcomes:
       - name: fail
         p: 0.05
@@ -363,7 +450,6 @@ actions:
         messages:
           - "Heating {k}. Water temperature is now (water-temp ?k)°C."
 
-  # NOTE: pour’s original conditional effects are encoded as outcome branches.
   - name: pour
     params: [{r: robot}, {k: container}, {m: container}]
     pre:
@@ -372,16 +458,13 @@ actions:
       - "(or (not (needs-open ?k)) (open ?k))"
       - "(distinct ?k ?m)"
     outcomes:
-      # Spill branch (target requires open and is closed)
       - name: spill
         when: ["(needs-open ?m)", "(not (open ?m))"]
         add: ["(spilled ?m)"]
         delete: ["(has-hot-water ?m)"]
         messages:
           - "You tried to pour into {m} while {m} was closed. You first need to open {m}."
-        p: 1.0   # used only when enable_stochastic=True
-
-      # Success branch (target OK and source hot enough)
+        p: 1.0
       - name: success
         when:
           - "(or (not (needs-open ?m)) (open ?m))"
@@ -390,10 +473,12 @@ actions:
         num_eff: ["(assign (water-temp ?m) 100)"]
         messages:
           - "Hot water transferred to {m}."
-        p: 1.0   # used only when enable_stochastic=True
+        p: 1.0
     duration: 1.0
-    nl: "Pour from {k} into {m}"
-
+    nl:
+      - "Pour from {k} into {m}"
+      - "{r} pours {k} into {m}"
+      - "Transfer hot water {k} → {m}"
 
   - name: steep-tea
     params: [{r: robot}, {tb: object}, {m: container}]
@@ -401,7 +486,10 @@ actions:
     add: []
     del: []
     duration: 2.0
-    nl: "Steep tea in {m} (requires water ≥80°C)"
+    nl:
+      - "Steep tea in {m} (requires water ≥80°C)"
+      - "Steep {tb} in {m} (water ≥80°C)"
+      - "Brew tea in {m} (≥80°C)"
     outcomes:
       - name: fail
         p: 0.08
@@ -426,7 +514,10 @@ actions:
     add: []
     del: []
     duration: 2.0
-    nl: "Recharge at {l}"
+    nl:
+      - "Recharge at {l}"
+      - "{r} recharges at {l}"
+      - "Use charger at {l}"
     outcomes:
       - name: fail
         p: 0.02
