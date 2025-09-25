@@ -176,11 +176,20 @@ class PromptFormatter:
         # ----- Affordances (compact inline: PDDL – NL) -----
         aff_txt = ""
         if self.cfg.show_affordances and affordances:
-            from ..pddl.grounding import parse_grounded
             lines = []
             for a in affordances:
-                nl = self.nl.act_to_text(*parse_grounded(a)) if self.cfg.display_nl else None
-                lines.append(self._inline(a, nl))
+                shown = a  # already parenthesized by generate_affordances
+                nl_desc = None
+                if self.cfg.display_nl:
+                    try:
+                        # Only NL-map when fully grounded (no '<n>' placeholders)
+                        if "<" not in a and ">" not in a:
+                            from ..pddl.grounding import parse_grounded
+                            name, args = parse_grounded(a)
+                            nl_desc = self.nl.act_to_text(name, args)
+                    except Exception:
+                        nl_desc = None
+                lines.append(self._inline(shown, nl_desc))
             aff_txt = "Valid moves:\n" + "\n".join(lines)
 
         # ----- Messages (inline, no label) -----
@@ -226,11 +235,11 @@ class PromptFormatter:
         enable_numeric: bool = True,
     ) -> List[str]:
         """
-        Produce grounded actions that satisfy an action's preconditions under the
-        *current* world + statics. Supports objects with multiple types:
-          - world.objects[sym] may be a str (single type) OR an iterable (set/list/tuple)
-            of types; we treat membership accordingly.
-        Returns a (possibly empty) list. Never returns None.
+        Mixed strategy:
+        - Actions with NO 'number' params -> fully grounded affordances (as before).
+        - Actions WITH 'number' params   -> template affordances:
+                use '<n>' for numeric slots, ground object params, and
+                check only non-numeric preconditions (numeric checks are skipped).
         """
         if not self.cfg.show_affordances:
             return []
@@ -265,14 +274,20 @@ class PromptFormatter:
 
         afford: List[str] = []
         for act in sorted(self.domain.actions.values(), key=lambda x: x.name):
-            # Construct candidate pools in the order of act.params
+            # Identify numeric params
+            num_positions = [i for i, (_v, typ) in enumerate(act.params) if typ.lower() == "number"]
+
+            # Construct candidate pools
             pools: List[List[str]] = []
-            for _, typ in act.params:
-                # Prefer the fast lookup from by_type; fall back to scanning for safety
-                pool = by_type.get(typ)
-                if pool is None:
-                    pool = [s for s in world.objects if _is_type(s, typ)]
-                pools.append(pool)
+            for i, (_var, typ) in enumerate(act.params):
+                if typ.lower() == "number":
+                    # Use a single placeholder candidate; we won't enumerate numbers
+                    pools.append(["<n>"])
+                else:
+                    pool = by_type.get(typ)
+                    if pool is None:
+                        pool = [s for s in world.objects if _is_type(s, typ)]
+                    pools.append(pool)
 
             combos = cartesian(pools)
             if not combos:
@@ -281,16 +296,29 @@ class PromptFormatter:
             for args in combos:
                 bind = {var: val for (var, _), val in zip(act.params, args)}
 
-                # Precondition check (supports numeric, (not ...), (or ...), etc.)
+                # Precondition check:
+                # - For templated (has number): skip numeric evaluation (can't bind <n>)
+                # - For fully grounded (no number): use engine's numeric setting
+                has_number = len(num_positions) > 0
+                numeric_ok = enable_numeric and (not has_number)
+
                 ok = True
-                for pre in act.pre or []:
-                    if not eval_clause(world, static_facts, pre, bind, enable_numeric=enable_numeric):
+                for pre in (act.pre or []):
+                    if not eval_clause(world, static_facts, pre, bind, enable_numeric=numeric_ok):
                         ok = False
                         break
                 if not ok:
                     continue
 
-                afford.append(f"({act.name} {' '.join(args)})")
+                # Render: if numeric present, show <n> in those slots; otherwise full args
+                shown_args: List[str] = []
+                for i, val in enumerate(args):
+                    if i in num_positions:
+                        shown_args.append("<n>")
+                    else:
+                        shown_args.append(val)
+
+                afford.append(f"({act.name} {' '.join(shown_args)})")
 
         return afford
 
