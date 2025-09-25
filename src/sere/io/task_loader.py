@@ -123,7 +123,7 @@ def _apply_init_fluents(world: WorldState, init_fluents: List[list]) -> None:
 
 
 # =========================
-#  Object schema + variants (STRICT new schema only)
+#  Object schema + variants
 # =========================
 
 def _normalize_objects_strict(objs: dict, domain: DomainSpec) -> tuple[Dict[str, Set[str]], Dict[str, List[str]]]:
@@ -229,6 +229,140 @@ def _choose_variant_names_strict(
         used.add(chosen)
 
     return mapping
+
+def _apply_clutter(
+    meta: Dict[str, Any],
+    world: WorldState,
+    static_facts: Set[tuple],
+    rng: random.Random,
+):
+    """
+    Inject 'clutter' objects using counts-only sampling, then clamp to a global budget.
+
+    Schema (counts-only):
+      meta.clutter:
+        budget: {min: int, max: int}    # total items after clamping (defaults: [0, +inf))
+        items:
+          - name: str
+            types: [str, ...]           # domain-declared types
+            variants: [str, ...]        # optional pool of unique names (mutually exclusive with auto-names)
+            at: [location, ...]         # candidate locations (required)
+            count: {min:int, max:int}   # required; sample N ~ Uniform[min, max] (inclusive)
+
+    Behavior:
+      1) For each item spec, sample a desired count N_i in [min,max].
+      2) Compute total T = sum_i N_i.
+      3) If T > budget.max, deterministically downsample across items until sum == budget.max.
+      4) If T < budget.min, best-effort top-up by adding more of the earliest viable items until sum == budget.min.
+      5) Spawn the final counts, picking unique names (variants first, else auto base_1, base_2, ...),
+         and placing each at a random candidate location.
+    """
+    cl = (meta or {}).get("clutter") or {}
+    items = cl.get("items") or []
+    if not items:
+        return
+
+    # --- read global budget
+    bmin = int(cl.get("budget", {}).get("min", 0))
+    bmax = cl.get("budget", {}).get("max", None)
+    bmax = int(bmax) if bmax is not None else 10**9
+    if bmax < bmin:
+        bmax = bmin
+
+    # --- validate & sample desired counts per item
+    desired: list[dict] = []   # [{'spec': spec, 'n': int}, ...] in same order
+    for spec in items:
+        if not isinstance(spec, dict):
+            continue
+        name = str(spec.get("name") or "clutter")
+        types = spec.get("types") or []
+        locs  = spec.get("at") or []
+        cnt   = spec.get("count") or {}
+        if not types or not locs or "min" not in cnt or "max" not in cnt:
+            continue
+        cmin = int(cnt.get("min", 0))
+        cmax = int(cnt.get("max", cmin))
+        if cmax < cmin:
+            cmax = cmin
+        n = rng.randint(cmin, cmax) if cmax > cmin else cmin
+        desired.append({"spec": spec, "n": n})
+
+    # total desired
+    total = sum(x["n"] for x in desired)
+
+    # --- clamp DOWN to bmax if needed (deterministic/fair reduction)
+    if total > bmax:
+        # Make a working list of indices replicated n times, then shuffle and trim.
+        # This spreads reductions fairly across items.
+        slots: list[int] = []
+        for i, x in enumerate(desired):
+            slots.extend([i] * x["n"])
+        rng.shuffle(slots)
+        # Keep exactly bmax
+        keep = slots[:bmax]
+        # Recount per-item
+        new_counts = [0] * len(desired)
+        for i in keep:
+            new_counts[i] += 1
+        for i, x in enumerate(desired):
+            x["n"] = new_counts[i]
+        total = bmax
+
+    # --- top-up to bmin if needed (best-effort round-robin)
+    if total < bmin and desired:
+        deficit = bmin - total
+        # Round-robin over items; try to add while respecting each item's max (if variants may exhaust, spawn will guard)
+        i = 0
+        L = len(desired)
+        while deficit > 0 and L > 0:
+            x = desired[i]
+            cnt = x["spec"].get("count") or {}
+            cmax = int(cnt.get("max", x["n"]))
+            if x["n"] < cmax:
+                x["n"] += 1
+                deficit -= 1
+            i = (i + 1) % L
+        total = bmin - max(deficit, 0)
+
+    # --- spawn
+    used = set(world.objects.keys())
+
+    def _unique(base: str) -> str:
+        i = 1
+        cand = f"{base}_{i}"
+        while cand in used:
+            i += 1
+            cand = f"{base}_{i}"
+        used.add(cand)
+        return cand
+
+    for x in desired:
+        spec = x["spec"]; n = x["n"]
+        if n <= 0:
+            continue
+        base = str(spec.get("name") or "clutter")
+        types = list(spec.get("types") or [])
+        locs  = list(spec.get("at") or [])
+        variants = list(spec.get("variants") or [])  # optional
+
+        for _ in range(n):
+            # choose name
+            if variants:
+                avail = [v for v in variants if v not in used]
+                if avail:
+                    name = rng.choice(avail)
+                    used.add(name)
+                else:
+                    # variant pool exhausted; fall back to auto-name
+                    name = _unique(base)
+            else:
+                name = _unique(base)
+
+            # register object + place
+            for t in types:
+                world.add_object(name, t)
+            loc = str(rng.choice(locs))
+            world.facts.add(("obj-at", (name, loc)))
 
 
 # =========================
@@ -492,6 +626,12 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
     init_fluents = (meta.get("init_fluents") or [])
     if init_fluents:
         _apply_init_fluents(w, init_fluents)
+
+    # --- Optional clutter injection ---
+    try:
+        _apply_clutter(meta, w, static_facts, rng)
+    except Exception:
+        pass
 
     # --- Env config
     env_cfg: Dict[str, Any] = {

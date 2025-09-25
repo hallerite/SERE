@@ -22,6 +22,24 @@ meta:
       - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
       - {expr: "(in leaf cup)", reward: 0.05, once: true}
       - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
+  clutter:
+    budget: {min: 2, max: 6}
+    items:
+      - name: cable
+        types: [object]
+        variants: [cable1, cable2]
+        at: [hallway]
+        count: {min: 0, max: 2}
+      - name: spoon
+        types: [object]
+        variants: [spoon1, spoon2]
+        at: [kitchen]
+        count: {min: 0, max: 2}
+      - name: box
+        types: [object]
+        variants: [box1, box2]
+        at: [pantry]
+        count: {min: 0, max: 2}
 
 objects:
   r1: robot

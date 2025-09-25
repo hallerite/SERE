@@ -15,6 +15,19 @@ meta:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 8]
     - ["water-temp", ["cup"], 100.0]
+  clutter:
+    budget: {min: 1, max: 3}
+    items:
+      - name: spoon
+        types: [object]
+        variants: [spoon1, spoon2, spoon3]
+        at: [kitchen]
+        count: {min: 0, max: 2}
+      - name: rag
+        types: [object]
+        at: [kitchen]
+        count: {min: 0, max: 2}
+
 
 objects:
   r1:
