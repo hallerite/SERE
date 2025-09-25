@@ -15,7 +15,6 @@ def main():
             display_nl=True,           # True => NL+PDDL everywhere; False => PDDL-only
             show_objects_in_sysprompt=True,
             show_affordances=True,
-            nl_max_facts=200,
         )
     )
 

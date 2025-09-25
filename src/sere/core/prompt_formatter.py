@@ -16,7 +16,6 @@ class PromptFormatterConfig:
     # Visibility / limits
     show_briefing: bool = True
     show_objects_in_sysprompt: bool = True
-    nl_max_facts: int = 200
 
     # What to show in obs
     show_goal: bool = True
@@ -217,31 +216,6 @@ class PromptFormatter:
                 "Reply with <move>(action args)</move>."
             ] if p
         ).strip()
-
-
-    def _format_fluents(
-        self,
-        *,
-        world_fluents: Dict[Tuple[str, Tuple[str, ...]], float],
-        prev_fluents: Dict[Tuple[str, Tuple[str, ...]], float],
-    ) -> str:
-        rows = []
-        prec = max(0, int(self.cfg.fluents_precision))
-        for (name, args), val in sorted(world_fluents.items()):
-            # Time is engine-owned
-            if not any(fnmatch.fnmatch(name, pat) for pat in (self.cfg.visible_fluents or ["*"])):
-                continue
-            key = f"({name}{'' if not args else ' ' + ' '.join(args)})"
-            delta_txt = ""
-            if self.cfg.show_fluent_deltas:
-                prev = prev_fluents.get((name, args))
-                if prev is not None:
-                    dv = val - prev
-                    if abs(dv) >= 10 ** (-prec):
-                        sign = "+" if dv >= 0 else ""
-                        delta_txt = f" ({sign}{dv:.{prec}f})"
-            rows.append(f"{key}={val:.{prec}f}{delta_txt}")
-        return ("Fluents: " + ", ".join(rows)) if rows else ""
 
 
     # ---------- Affordances ----------
