@@ -69,7 +69,11 @@ class PromptFormatter:
             lines.append(f"{sym}: {{{type_str}}}")
         return "\n".join(lines) if lines else "(none)"
 
-    def build_system_prompt(self, *, world: WorldState, time_limit: float | None = None) -> str:
+    def build_system_prompt(self, 
+        *, world: WorldState, 
+        static_facts: Optional[Set[Predicate]] = None,
+        time_limit: float | None = None) -> str:
+
         if not self.cfg.show_briefing:
             return ""
 
@@ -133,6 +137,21 @@ class PromptFormatter:
         # -------- Objects listing --------
         if self.cfg.show_objects_in_sysprompt:
             parts += ["", "Objects (name - type):", self._format_objects_name_type(world)]
+        
+        # -------- Static facts listing (do not change) --------
+        if static_facts:
+            pats = ["*"]
+            lines: list[str] = []
+            for pred in sorted(static_facts):
+                name, _ = pred
+                import fnmatch as _fn
+                if not any(_fn.fnmatch(name, pat) for pat in pats):
+                    continue
+                pddl = self._pddl(pred)
+                nl = self._nl_pred(pred) if self.cfg.display_nl else None
+                lines.append(self._inline(pddl, nl))
+            parts += ["", "Statics (do not change):", "\n".join(lines) if lines else "(none)"]
+
 
         return "\n".join(parts)
 

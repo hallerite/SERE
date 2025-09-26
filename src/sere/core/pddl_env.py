@@ -165,6 +165,7 @@ class PDDLEnv:
         self._step_messages.clear()   # <-- clear last-turn buffer
         self._system_prompt_cache = self.formatter.build_system_prompt(
             world=self.world,
+            static_facts=self.static_facts,
             time_limit=self.time_limit,
         )
 
