@@ -128,6 +128,19 @@ predicates:
       - "{c} is openable"
       - "{c} supports open/close"
 
+  - name: has-water
+    args: [{name: c, type: container}]
+    nl:
+      - "{c} contains water"
+      - "Water is present in {c}"
+
+  - name: is-sink
+    args: [{name: s, type: container}]
+    static: true
+    nl:
+      - "{s} is a sink/water source"
+      - "{s} can supply water"
+
 # ---------- Fluents (numeric state) ----------
 fluents:
 
@@ -418,11 +431,45 @@ actions:
         messages:
           - "{a} is now powered."
 
+  - name: fill-water
+    params: [{r: robot}, {k: container}, {s: container}]
+    pre:
+      - "(co-located ?r ?k)"
+      - "(co-located ?r ?s)"
+      - "(is-sink ?s)"
+      - "(open ?k)"
+    add: []
+    del: []
+    duration: 1.0
+    nl:
+      - "Fill {k} with water from {s}"
+      - "{r} fills {k} at {s}"
+    outcomes:
+      - name: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "The faucet sputtered; {k} didn’t fill."
+      - name: success
+        p: 0.95
+        when: []
+        add: ["(has-water ?k)"]
+        delete: []
+        num_eff:
+          - "(assign (water-temp ?k) 20)"
+          - "(decrease (energy ?r) 0.2)"
+        messages:
+          - "{k} is now filled with water (20°C)."
+
   - name: heat-kettle
     params: [{r: robot}, {k: appliance}, {n: number}]
     pre:
       - "(co-located ?r ?k)"
       - "(powered ?k)"
+      - "(has-water ?k)"
       - "(not (open ?k))"
     add: []
     del: []
@@ -469,7 +516,9 @@ actions:
         when:
           - "(or (not (needs-open ?m)) (open ?m))"
           - "(>= (water-temp ?k) 80)"
+          - "(has-water ?k)"
         add: ["(has-hot-water ?m)"]
+        delete: ["(has-water ?k)"]
         num_eff: ["(assign (water-temp ?m) 100)"]
         messages:
           - "Hot water transferred to {m}."
