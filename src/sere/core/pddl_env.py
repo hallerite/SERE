@@ -551,6 +551,22 @@ class PDDLEnv:
                 info["outcome"] = "timeout"
                 info["reason"] = "max_steps_exceeded"
 
+        # ---- normalize non-success terminals to "failed" ----
+        if self.done:
+            oc = (info.get("outcome") or "").lower()
+            # keep canonical wins/time/energy/invalid as-is
+            whitelist = {"success", "timeout", "out_of_energy", "invalid_move"}
+            if oc not in whitelist:
+                # preserve original for debugging
+                if "outcome" in info:
+                    info["outcome_raw"] = info["outcome"]
+                info["outcome"] = "failed"
+                # if a termination rule fired, surface its name as the reason
+                if "terminal_rule" in info and "reason" not in info:
+                    info["reason"] = str(info["terminal_rule"])
+                # if nothing else, at least say it's implicit
+                info.setdefault("reason", "implicit_fail")
+
         if not self.done and "outcome" not in info:
             info["outcome"] = "ongoing"
 
@@ -559,6 +575,7 @@ class PDDLEnv:
         obs = self._obs()
         info["messages"] = last_turn
         return obs, reward, self.done, info
+
 
 
     
