@@ -1,7 +1,7 @@
 id: t08_more_nav_scatter_objects
 name: More navigation; objects scattered
 description: |
-  Mug at table, kettle in kitchen, teabag in pantry. Bring it all together and brew.
+  Mug at table, heater in kitchen, teabag in pantry. Bring it all together and brew.
 
 meta:
   domain: kitchen
@@ -64,6 +64,7 @@ static_facts:
   - (adjacent kitchen table)
   - (adjacent table kitchen)
   - (openable heater)
+  - (pour-out-needs-closed heater)
 
 init:
   - (at r1 hallway)
@@ -71,6 +72,7 @@ init:
   - (obj-at cup table)
   - (obj-at leaf pantry)
   - (clear-hand r1)
+  - (has-water heater)
 
 termination:
   - name: success_tea
@@ -86,7 +88,6 @@ reference_plan:
   - (move r1 hallway kitchen)
   - (power-on r1 heater)
   - (heat-kettle r1 heater 3)
-  - (open r1 heater)
   - (move r1 kitchen table)
   - (pick-up r1 cup)
   - (move r1 table kitchen)

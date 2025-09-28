@@ -1,8 +1,8 @@
 id: t06_fetch_teabag_simple_nav
 name: Fetch teabag with simple navigation
 description: |
-  Teabag is in the pantry. Go get it, put it in the mug, then heat/pour/steep if needed.
-  Kettle is hot and open; mug is closed initially.
+  Teabag is in the pantry. Go get it, put it in the mug, then pour hot water and steep.
+  Kettle is hot and closed (ready to pour). Cup is open by design.
 
 meta:
   domain: kitchen
@@ -58,14 +58,15 @@ static_facts:
   - (adjacent kitchen pantry)
   - (adjacent pantry kitchen)
   - (openable heater)
+  - (pour-out-needs-closed heater)
 
 init:
   - (at r1 kitchen)
   - (obj-at cup kitchen)
   - (obj-at heater kitchen)
-  - (open heater)
   - (obj-at leaf pantry)
   - (clear-hand r1)
+  - (has-water heater)
 
 termination:
   - name: success_tea

@@ -1,8 +1,8 @@
 id: t10_full_constraints_time_energy_power
-name: Full constraints; time + energy + power
+name: Full constraints; time + energy + power + sink fill (mid-run recharge)
 description: |
-  Hardest variant: must recharge once, power on the kettle, heat twice from 40°C,
-  and finish at the table under a time limit.
+  Do a full brew: open to fill at the sink (20°C), close to pour, power on, heat from cold,
+  fetch the teabag, brew, move to the table — with a recharge in the kitchen after early steps.
 
 meta:
   domain: kitchen
@@ -14,34 +14,35 @@ meta:
   seed: 210
   init_fluents:
     - ["battery-cap", ["robot"], 8]
-    - ["energy", ["robot"], 2]
-    - ["water-temp", ["heater"], 40.0]
+    - ["energy", ["robot"], 3]         # enough to prep + heat, not enough to finish without recharge
+    - ["water-temp", ["heater"], 0.0]
   reward_shaping:
     mode: instant
     milestones:
-      - {expr: "(>= (energy robot) 5)", reward: 0.05, once: true}
+      - {expr: "(has-water heater)", reward: 0.05, once: true}
       - {expr: "(powered heater)", reward: 0.05, once: true}
       - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
+      - {expr: "(>= (energy robot) 5)", reward: 0.05, once: true}   # recharge happened
       - {expr: "(in leaf cup)", reward: 0.05, once: true}
       - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
+      - {expr: "(at robot table)", reward: 0.05, once: true}
   clutter:
     budget: {min: 3, max: 7}
     items:
       - name: cable
         types: [object]
         variants: [cable1, cable2]
-        at: [hallway]
+        at: [kitchen]
         count: {min: 0, max: 2}
       - name: tray
         types: [object]
         variants: [tray1, tray2]
         at: [table]
         count: {min: 0, max: 2}
-      - name: spoon
+      - name: sponge
         types: [object]
-        variants: [spoon1, spoon2, spoon3]
         at: [kitchen]
-        count: {min: 0, max: 3}
+        count: {min: 0, max: 2}
 
 objects:
   robot:
@@ -51,6 +52,9 @@ objects:
   kitchen: location
   pantry: location
   table: location
+  sink1:
+    types: [container]
+    variants: [sink1, basin]
   cup:
     types: [container]
     variants: [mug, cup, beaker, tumbler]
@@ -62,7 +66,7 @@ objects:
     variants: [teabag, sachet]
 
 static_facts:
-  - (has-charger hallway)
+  - (has-charger kitchen)             # recharge mid-run at the worksite
   - (adjacent hallway kitchen)
   - (adjacent kitchen hallway)
   - (adjacent kitchen pantry)
@@ -70,13 +74,18 @@ static_facts:
   - (adjacent kitchen table)
   - (adjacent table kitchen)
   - (openable heater)
+  - (is-sink sink1)
+  - (pour-in-needs-open heater)       # must be open to fill
+  - (pour-out-needs-closed heater)    # must be closed to pour out
 
 init:
   - (at robot hallway)
   - (obj-at heater kitchen)
   - (obj-at cup kitchen)
   - (obj-at leaf pantry)
+  - (obj-at sink1 kitchen)
   - (clear-hand robot)
+  - (has-water heater)
 
 termination:
   - name: goal
@@ -89,11 +98,13 @@ termination:
     reward: -1.0
 
 reference_plan:
-  - (recharge robot hallway)
-  - (move robot hallway kitchen)
-  - (power-on robot heater)
-  - (heat-kettle robot heater 3)
+  - (move robot hallway kitchen)      # do some work first…
   - (open robot heater)
+  - (fill-water robot heater sink1)
+  - (close robot heater)
+  - (power-on robot heater)
+  - (heat-kettle robot heater 4)      # 0 → 60 → 120 (well over 80)
+  - (recharge robot kitchen)          # mid-run top up
   - (move robot kitchen pantry)
   - (pick-up robot leaf)
   - (move robot pantry kitchen)

@@ -55,6 +55,7 @@ init:
   - (open kettle)
   - (in sachet mug)
   - (clear-hand r1)
+  - (has-water kettle)
 
 termination:
   - name: success_tea

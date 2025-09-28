@@ -1,36 +1,34 @@
-id: t05_heat_once_then_pour_steep
-name: Five steps; power on, heat once, pour, steep
+id: t03_close_source_then_pour_steep
+name: Three steps; close heater, pour, steep
 description: |
-  Heater is CLOSED and warm (60°C) but NOT powered. Power it on, heat once to reach ≥80°C,
-  then pour & steep. (Teabag already in cup. Cup is always open to receive.)
+  Source requires being CLOSED to pour out. Heater is hot but OPEN. Close it first, then pour and steep.
 
 meta:
   domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
-  max_steps: 10
-  time_limit: 7.5
-  seed: 205
+  max_steps: 9
+  time_limit: 6.0
+  seed: 203
   init_fluents:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 8]
-    - ["water-temp", ["heater"], 60.0]
+    - ["water-temp", ["heater"], 90.0]
   reward_shaping:
     mode: instant
     milestones:
-      - {expr: "(powered heater)", reward: 0.05, once: true}
-      - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
+      - {expr: "(not (open heater))", reward: 0.10, once: true}
       - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
   clutter:
-    budget: {min: 1, max: 4}
+    budget: {min: 1, max: 3}
     items:
-      - name: spoon
+      - name: coaster
         types: [object]
-        variants: [spoon1, spoon2]
+        variants: [coaster1, coaster2]
         at: [kitchen]
         count: {min: 0, max: 2}
-      - name: cloth
+      - name: rag
         types: [object]
         at: [kitchen]
         count: {min: 0, max: 2}
@@ -43,36 +41,35 @@ objects:
     variants: [mug1, cup, beaker, tumbler]
   heater:
     types: [container, appliance]
-    variants: [kettle1, boiler, samovar, urn]
+    variants: [kettle1, kettle, boiler, samovar, urn]
   leaf:
     types: [object]
-    variants: [teabag1, sachet]
+    variants: [teabag1, sachet, bag]
 
 static_facts:
   - (openable heater)
-  - (pour-out-needs-closed heater)
+  - (pour-out-needs-closed heater)   # heater can pour only when closed
 
 init:
   - (at r1 kitchen)
   - (obj-at cup kitchen)
   - (obj-at heater kitchen)
-  # note: NOT powered at start → must power-on before heating
+  - (open heater)             # force the need to close before pouring
   - (in leaf cup)
   - (clear-hand r1)
   - (has-water heater)
 
 termination:
-  - name: success_tea
+  - name: goal
     when: "(tea-ready cup)"
     outcome: success
     reward: 1.0
   - name: spill_fail
     when: "(spilled cup)"
-    outcome: spilled
-    reward: -1.0
+    outcome: failure
+    reward: -0.4
 
 reference_plan:
-  - (power-on r1 heater)
-  - (heat-kettle r1 heater 2) # 60 -> 90
+  - (close r1 heater)
   - (pour r1 heater cup)
   - (steep-tea r1 leaf cup)

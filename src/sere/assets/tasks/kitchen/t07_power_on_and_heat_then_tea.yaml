@@ -1,8 +1,7 @@
 id: t07_power_on_and_heat_then_tea
-name: Power-on kettle, heat twice, then brew
+name: Power-on kettle, heat to hot, then brew
 description: |
-  Kettle is off and lukewarm (40°C). You must power it on, open kettle & mug,
-  heat twice (to 100°C), then fetch teabag and brew.
+  Heater is off and lukewarm (40°C). Power it on, heat to ≥80, fetch teabag, pour, steep.
 
 meta:
   domain: kitchen
@@ -62,6 +61,7 @@ static_facts:
   - (adjacent kitchen pantry)
   - (adjacent pantry kitchen)
   - (openable heater)
+  - (pour-out-needs-closed heater)
 
 init:
   - (at r1 hallway)
@@ -69,6 +69,7 @@ init:
   - (obj-at cup kitchen)
   - (obj-at leaf pantry)
   - (clear-hand r1)
+  - (has-water heater)
 
 termination:
   - name: success_tea
@@ -84,7 +85,6 @@ reference_plan:
   - (move r1 hallway kitchen)
   - (power-on r1 heater)
   - (heat-kettle r1 heater 3)
-  - (open r1 heater)
   - (move r1 kitchen pantry)
   - (pick-up r1 leaf)
   - (move r1 pantry kitchen)

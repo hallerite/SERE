@@ -29,7 +29,6 @@ meta:
         at: [kitchen]
         count: {min: 0, max: 2}
 
-
 objects:
   r1:
     types: [robot]
