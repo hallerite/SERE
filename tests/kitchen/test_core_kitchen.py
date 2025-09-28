@@ -20,7 +20,10 @@ objects:
     types: [container, appliance]
   mug1:
     types: [container]
+  sink1:
+    types: [container]
   teabag1: object
+
 
 static_facts:
   - (adjacent hallway kitchen)
@@ -31,13 +34,16 @@ static_facts:
   - (adjacent table kitchen)
   - (openable kettle1)
   - (openable mug1)
-  - (needs-open mug1)
+  - (is-sink sink1)
+  - (pour-in-needs-open mug1)
+  - (pour-out-needs-closed kettle1)
 
 init:
   - (at r1 hallway)
   - (obj-at kettle1 kitchen)
   - (powered kettle1)
   - (obj-at mug1 kitchen)
+  - (obj-at sink1 kitchen)
   - (obj-at teabag1 pantry)
   - (clear-hand r1)
 
@@ -110,6 +116,9 @@ def pour(env, k, m):
 
 def steep(env, tb, m):
     return env.step(f"<move>(steep-tea r1 {tb} {m})</move>")
+
+def fill(env, k, s):
+    return env.step(f"<move>(fill-water r1 {k} {s})</move>")
 
 def _affordances(env):
     # Ask the same generator the UI uses and RETURN it.
@@ -212,39 +221,53 @@ def test_pour_success_branch_sets_hot_water_and_temp(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=60)
     reset_with(env)
     move(env, "hallway", "kitchen")
-    open_(env, "mug1")
-    # Kettle must be closed to heat; it starts closed, so don't open it here.
-    heat(env, "kettle1", 6)   # +90°C
 
+    # Prepare kettle with water ≥80°C
+    open_(env, "kettle1")
+    fill(env, "kettle1", "sink1")
+    close_(env, "kettle1")
+    heat(env, "kettle1", 6)   # 20 + 90 = 110°C
+
+    open_(env, "mug1")
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert info.get("outcome") != "invalid"
     assert ("has-hot-water", ("mug1",)) in env.world.facts
-    assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
+    # Pour mirrors source temp now
+    assert env.world.get_fluent("water-temp", ("mug1",)) == \
+           pytest.approx(env.world.get_fluent("water-temp", ("kettle1",)))
+    # Optional: check selected outcome branch
+    assert info.get("outcome_branch") in ("transfer_hot", "chosen")
+
 
 def test_pour_spill_branch_when_mug_closed(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=60)
     reset_with(env)
     move(env, "hallway", "kitchen")
-    heat(env, "kettle1", 6)   # +90°C
 
-    # Ensure mug is closed
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)   # hot
+
+    # Ensure mug is CLOSED
     env.world.facts.discard(("open", ("mug1",)))
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert ("spilled", ("mug1",)) in env.world.facts
+    assert info.get("outcome_branch") in ("spill_closed_target", "chosen")
 
 def test_steep_requires_hot_water_and_presence(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
     reset_with(env)
     move(env, "hallway", "kitchen")
-    open_(env, "mug1")
-    heat(env, "kettle1", 6)   # +90°C
 
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)   # hot enough
+
+    open_(env, "mug1")
     pour(env, "kettle1", "mug1")
+
     # Insert teabag
-    move(env, "kitchen", "pantry")
-    pickup(env, "teabag1")
-    move(env, "pantry", "kitchen")
-    putin(env, "teabag1", "mug1")
+    move(env, "kitchen", "pantry"); pickup(env, "teabag1")
+    move(env, "pantry", "kitchen"); putin(env, "teabag1", "mug1")
+
     # Steep
     obs, r, done, info = steep(env, "teabag1", "mug1")
     assert info.get("outcome") != "invalid"
@@ -329,17 +352,20 @@ def test_move_decreases_energy_and_increases_time(basic_task_file):
     assert e1 == e0 - 1, f"energy should drop by 1, got {e0}->{e1}"
     assert t1 >= t0 + 1 - 1e-9, f"time should increase by 1, got {t0}->{t1}"
 
-def test_pour_assign_overrides_not_accumulates(basic_task_file):
+def test_pour_mirrors_source_temp_not_accumulates(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
+
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)  # 110°C
     open_(env, "mug1")
-    # Two ticks -> +30°C, still <80°C
-    # Heat to >= 80°C
-    heat(env, "kettle1", 6)  # +90°C
     obs, r, done, info = pour(env, "kettle1", "mug1")
+
     assert ("has-hot-water", ("mug1",)) in env.world.facts
-    assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
+    # Exactly equals source temp (mirror), not add/average
+    assert env.world.get_fluent("water-temp", ("mug1",)) == \
+           pytest.approx(env.world.get_fluent("water-temp", ("kettle1",)))
 
 # ==================== CONDITIONAL NO-BRANCH ====================
 
@@ -348,10 +374,18 @@ def test_pour_no_branch_when_temp_too_low(basic_task_file):
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
-    # Keep kettle CLOSED while heating; 2 ticks -> +30°C (<80°C)
+
+    # Fill then under-heat: 20 + 30 = 50°C (<80)
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
     heat(env, "kettle1", 2)
 
     obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert ("has-hot-water", ("mug1",)) not in env.world.facts
+    assert env.world.get_fluent("water-temp", ("mug1",)) == \
+           pytest.approx(env.world.get_fluent("water-temp", ("kettle1",)))
+    # New branch name: transfer_cool
+    assert info.get("outcome_branch") in ("transfer_cool", "chosen")
+
 
 
 # ==================== DERIVED AND ADJACENCY ====================
@@ -430,65 +464,73 @@ def test_time_limit_boundary_exact_ok_exceed_bad(basic_task_file):
 # ==================== TEST "OR" ====================
 # ==================== OR PRECONDITIONS / needs-open GUARD ====================
 
-def test_pour_invalid_when_source_needs_open_and_closed(basic_task_file):
+def test_pour_invalid_when_source_needs_closed_and_open(basic_task_file):
     """
-    If the SOURCE container is marked (needs-open ?k) and it's closed,
+    If the SOURCE container is marked (pour-out-needs-closed ?k) and it's OPEN,
     'pour' should be blocked by the (or ...) preconditions.
-    Opening the kettle then allows pour (assuming >=80C).
+    Keeping the kettle CLOSED then allows pour (assuming ≥80°C).
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
-    # Source guard on
-    reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
+    # Source must be closed to pour
+    reset_with(env, extra_statics=[lit("pour-out-needs-closed", "kettle1")])
 
     move(env, "hallway", "kitchen")
-    # Heat while CLOSED (required for heat-kettle); +90°C total
-    heat(env, "kettle1", 6)
-    # Keep mug open so target isn't the blocker
+
+    # Prepare hot source water (fill while open, then close to heat)
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)  # ≥80°C
     open_(env, "mug1")
 
-    # Kettle is CLOSED → pour should be invalid due to source-open guard
+    # Now OPEN the kettle to violate the 'needs-closed' rule → invalid
+    open_(env, "kettle1")
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert done and info.get("outcome") == "invalid_move"
     err = info.get("error", "")
     assert "preconditions were not satisfied" in err.lower()
     assert "one of:" in err
-    assert "(not (needs-open kettle1))" in err
-    assert "(open kettle1)" in err
+    assert "(not (pour-out-needs-closed kettle1))" in err
+    assert "(not (open kettle1))" in err
 
-
-    # Fresh episode (invalid ends episode): open kettle and try again → should succeed
+    # Fresh episode: keep kettle CLOSED at pour time → success
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
-    reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
+    reset_with(env, extra_statics=[lit("pour-out-needs-closed", "kettle1")])
     move(env, "hallway", "kitchen")
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)
     open_(env, "mug1")
-    heat(env, "kettle1", 6)      # keep kettle CLOSED while heating
-    open_(env, "kettle1")        # now open the source, since it needs-open
+    # Kettle remains CLOSED to satisfy 'needs-closed'
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert info.get("outcome") != "invalid"
     assert ("has-hot-water", ("mug1",)) in env.world.facts
-    assert env.world.get_fluent("water-temp", ("mug1",)) == 100.0
+    assert env.world.get_fluent("water-temp", ("mug1",)) == \
+           pytest.approx(env.world.get_fluent("water-temp", ("kettle1",)))
 
 
 
 def test_pour_spills_when_target_needs_open_and_closed(basic_task_file):
     """
-    Spill occurs only if the TARGET container is marked (needs-open ?m)
-    and is closed at pour time. Source openness irrelevant here.
+    Spill occurs only if the TARGET is (pour-in-needs-open ?m) and CLOSED at pour time.
+    Source openness is irrelevant for the spill decision, but source must have water.
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
-    # Target requires open
-    reset_with(env, extra_statics=[lit("needs-open", "mug1")])
+    # Target requires being open to receive liquid
+    reset_with(env, extra_statics=[lit("pour-in-needs-open", "mug1")])
 
     move(env, "hallway", "kitchen")
 
-    # Heat kettle enough while CLOSED (+90°C)
-    heat(env, "kettle1", 6)
+    # Prepare hot source water:
+    # fill requires kettle OPEN, heat requires it CLOSED (and our domain also allows pouring while CLOSED)
+    open_(env, "kettle1")
+    fill(env, "kettle1", "sink1")
+    close_(env, "kettle1")
+    heat(env, "kettle1", 6)  # hot enough
 
-    # Ensure mug is CLOSED
+    # Ensure mug is CLOSED to trigger spill on pour-in-needs-open
     env.world.facts.discard(("open", ("mug1",)))
 
-    # Pour → should spill (needs-open(mug1) ∧ not open(mug1))
+    # Pour → should spill (pour-in-needs-open(mug1) ∧ not open(mug1))
     obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert info.get("outcome") != "invalid"
     assert ("spilled", ("mug1",)) in env.world.facts
 
 # ==================== NUMERIC RHS & DURATION-VAR SEMANTICS ====================
@@ -503,46 +545,41 @@ def test_heat_numeric_rhs_and_duration(basic_task_file):
     reset_with(env)
     env.enable_durations = True
 
-    # Move to kitchen (durations off by default in this helper)
     move(env, "hallway", "kitchen")
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
 
-    # Kettle starts CLOSED and POWERED. Heat for n=2.
+    # Kettle has 20°C now; heat for n=2 → 50°C; time +1.0
     obs, r, done, info = heat(env, "kettle1", 2)
     assert info.get("outcome") != "invalid"
-
-    # water-temp(kettle1) should be 30.0; time should +1.0
-    assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(30.0)
+    assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(50.0)
     assert env.time >= 1.0 - 1e-9
 
 
 def test_heat_multiple_ns_accumulate_linearly(basic_task_file):
-    """
-    Two separate heats add their effects linearly.
-    """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
     env.enable_durations = True
     move(env, "hallway", "kitchen")
 
-    heat(env, "kettle1", 1)  # +15C, +0.5s
-    obs, r, done, info = heat(env, "kettle1", 6)  # +90C, +3.0s
-    assert info.get("outcome") != "invalid"
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
 
-    # Total +105C, time >= 3.5s
-    assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(105.0)
+    heat(env, "kettle1", 1)  # 20 + 15 = 35°C
+    obs, r, done, info = heat(env, "kettle1", 6)  # +90 → 125°C
+    assert info.get("outcome") != "invalid"
+    assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(125.0)
     assert env.time >= 3.5 - 1e-9
 
 
 def test_heat_invalid_when_open_or_unpowered(basic_task_file):
     """
-    heat-kettle requires co-location, powered, and NOT open.
+    heat-kettle requires co-location, powered, has-water, and NOT open.
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
     move(env, "hallway", "kitchen")
 
-    # Opening kettle then trying to heat -> invalid
-    open_(env, "kettle1")
+    # Opening kettle then trying to heat -> invalid due to (not (open kettle1))
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1")  # has-water true, still open
     obs, r, done, info = heat(env, "kettle1", 1)
     assert done and info.get("outcome") == "invalid_move"
     err = info.get("error", "")
@@ -550,11 +587,11 @@ def test_heat_invalid_when_open_or_unpowered(basic_task_file):
     assert "(not (open kettle1))" in err
     assert "actually: true" in err.lower()
 
-
-    # New episode: remove power and try to heat -> invalid
+    # New episode: remove power and try to heat -> invalid due to (powered kettle1)
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
     move(env, "hallway", "kitchen")
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
     # Drop 'powered' fact
     env.world.facts.discard(("powered", ("kettle1",)))
     obs, r, done, info = heat(env, "kettle1", 1)
@@ -587,22 +624,20 @@ def test_heat_rejects_zero_or_non_numeric_n(basic_task_file):
     assert done and info.get("outcome") == "invalid_move"
 
 
-def test_pour_assign_sets_target_temp_to_100(basic_task_file):
-    """
-    After a successful pour into an OK target, the target temp is exactly 100.0
-    (assign semantics, not accumulate).
-    """
+def test_pour_mirrors_source_temp_exactly(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=40)
     reset_with(env)
     move(env, "hallway", "kitchen")
     open_(env, "mug1")
-    # Heat sufficiently while kettle CLOSED
-    heat(env, "kettle1", 6)  # +90C -> >=80C
+
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)  # 110°C
 
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert info.get("outcome") != "invalid"
     assert ("has-hot-water", ("mug1",)) in env.world.facts
-    assert env.world.get_fluent("water-temp", ("mug1",)) == pytest.approx(100.0)
+    assert env.world.get_fluent("water-temp", ("mug1",)) == \
+           pytest.approx(env.world.get_fluent("water-temp", ("kettle1",)))
 
 
 def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
@@ -610,21 +645,21 @@ def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
     - wait r1 n advances time by n when durations are enabled.
     - a single heat that would push time over the time_limit ends the episode with loss.
     """
-    # Small time limit for the second half of the test
     env, _ = load_task(None, str(basic_task_file), max_steps=20, time_limit=1.0)
     reset_with(env)
-    # Move without durations so it doesn't consume time in this test
     move(env, "hallway", "kitchen")
+
+    # Prepare kettle BEFORE turning durations on (so prep doesn't consume time)
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
 
     # Enable durations now
     env.enable_durations = True
 
-    # 'wait' with duration_var= n (unit=1.0)
     obs, r, done, info = env.step("<move>(wait 0.4)</move>")
     assert not done
     assert env.time >= 0.4 - 1e-9
 
-    # Now a single heat with duration 0.5 * 2 = 1.0 pushes time over 1.0 → loss
+    # Now a single heat with duration 1.0 pushes time over 1.0 → loss
     obs, r, done, info = heat(env, "kettle1", 2)
     assert done and info.get("outcome") == "timeout"
     assert info.get("reason") == "time_limit_exceeded"
@@ -634,37 +669,49 @@ def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
 
 def test_pour_blocked_until_kettle_open_when_marked_needs_open(basic_task_file):
     """
-    If the SOURCE container is marked (needs-open ?k) and it's closed,
-    'pour' should be invalid. Opening the kettle fixes it.
+    If the SOURCE container is marked (pour-out-needs-open ?k) and it's CLOSED,
+    pour should be invalid. Opening the kettle then makes pour succeed.
     """
+    # -------- Episode 1: expect INVALID while source is CLOSED --------
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
-    reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
+    reset_with(env, extra_statics=[lit("pour-out-needs-open", "kettle1")])
+    # Kill any conflicting default policy
+    env.static_facts.discard(lit("pour-out-needs-closed", "kettle1"))
 
     move(env, "hallway", "kitchen")
-    heat(env, "kettle1", 6)  # get it hot enough
-    open_(env, "mug1")       # ensure target isn't the blocker
-
-    # Closed kettle + needs-open(kettle1) → invalid
+    # Fill requires open; heat requires closed.
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)  # 20 + 90 = 110°C
+    open_(env, "mug1")
+    # Keep kettle CLOSED → violates needs-open constraint
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert done and info.get("outcome") == "invalid_move"
     err = info.get("error", "")
     assert "preconditions were not satisfied" in err.lower()
     assert "one of:" in err
-    assert "(not (needs-open kettle1))" in err
+    assert "(not (pour-out-needs-open kettle1))" in err
     assert "(open kettle1)" in err
 
-
-    # Now open kettle and try again → success
+    # -------- Episode 2: expect SUCCESS once source is OPEN --------
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
-    reset_with(env, extra_statics=[lit("needs-open", "kettle1")])
+    reset_with(env, extra_statics=[lit("pour-out-needs-open", "kettle1")])
+    env.static_facts.discard(lit("pour-out-needs-closed", "kettle1"))
+
     move(env, "hallway", "kitchen")
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
     heat(env, "kettle1", 6)
     open_(env, "mug1")
-    open_(env, "kettle1")
+    open_(env, "kettle1")  # now satisfy needs-open at pour-time
     obs, r, done, info = pour(env, "kettle1", "mug1")
+
     assert info.get("outcome") != "invalid"
     assert ("has-hot-water", ("mug1",)) in env.world.facts
-    assert env.world.get_fluent("water-temp", ("mug1",)) == pytest.approx(100.0)
+    # target mirrors source temperature
+    import pytest
+    assert env.world.get_fluent("water-temp", ("mug1",)) == \
+           pytest.approx(env.world.get_fluent("water-temp", ("kettle1",)))
+    # optional: branch label check
+    assert info.get("outcome_branch") in ("transfer_hot", "chosen")
 
 
 def test_pour_spill_only_when_target_marked_needs_open_and_closed(basic_task_file):
@@ -672,13 +719,17 @@ def test_pour_spill_only_when_target_marked_needs_open_and_closed(basic_task_fil
     Spill occurs only if TARGET is (needs-open ?m) AND closed at pour time.
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
-    reset_with(env, extra_statics=[lit("needs-open", "mug1")])
+    reset_with(env, extra_statics=[lit("pour-in-needs-open", "mug1")])
     move(env, "hallway", "kitchen")
+
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
     heat(env, "kettle1", 6)  # hot enough
+
     # Ensure mug is CLOSED
     env.world.facts.discard(("open", ("mug1",)))
     obs, r, done, info = pour(env, "kettle1", "mug1")
     assert ("spilled", ("mug1",)) in env.world.facts
+
 
 # ==================== MESSAGES AFTER ACTIONS ====================
 
@@ -691,9 +742,8 @@ def test_action_messages_and_probes_kitchen(basic_task_file):
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=80)
 
-    # --- Success path: open → heat → pour (success) ---
+    # --- Success path: open → fill/close → heat → pour (success) ---
     reset_with(env)
-    # Move to kitchen so co-location holds
     move(env, "hallway", "kitchen")
 
     # 1) open mug → "{c} is now open."
@@ -701,15 +751,16 @@ def test_action_messages_and_probes_kitchen(basic_task_file):
     msgs = "\n".join(info.get("messages") or [])
     assert "mug1 is now open." in msgs
 
-    # 2) heat kettle (n=2) → "Heating {k}… water-temp now (water-temp ?k)°C."
-    # kettle starts CLOSED and POWERED in the fixture; co-location now true
+    # Prepare kettle
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+
+    # 2) heat kettle (n=2) → probe shows ~50°C (20 + 30)
     obs, r, done, info = heat(env, "kettle1", 2)
     msgs = "\n".join(info.get("messages") or [])
-    # Probe should have evaluated to ~30.00
     assert "Heating kettle1" in msgs
-    assert ("30.00" in msgs) or ("30.0" in msgs), f"expected temp probe ~30C in messages, got:\n{msgs}"
+    assert ("50.00" in msgs) or ("50.0" in msgs), f"expected temp probe ~50C in messages, got:\n{msgs}"
 
-    # 3) heat more to reach >= 80C (n=4 → +60C, total 90C)
+    # 3) heat more to reach >= 80C (n=4 → +60C)
     heat(env, "kettle1", 4)
 
     # 4) pour success branch → "Hot water transferred to {m}."
@@ -723,7 +774,8 @@ def test_action_messages_and_probes_kitchen(basic_task_file):
     move(env, "hallway", "kitchen")
     # Ensure mug is CLOSED (fixture already marks needs-open mug1)
     env.world.facts.discard(("open", ("mug1",)))
-    # Heat enough for success path, but target is closed → spill branch message
+    # Prepare kettle hot again
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
     heat(env, "kettle1", 6)
     obs, r, done, info = pour(env, "kettle1", "mug1")
     msgs = "\n".join(info.get("messages") or [])
@@ -732,21 +784,18 @@ def test_action_messages_and_probes_kitchen(basic_task_file):
     # --- Simple brace/var substitution sanity: pick-up/put-in/close messages ---
     env, _ = load_task(None, str(basic_task_file), max_steps=40)
     reset_with(env)
-    # Go to the PANTRY (teabag1 is there), then pick up
     move(env, "hallway", "kitchen")
     move(env, "kitchen", "pantry")
     obs, r, done, info = pickup(env, "teabag1")
     msgs = "\n".join(info.get("messages") or [])
     assert "Picked up teabag1." in msgs
 
-    # Bring it to the kitchen, open mug, put in teabag → messages fire
     move(env, "pantry", "kitchen")
     open_(env, "mug1")
     obs, r, done, info = putin(env, "teabag1", "mug1")
     msgs = "\n".join(info.get("messages") or [])
     assert "teabag1 is now in mug1." in msgs
 
-    # Close mug → "{c} is now closed."
     obs, r, done, info = close_(env, "mug1")
     msgs = "\n".join(info.get("messages") or [])
     assert "mug1 is now closed." in msgs
@@ -755,12 +804,15 @@ def test_action_messages_and_probes_kitchen(basic_task_file):
 
 def test_affordances_hide_pour_with_same_source_and_target(basic_task_file):
     """
-    After moving to the kitchen (co-location satisfied), the affordance set
-    should contain a valid pour (kettle1 -> mug1) and NEVER (mug1 -> mug1).
+    After moving to the kitchen and preparing the source with water,
+    affordances should include (pour r1 kettle1 mug1) and NEVER (mug1 -> mug1).
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
     move(env, "hallway", "kitchen")
+
+    # Prepare source so (has-water kettle1) holds; target openness is not required for listing
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
 
     aff = _affordances(env)
     assert "(pour r1 kettle1 mug1)" in aff
@@ -771,12 +823,15 @@ def test_affordances_hide_pour_with_same_source_and_target(basic_task_file):
 def test_execution_rejects_same_source_and_target_with_distinct_error(basic_task_file):
     """
     Ensure all other pour preconditions are satisfied so (distinct ?k ?m)
-    is the one that fails. In this fixture, mug1 has (needs-open), so open it.
+    is the one that fails. We give mug1 water (source) to avoid failing on has-water.
     """
     env, _ = load_task(None, str(basic_task_file), max_steps=20)
     reset_with(env)
     move(env, "hallway", "kitchen")
-    open_(env, "mug1")  # satisfy target-open guard
+
+    # Make (has-water mug1) true so only DISTINCT is the blocker
+    open_(env, "mug1")
+    fill(env, "mug1", "sink1")  # sets has-water(mug1) and water-temp=20
 
     obs, r, done, info = env.step("<move>(pour r1 mug1 mug1)</move>")
     assert done and info.get("outcome") == "invalid_move"
@@ -784,7 +839,6 @@ def test_execution_rejects_same_source_and_target_with_distinct_error(basic_task
     assert "preconditions were not satisfied" in err.lower()
     assert "(distinct mug1 mug1)" in err
     assert "duplicates found" in err.lower()
-
 
 
 def test_move_same_from_to_rejected_specifically_by_distinct(basic_task_file):
@@ -1025,7 +1079,6 @@ meta:
   seed: 1
   init_fluents:
     - ["energy", ["r"], 10]
-    - ["water-temp", ["mug1"], 80]
 objects:
   r:      {types: [robot],    variants: [r1]}
   h:      {types: [location], variants: [hallway]}
@@ -1035,6 +1088,7 @@ objects:
   kettle: {types: [appliance, container], variants: [kettle1]}
   cup:    {types: [container], variants: [mug1]}
   tb:     {types: [object],   variants: [teabag1]}
+  s:      {types: [container], variants: [sink1]}
 static_facts:
   - (adjacent h k)
   - (adjacent k h)
@@ -1044,13 +1098,16 @@ static_facts:
   - (adjacent t k)
   - (openable kettle)
   - (openable cup)
-  - (needs-open cup)
   - (powered kettle)
+  - (is-sink s)
+  # Optional: target pour policy; not required for the goal itself
+  - (pour-in-needs-open cup)
 init:
   - (at r h)
   - (obj-at kettle k)
   - (obj-at cup k)
   - (obj-at tb p)
+  - (obj-at s k)
   - (clear-hand r)
 termination:
   - name: goal
@@ -1059,6 +1116,9 @@ termination:
 reference_plan:
   - (move r h k)
   - (open r cup)
+  - (open r kettle)
+  - (fill-water r kettle s)
+  - (close r kettle)
   - (heat-kettle r kettle 6)
   - (pour r kettle cup)
   - (move r k p)
@@ -1111,7 +1171,7 @@ static_facts: []
 init: []
 termination:
   - name: term
-    when: "(and (or (needs-open cup) (open cup)) (>= (water-temp cup) 80))"
+    when: "(and (or (pour-in-needs-open cup) (open cup)) (>= (water-temp cup) 80))"
     outcome: terminal
 """
     path = _write_yaml(tmp_path, "t_loader_heads_untouched.yaml", yaml_text)
@@ -1124,5 +1184,5 @@ termination:
     assert "mug1" in when
 
     # Heads not renamed
-    for head in ("and", "or", "needs-open", "open", ">=", "water-temp"):
+    for head in ("and", "or", "pour-in-needs-open", "open", ">=", "water-temp"):
         assert head in when, f"Expected head '{head}' to remain in: {when}"

@@ -10,8 +10,9 @@ NUM_CMP = re.compile(
     r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
 )
 NUM_EFF = re.compile(
-    r"^\(\s*(increase|decrease|assign)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([^\s()]+)\s*\)$"
+    r"^\(\s*(increase|decrease|assign)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+(.+)\s*\)$"
 )
+
 
 
 def _bind_args(argstr: Optional[str], bind: Dict[str, str]) -> Tuple[str, ...]:
@@ -32,22 +33,54 @@ def eval_num_pre(world: WorldState, expr: str, bind: Dict[str, str]) -> bool:
     if op == ">=": return val >= rhsf
     return abs(val - rhsf) < 1e-9
 
-def _eval_rhs_token(rhs: str, bind: dict) -> float:
-    """Evaluate RHS as NUMBER | ?var | NUMBER*?var | ?var*NUMBER."""
+def _eval_rhs_token(rhs: str, bind: dict, world: Optional[WorldState] = None) -> float:
+    """
+    Evaluate RHS as one of:
+      - NUMBER
+      - ?var
+      - NUMBER*<term> | <term>*NUMBER | ?var*?var | <fluent>*NUMBER | NUMBER*<fluent>
+      - (fluent args...)  e.g., (water-temp ?k)
+
+    where <term> recursively is NUMBER | ?var | (fluent ...).
+
+    NOTE: when evaluating a fluent, `world` must be provided.
+    """
     rhs = rhs.strip()
-    # plain number
+
+    # 1) Plain number
     try:
         return float(rhs)
     except ValueError:
         pass
-    # product forms
+
+    # 2) Product: allow a*b*c*... (left-assoc)
     if "*" in rhs:
-        a, b = [x.strip() for x in rhs.split("*", 1)]
-        return _eval_rhs_token(a, bind) * _eval_rhs_token(b, bind)
-    # variable form
+        parts = [p.strip() for p in rhs.split("*")]
+        val = _eval_rhs_token(parts[0], bind, world)
+        for p in parts[1:]:
+            val *= _eval_rhs_token(p, bind, world)
+        return val
+
+
+    # 3) Fluent read: "(name args...)"
+    if rhs.startswith("(") and rhs.endswith(")"):
+        if world is None:
+            raise ValueError("World is required to evaluate fluent RHS.")
+        inner = rhs[1:-1].strip()
+        if not inner:
+            raise ValueError(f"Unsupported numeric RHS: {rhs!r}")
+        parts = inner.split()
+        fname = parts[0]
+        raw_args = parts[1:]
+        # bind ?vars in args
+        args = tuple(bind.get(a[1:], a) if a.startswith("?") else a for a in raw_args)
+        return float(world.get_fluent(fname, args))
+
+    # 4) Variable like "?n"
     if rhs.startswith("?"):
         v = bind.get(rhs[1:], rhs[1:])
         return float(v)
+
     raise ValueError(f"Unsupported numeric RHS: {rhs!r}")
 
 
@@ -56,14 +89,16 @@ def apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[
     if not m:
         raise ValueError(f"Bad num_eff: {expr}")
     op, fname, argstr, rhs = m.groups()
-    args  = _bind_args(argstr, bind)
-    d = _eval_rhs_token(rhs, bind)
+    args = _bind_args(argstr, bind)
+    d = _eval_rhs_token(rhs, bind, world)  # now supports (fluent ...) and products
     if op == "assign":
         world.set_fluent(fname, args, d)
     elif op == "increase":
         world.set_fluent(fname, args, world.get_fluent(fname, args) + d)
     elif op == "decrease":
         world.set_fluent(fname, args, world.get_fluent(fname, args) - d)
+    else:
+        raise ValueError(f"Unsupported numeric op: {op}")
 
 # --- Clause evaluator with support for (or ...) and (not ...) ---
 def _split_top_level(expr: str) -> List[str]:

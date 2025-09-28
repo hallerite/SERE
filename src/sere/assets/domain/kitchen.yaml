@@ -75,6 +75,12 @@ predicates:
       - "Water has boiled in {a}"
       - "{a} finished boiling"
 
+  - name: has-water
+    args: [{name: c, type: container}]
+    nl:
+      - "{c} contains water"
+      - "Water is present in {c}"
+
   - name: has-hot-water
     args: [{name: m, type: container}]
     nl:
@@ -112,14 +118,6 @@ predicates:
       - "{l1} neighbors {l2}"
       - "{l1} is next to {l2}"
 
-  - name: needs-open
-    args: [{name: c, type: container}]
-    static: true
-    nl:
-      - "{c} requires opening to pour"
-      - "{c} must be open to pour"
-      - "Pouring needs {c} to be open"
-
   - name: openable
     args: [{name: c, type: container}]
     static: true
@@ -128,12 +126,6 @@ predicates:
       - "{c} is openable"
       - "{c} supports open/close"
 
-  - name: has-water
-    args: [{name: c, type: container}]
-    nl:
-      - "{c} contains water"
-      - "Water is present in {c}"
-
   - name: is-sink
     args: [{name: s, type: container}]
     static: true
@@ -141,9 +133,29 @@ predicates:
       - "{s} is a sink/water source"
       - "{s} can supply water"
 
-# ---------- Fluents (numeric state) ----------
-fluents:
+  # Role-specific pour constraints
+  - name: pour-out-needs-open
+    args: [{name: c, type: container}]
+    static: true
+    nl:
+      - "{c} must be open to pour out"
+      - "Pouring out of {c} requires opening"
 
+  - name: pour-out-needs-closed
+    args: [{name: c, type: container}]
+    static: true
+    nl:
+      - "{c} must be closed to pour out"
+      - "Pouring out of {c} requires it closed"
+
+  - name: pour-in-needs-open
+    args: [{name: c, type: container}]
+    static: true
+    nl:
+      - "{c} must be open to pour into"
+      - "Pouring into {c} requires opening"
+
+fluents:
   - name: energy
     args: [{name: r, type: robot}]
     nl:
@@ -165,7 +177,6 @@ fluents:
       - "{v}'s water temperature"
       - "Temperature of water in {v}"
 
-# ---------- Actions ----------
 actions:
 
   - name: wait
@@ -180,14 +191,8 @@ actions:
       - "Pause {n} ticks"
       - "Idle for {n} ticks"
     outcomes:
-      - name: fail
-        p: 0.00
-        when: []
-        add: []
-        delete: []
-        messages:
-          - "You tried to wait, and… nothing failed. (As designed.)"
-      - name: success
+      - name: noop
+        status: success
         p: 1.00
         when: []
         add: []
@@ -204,14 +209,14 @@ actions:
       - "(distinct ?from ?to)"
     add: []
     del: []
-    num_eff: []
     duration: 1.0
     nl:
       - "Move {r} from {from} to {to}"
       - "Go from {from} to {to} with {r}"
       - "{r} moves {from} → {to}"
     outcomes:
-      - name: fail
+      - name: stuck
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -219,7 +224,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.1)"]
         messages:
           - "{r} tried to move from {from} to {to} but got stuck. No progress."
-      - name: success
+      - name: arrive
+        status: success
         p: 0.95
         when: []
         add: ["(at ?r ?to)"]
@@ -239,7 +245,8 @@ actions:
       - "{r} opens {c}"
       - "Open the {c}"
     outcomes:
-      - name: fail
+      - name: fumble
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -247,7 +254,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.1)"]
         messages:
           - "You fumbled with {c}. Still closed."
-      - name: success
+      - name: opened
+        status: success
         p: 0.95
         when: []
         add: ["(open ?c)"]
@@ -267,7 +275,8 @@ actions:
       - "{r} closes {c}"
       - "Shut {c}"
     outcomes:
-      - name: fail
+      - name: unlatch
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -275,7 +284,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.1)"]
         messages:
           - "You tried to close {c} but it didn’t latch."
-      - name: success
+      - name: closed
+        status: success
         p: 0.95
         when: []
         add: []
@@ -295,7 +305,8 @@ actions:
       - "{r} picks up {o}"
       - "Grab {o}"
     outcomes:
-      - name: fail
+      - name: drop
+        status: fail
         p: 0.10
         when: []
         add: []
@@ -303,7 +314,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.1)"]
         messages:
           - "You fumbled {o}. Try again."
-      - name: success
+      - name: holding
+        status: success
         p: 0.90
         when: []
         add: ["(holding ?r ?o)"]
@@ -323,7 +335,8 @@ actions:
       - "{r} puts down {o}"
       - "Place {o} down"
     outcomes:
-      - name: fail
+      - name: slip
+        status: fail
         p: 0.07
         when: []
         add: []
@@ -331,7 +344,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.1)"]
         messages:
           - "{o} slipped; still in hand."
-      - name: success
+      - name: placed
+        status: success
         p: 0.93
         when: []
         add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
@@ -345,7 +359,7 @@ actions:
     pre:
       - "(co-located ?r ?c)"
       - "(holding ?r ?o)"
-      - "(or (not (needs-open ?c)) (open ?c))"
+      - "(or (not (openable ?c)) (open ?c))"
     add: []
     del: []
     duration: 0.5
@@ -354,7 +368,8 @@ actions:
       - "{r} inserts {o} into {c}"
       - "Place {o} in {c}"
     outcomes:
-      - name: fail
+      - name: miss
+        status: fail
         p: 0.10
         when: []
         add: []
@@ -362,7 +377,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.1)"]
         messages:
           - "Missed the opening on {c}. Try again."
-      - name: success
+      - name: inserted
+        status: success
         p: 0.90
         when: []
         add: ["(in ?o ?c)", "(clear-hand ?r)"]
@@ -377,7 +393,7 @@ actions:
       - "(clear-hand ?r)"
       - "(co-located ?r ?c)"
       - "(in ?o ?c)"
-      - "(or (not (needs-open ?c)) (open ?c))"
+      - "(or (not (openable ?c)) (open ?c))"
     add: []
     del: []
     duration: 0.5
@@ -386,7 +402,8 @@ actions:
       - "{r} removes {o} from {c}"
       - "Retrieve {o} from {c}"
     outcomes:
-      - name: fail
+      - name: fail_grip
+        status: fail
         p: 0.10
         when: []
         add: []
@@ -394,7 +411,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.1)"]
         messages:
           - "You couldn’t get a grip on {o} in {c}."
-      - name: success
+      - name: retrieved
+        status: success
         p: 0.90
         when: []
         add: ["(holding ?r ?o)"]
@@ -414,7 +432,8 @@ actions:
       - "{r} turns on {a}"
       - "Switch on {a}"
     outcomes:
-      - name: fail
+      - name: no_click
+        status: fail
         p: 0.02
         when: []
         add: []
@@ -422,7 +441,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.05)"]
         messages:
           - "Power button on {a} didn’t register."
-      - name: success
+      - name: powered_on
+        status: success
         p: 0.98
         when: []
         add: ["(powered ?a)"]
@@ -445,7 +465,8 @@ actions:
       - "Fill {k} with water from {s}"
       - "{r} fills {k} at {s}"
     outcomes:
-      - name: fail
+      - name: sputter
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -453,11 +474,12 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.1)"]
         messages:
           - "The faucet sputtered; {k} didn’t fill."
-      - name: success
+      - name: filled
+        status: success
         p: 0.95
         when: []
         add: ["(has-water ?k)"]
-        delete: []
+        delete: ["(has-hot-water ?k)"]
         num_eff:
           - "(assign (water-temp ?k) 20)"
           - "(decrease (energy ?r) 0.2)"
@@ -480,7 +502,8 @@ actions:
       - "Run {k} for {n} ticks (+15°C per tick)"
       - "Heat cycle on {k}: {n} ticks"
     outcomes:
-      - name: fail
+      - name: heat_fail
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -488,7 +511,8 @@ actions:
         num_eff: []
         messages:
           - "Heating cycle on {k} failed to start."
-      - name: success
+      - name: heat_ok
+        status: success
         p: 0.95
         when: []
         add: []
@@ -502,32 +526,68 @@ actions:
     pre:
       - "(co-located ?r ?k)"
       - "(co-located ?r ?m)"
-      - "(or (not (needs-open ?k)) (open ?k))"
+      - "(has-water ?k)"
       - "(distinct ?k ?m)"
-    outcomes:
-      - name: spill
-        when: ["(needs-open ?m)", "(not (open ?m))"]
-        add: ["(spilled ?m)"]
-        delete: ["(has-hot-water ?m)"]
-        messages:
-          - "You tried to pour into {m} while {m} was closed. You first need to open {m}."
-        p: 1.0
-      - name: success
-        when:
-          - "(or (not (needs-open ?m)) (open ?m))"
-          - "(>= (water-temp ?k) 80)"
-          - "(has-water ?k)"
-        add: ["(has-hot-water ?m)"]
-        delete: ["(has-water ?k)"]
-        num_eff: ["(assign (water-temp ?m) 100)"]
-        messages:
-          - "Hot water transferred to {m}."
-        p: 1.0
+      # source-side role constraints
+      - "(or (not (pour-out-needs-open ?k)) (open ?k))"
+      - "(or (not (pour-out-needs-closed ?k)) (not (open ?k)))"
     duration: 1.0
     nl:
       - "Pour from {k} into {m}"
       - "{r} pours {k} into {m}"
-      - "Transfer hot water {k} → {m}"
+      - "Transfer water {k} → {m}"
+    outcomes:
+      # spill if target requires open but is closed; water leaves source and is lost
+      - name: spill_closed_target
+        status: success
+        p: 1.0
+        when:
+          - "(pour-in-needs-open ?m)"
+          - "(not (open ?m))"
+        add: ["(spilled ?m)"]
+        delete: ["(has-water ?k)", "(has-hot-water ?k)"]
+        messages:
+          - "Tried to pour into {m} while closed — water spilled."
+
+      # block if target requires closed but is open (treat as fail, not spill)
+      - name: blocked_target_requires_closed_but_open
+        status: fail
+        p: 1.0
+        when:
+          - "(pour-in-needs-closed ?m)"
+          - "(open ?m)"
+        add: []
+        delete: []
+        messages:
+          - "{m} must be closed to pour into it."
+
+      # success with hot transfer (mirror temp; move water)
+      - name: transfer_hot
+        status: success
+        p: 1.0
+        when:
+        - "(or (not (pour-in-needs-open ?m)) (open ?m))"
+        - "(>= (water-temp ?k) 80)"
+        add: ["(has-water ?m)", "(has-hot-water ?m)"]
+        delete: ["(spilled ?m)", "(has-water ?k)", "(has-hot-water ?k)"]
+        num_eff:
+          - "(assign (water-temp ?m) (water-temp ?k))"
+        messages:
+          - "Hot water transferred to {m}."
+
+      # success with cool transfer
+      - name: transfer_cool
+        status: success
+        p: 1.0
+        when:
+          - "(or (not (pour-in-needs-open ?m)) (open ?m))"
+          - "(< (water-temp ?k) 80)"
+        add: ["(has-water ?m)"]
+        delete: ["(spilled ?m)", "(has-hot-water ?m)", "(has-water ?k)", "(has-hot-water ?k)"]
+        num_eff:
+          - "(assign (water-temp ?m) (water-temp ?k))"
+        messages:
+          - "Water transferred to {m} (not hot)."
 
   - name: steep-tea
     params: [{r: robot}, {tb: object}, {m: container}]
@@ -540,7 +600,8 @@ actions:
       - "Steep {tb} in {m} (water ≥80°C)"
       - "Brew tea in {m} (≥80°C)"
     outcomes:
-      - name: fail
+      - name: steep_fail
+        status: fail
         p: 0.08
         when: []
         add: []
@@ -548,7 +609,8 @@ actions:
         num_eff: ["(decrease (energy ?r) 0.2)"]
         messages:
           - "Steeping failed—bag tore or drifted. Try again."
-      - name: success
+      - name: steep_ok
+        status: success
         p: 0.92
         when: []
         add: ["(tea-ready ?m)"]
@@ -568,7 +630,8 @@ actions:
       - "{r} recharges at {l}"
       - "Use charger at {l}"
     outcomes:
-      - name: fail
+      - name: recharge_fail
+        status: fail
         p: 0.02
         when: []
         add: []
@@ -576,7 +639,8 @@ actions:
         num_eff: []
         messages:
           - "Charger at {l} didn’t connect properly."
-      - name: success
+      - name: recharge_ok
+        status: success
         p: 0.98
         when: []
         add: []

@@ -3,7 +3,7 @@ import re, random
 from ..pddl.domain_spec import DomainSpec, ActionSpec, Predicate
 from ..pddl.grounding import parse_grounded, instantiate, ground_literal
 from .prompt_formatter import PromptFormatter, PromptFormatterConfig
-from .semantics import eval_num_pre, apply_num_eff, eval_clause, trace_clause, EvalNode
+from .semantics import apply_num_eff, eval_clause, trace_clause, EvalNode
 from .world_state import WorldState
 from .invariants import InvariantPlugin
 
@@ -367,19 +367,14 @@ class PDDLEnv:
                     # fallback to last valid if probs degenerate
                     choice = valid[-1]
             else:
-                # Deterministic behavior (enable_stochastic == False):
-                # 1) If exactly ONE valid outcome, take it (even if it's not named 'success').
-                #    This lets failure-only branches like 'spill' fire deterministically.
-                # 2) If MULTIPLE valid outcomes, prefer the one explicitly named 'success'.
-                #    If none is named 'success', do nothing (mis-specified domain; tests catch it).
-                if len(valid) == 1:
-                    choice = valid[0]
-                else:
-                    for oc in valid:
-                        if str(getattr(oc, "name", "")).lower() == "success":
-                            choice = oc
-                            break
-
+                # Deterministic behavior: choose the valid outcome with largest p, else first.
+                if valid:
+                    def _getp(o):
+                        try:
+                            return float(getattr(o, "p", 1.0))
+                        except Exception:
+                            return 1.0
+                    choice = max(valid, key=_getp)
 
             if choice:
                 add = []
@@ -401,20 +396,28 @@ class PDDLEnv:
                 for m in (choice.messages or []):
                     self._push_msg(_format_msg(m, bind, self.world))
 
-                # Debug info (present whether stochastic or not)
+                # --- record branch & action-level status; allow terminal outcomes from branch ---
                 info["outcome_branch"] = str(getattr(choice, "name", "chosen"))
+                if hasattr(choice, "status"):
+                    info["action_status"] = str(getattr(choice, "status"))
+
+                if bool(getattr(choice, "terminal", False)):
+                    # Let the outcome itself decide episode termination & label.
+                    self.done = True
+                    info["outcome"] = str(getattr(choice, "episode_outcome", "failed"))
+                    info["outcome_set_by_action"] = True
+
                 if self.enable_stochastic:
-                    info["stochastic_outcome"] = info["outcome_branch"]
+                    info["stochastic_outcome"] = info.get("outcome_branch")
                     info["stochastic_roll"] = roll
                     info["stochastic_total_p"] = totp
-
 
         # Re-enforce bounds after any stochastic numeric updates
         self._enforce_energy_bounds()
 
         # ---------- Base action messages (after effects so probes see new state) ----------
         for msg in getattr(act, "messages", []) or []:
-            self._push_msg(_format_msg(msg, bind, self.world))            # CHANGED
+            self._push_msg(_format_msg(msg, bind, self.world))
 
         # ---------- Time / duration ----------
         if self.enable_durations:
@@ -439,6 +442,7 @@ class PDDLEnv:
             errs = pl.validate(self.world, self.static_facts)
             if errs:
                 return self._illegal(f"Postcondition violated: {errs}", info)
+
         # ---------- Bookkeeping / termination ----------
         self.steps += 1
         obs, base_r, done, info = self._post_apply_success(info)
@@ -523,7 +527,7 @@ class PDDLEnv:
     def _post_apply_success(self, info: Dict[str, Any]):
         reward = self.step_penalty
 
-        # Already terminal (e.g., timeout flagged in _advance_time)
+        # Already terminal (e.g., timeout flagged in _advance_time, or outcome-branch set it)
         if self.done:
             pass
         else:
@@ -551,8 +555,8 @@ class PDDLEnv:
                 info["outcome"] = "timeout"
                 info["reason"] = "max_steps_exceeded"
 
-        # ---- normalize non-success terminals to "failed" ----
-        if self.done:
+        # ---- Normalize only if NOT explicitly set by an action outcome ----
+        if self.done and not info.get("outcome_set_by_action", False):
             oc = (info.get("outcome") or "").lower()
             # keep canonical wins/time/energy/invalid as-is
             whitelist = {"success", "timeout", "out_of_energy", "invalid_move"}
@@ -575,8 +579,6 @@ class PDDLEnv:
         obs = self._obs()
         info["messages"] = last_turn
         return obs, reward, self.done, info
-
-
 
     
     def _illegal(self, msg, info):
