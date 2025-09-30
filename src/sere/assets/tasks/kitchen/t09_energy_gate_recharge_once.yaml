@@ -14,7 +14,7 @@ meta:
   seed: 209
   init_fluents:
     - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 3]          # allows some progress, but not the finish
+    - ["energy", ["r1"], 4]          # allows some progress, but not the finish
     - ["water-temp", ["heater"], 60.0]
   reward_shaping:
     mode: instant
