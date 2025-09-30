@@ -1186,3 +1186,130 @@ termination:
     # Heads not renamed
     for head in ("and", "or", "pour-in-needs-open", "open", ">=", "water-temp"):
         assert head in when, f"Expected head '{head}' to remain in: {when}"
+
+# ==================== NUM EFFECTS — EXTENSIVE COVERAGE ====================
+
+def test_num_eff_fill_assigns_constant_temp_20(basic_task_file):
+    """
+    fill-water assigns (water-temp ?k)=20 and sets has-water(?k).
+    This covers constant RHS assignment.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=40)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+
+    # Kettle should NOT have water at reset
+    assert ("has-water", ("kettle1",)) not in env.world.facts
+
+    open_(env, "kettle1")
+    obs, r, done, info = fill(env, "kettle1", "sink1")
+    assert info.get("outcome") != "invalid"
+    assert ("has-water", ("kettle1",)) in env.world.facts
+    assert env.world.get_fluent("water-temp", ("kettle1",)) == pytest.approx(20.0)
+
+
+def test_num_eff_pour_assigns_rhs_fluent_reference_no_bad_num_eff(basic_task_file):
+    """
+    pour should execute a numeric effect:
+      (assign (water-temp ?m) (water-temp ?k))
+    That is, the TARGET mirrors the SOURCE temp exactly (hot & cool paths).
+    This test ensures the engine accepts RHS fluent references (no 'Bad num_eff' crash).
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+
+    # Prep hot source: open→fill→close→heat
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)  # 20 + 90 = 110°C
+
+    # Target open to avoid spill
+    open_(env, "mug1")
+
+    # Attempt pour; if engine can't parse RHS fluent on assign, this step would terminal-fail
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert info.get("outcome") != "invalid", f"pour failed — possible num_eff parse issue:\n{info.get('error','')}"
+    assert ("has-water", ("mug1",)) in env.world.facts
+    assert env.world.get_fluent("water-temp", ("mug1",)) == \
+           pytest.approx(env.world.get_fluent("water-temp", ("kettle1",)))
+
+
+def test_num_eff_pour_chained_assignments_follow_latest_source(basic_task_file):
+    """
+    Chain two pours into the mug from two different sources with different temps.
+    Final mug temp must equal the temperature of the *second* source after pour.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=120)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+
+    # Add a second container as a "cooler": reuse mug1 as target, kettle1 as hot source, and mug1->sink fill
+    # Step 1: make kettle HOT (110°C)
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)
+    # Step 2: open mug1 and first pour from HOT kettle
+    open_(env, "mug1")
+    pour(env, "kettle1", "mug1")
+    t_hot = env.world.get_fluent("water-temp", ("kettle1",))
+    assert env.world.get_fluent("water-temp", ("mug1",)) == pytest.approx(t_hot)
+
+    # Step 3: Refill kettle back to cold (so it becomes 20°C again), then pour again
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    t_cold = env.world.get_fluent("water-temp", ("kettle1",))
+    assert t_cold == pytest.approx(20.0)
+
+    # Second pour should OVERWRITE mug temp to 20°C (mirror latest source)
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert info.get("outcome") != "invalid"
+    assert env.world.get_fluent("water-temp", ("mug1",)) == pytest.approx(t_cold)
+
+
+def test_num_eff_energy_deltas_from_actions_match_specs(basic_task_file):
+    """
+    Sanity-check a couple of actions' numeric effects on energy:
+      - move decreases 1
+      - open decreases 0.2
+      - close decreases 0.2
+    We only assert deltas (not absolute), so this guards the num_eff executor.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=40)
+    reset_with(env, energy=5)
+    e0 = env.world.get_fluent("energy", ("r1",))
+
+    # move hallway->kitchen
+    move(env, "hallway", "kitchen")
+    e1 = env.world.get_fluent("energy", ("r1",))
+    assert e1 == pytest.approx(e0 - 1.0)
+
+    # open + close mug1 (both co-located now)
+    e2 = e1
+    obs, _, _, _ = open_(env, "mug1")
+    e3 = env.world.get_fluent("energy", ("r1",))
+    assert e3 == pytest.approx(e2 - 0.2)
+
+    obs, _, _, _ = close_(env, "mug1")
+    e4 = env.world.get_fluent("energy", ("r1",))
+    assert e4 == pytest.approx(e3 - 0.2)
+
+
+def test_num_eff_no_crash_message_on_rhs_fluent_assign(basic_task_file):
+    """
+    If the engine still rejects '(assign (water-temp ?m) (water-temp ?k))',
+    this test will fail with a clear message pointing at the parser/executor.
+    """
+    env, _ = load_task(None, str(basic_task_file), max_steps=80)
+    reset_with(env)
+    move(env, "hallway", "kitchen")
+
+    # Prep: hot kettle + open mug
+    open_(env, "kettle1"); fill(env, "kettle1", "sink1"); close_(env, "kettle1")
+    heat(env, "kettle1", 6)
+    open_(env, "mug1")
+
+    obs, r, done, info = pour(env, "kettle1", "mug1")
+    assert info.get("outcome") != "invalid", (
+        "Engine rejected numeric effect with RHS fluent reference.\n"
+        "Look for parsing/execution of num_eff like:\n"
+        "  (assign (water-temp ?m) (water-temp ?k))"
+        f"\nError was:\n{info.get('error','')}"
+    )
