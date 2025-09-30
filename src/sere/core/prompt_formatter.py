@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Set, Optional
-from ..pddl.domain_spec import DomainSpec, Predicate
-from ..pddl.nl_mapper import NLMapper
+from sere.pddl.domain_spec import DomainSpec, Predicate
+from sere.pddl.nl_mapper import NLMapper
 from .world_state import WorldState
 from .semantics import eval_clause
 import fnmatch
@@ -206,7 +206,7 @@ class PromptFormatter:
                 nl_desc = None
                 if self.cfg.display_nl and ("<" not in a and ">" not in a):
                     try:
-                        from ..pddl.grounding import parse_grounded
+                        from sere.pddl.grounding import parse_grounded
                         name, args = parse_grounded(a)  # -> ("move", ["r1","A","B"])
                         nl_desc = self.nl.act_to_text(name, tuple(args))
                     except Exception:
@@ -445,7 +445,7 @@ class PromptFormatter:
         nl_parts: List[str] = []
         if self.cfg.display_nl:
             try:
-                from ..pddl.grounding import parse_grounded
+                from sere.pddl.grounding import parse_grounded
                 for s in exprs:
                     n, a = parse_grounded(s)  # may raise for non-literals
                     # only map when it's a known predicate

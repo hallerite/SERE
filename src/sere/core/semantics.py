@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional, Set, Tuple, List
 from dataclasses import dataclass, field
 import re
-from ..pddl.grounding import ground_literal
+from sere.pddl.grounding import ground_literal
 from .world_state import WorldState
 
 Predicate = Tuple[str, Tuple[str, ...]]

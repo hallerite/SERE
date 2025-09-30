@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, Set, Optional, AbstractSet, List, Tuple
-from ..pddl.domain_spec import DomainSpec, Predicate
+from sere.pddl.domain_spec import DomainSpec, Predicate
 
 def lit(p: str, *args: str) -> Predicate:
     return (p, tuple(args))
