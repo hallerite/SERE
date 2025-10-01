@@ -380,3 +380,84 @@ def test_system_prompt_visibility_room_hides_nonlocal_objects_and_statics():
     # Adjacency statics are hidden under ROOM visibility
     assert "Statics (do not change):" in sys
     assert "- (adjacent kitchen pantry)" not in sys
+
+def test_state_room_visibility_hides_nonlocal_facts():
+    d = _mini_domain_for_filters()
+    w = _mini_world_for_filters(d)
+
+    # ROOM scope should hide non-local facts (leaf is in pantry)
+    fmt = PromptFormatter(d, PromptFormatterConfig(
+        visibility=VisibilityScope.ROOM, show_affordances=False, display_nl=False
+    ))
+    obs = _generate_and_render(fmt, w)
+
+    assert "State:" in obs
+    # robot location is always shown
+    assert "- (at r1 kitchen)" in obs
+    # non-local fact should be hidden
+    assert "- (obj-at leaf pantry)" not in obs
+
+
+def test_fluent_visibility_room_shows_robot_energy_hides_nonlocal_object_and_shows_local_via_containment():
+    d = _mini_domain_for_filters()
+    w = _mini_world_for_filters(d)
+
+    # add local container + contained object in the kitchen
+    w.objects["mug"] = {"object"}
+    w.objects["water"] = {"object"}
+    w.facts.add(("obj-at", ("mug", "kitchen")))
+    w.facts.add(("in", ("water", "mug")))  # containment chain → water resolves to kitchen
+
+    # fluents: robot energy (always visible), local temp (water), non-local temp (leaf in pantry)
+    w.fluents[("energy", ("r1",))] = 3.0
+    w.fluents[("temp", ("water",))] = 60.0
+    w.fluents[("temp", ("leaf",))] = 42.0
+
+    fmt = PromptFormatter(d, PromptFormatterConfig(
+        visibility=VisibilityScope.ROOM, show_affordances=False, display_nl=False
+    ))
+    obs = _generate_and_render(fmt, w)
+
+    # header shows energy even in ROOM scope
+    assert "Energy: r1" in obs
+
+    # Fluents block should include local water temp but hide leaf temp (non-local)
+    assert "Fluents:" in obs
+    assert "- (= (temp water) 60" in obs
+    assert "- (= (temp leaf) 42" not in obs
+
+
+def test_room_scope_with_static_adjacency_does_not_leak_nonlocal_affordance():
+    d = _mini_domain_for_filters()
+    # move2 requires adjacency; we'll remove dynamic adjacency and provide static
+    d.actions["move2"] = ActionSpec(
+        name="move2",
+        params=[("r", "robot"), ("s", "loc"), ("d", "loc")],
+        pre=["(at ?r ?s)", "(adjacent ?s ?d)"],
+        add=["(at ?r ?d)"],
+        delete=["(at ?r ?s)"],
+        nl=["move2 {r} from {s} to {d}"],
+    )
+
+    w = _mini_world_for_filters(d)
+    # strip dynamic adjacency so only the static fact exists
+    w.facts.discard(("adjacent", ("kitchen", "pantry")))
+    w.facts.discard(("adjacent", ("pantry", "kitchen")))
+
+    # Under ALL, the static should enable the affordance
+    fmt_all = PromptFormatter(d, PromptFormatterConfig(
+        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False
+    ))
+    affs_all = fmt_all.generate_affordances(
+        w, static_facts={("adjacent", ("kitchen", "pantry"))}, enable_numeric=True
+    )
+    assert "(move2 r1 kitchen pantry)" in affs_all
+
+    # Under ROOM, pantry is out of scope → object pool sliced → affordance must not be enumerated
+    fmt_room = PromptFormatter(d, PromptFormatterConfig(
+        visibility=VisibilityScope.ROOM, show_affordances=True, display_nl=False
+    ))
+    affs_room = fmt_room.generate_affordances(
+        w, static_facts={("adjacent", ("kitchen", "pantry"))}, enable_numeric=True
+    )
+    assert "(move2 r1 kitchen pantry)" not in affs_room
