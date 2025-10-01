@@ -25,10 +25,13 @@ sere-run = "sere.cli.run_task:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/sere"]
 
-# ship data files
 [tool.hatch.build]
 include = [
   "src/sere/**",
   "README.md",
   "LICENSE",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]
