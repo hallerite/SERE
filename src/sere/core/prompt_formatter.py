@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Dict, Set, Optional
+from typing import List, Tuple, Dict, Set, Optional, Callable
 from sere.pddl.domain_spec import DomainSpec, Predicate
 from sere.pddl.nl_mapper import NLMapper
 from .world_state import WorldState
@@ -7,7 +7,11 @@ from .semantics import eval_clause
 import fnmatch
 import re
 import random
+from enum import Enum
 
+class VisibilityScope(Enum):
+    ALL = "all"
+    ROOM = "room"
 
 @dataclass
 class PromptFormatterConfig:
@@ -15,15 +19,19 @@ class PromptFormatterConfig:
     display_nl: bool = True   # True → NL+PDDL; False → PDDL-only
     # NL variation controls
     nl_stochastic: bool = False               # False → always first NL template; True → sample a variant
-    nl_rng_seed: Optional[int] = None         # pass a seed for reproducible NL sampling (optional)
+    nl_rng_seed: Optional[int] = None
 
-    # Visibility / limits
+    # Visibility
+    visibility: VisibilityScope = VisibilityScope.ALL   # ALL or ROOM
+    show_affordances: bool = True                      # render affordances in obs
+
+    # Misc presentation
     show_briefing: bool = True
     show_objects_in_sysprompt: bool = True
+    observer_robot: Optional[str] = None
 
-    # What to show in obs
+    # Goal / fluents / messages
     show_goal: bool = True
-    show_affordances: bool = True
     show_fluents: bool = True
     show_messages: bool = True
     messages_inline: bool = True
@@ -42,7 +50,9 @@ class PromptFormatter:
         self.domain = domain
         rng = random.Random(self.cfg.nl_rng_seed) if self.cfg.nl_rng_seed is not None else None
         self.nl = NLMapper(domain, stochastic=self.cfg.nl_stochastic, rng=rng)
-    
+
+
+    # ---------- Small helpers ----------
     def _pddl(self, pred):  # pred = (name, args)
         n, a = pred
         return f"({n}{'' if not a else ' ' + ' '.join(a)})"
@@ -56,31 +66,214 @@ class PromptFormatter:
     def _inline(self, pddl_str: str, nl_str: str | None) -> str:
         return f"- {pddl_str}" if not (self.cfg.display_nl and nl_str) else f"- {pddl_str} – {nl_str}"
 
+    def _is_numeric_clause(self, s: str) -> bool:
+        """
+        Heuristic: treat comparisons/arith forms as numeric preconditions.
+        Used to skip numeric guards when an action has a 'number' param and we
+        template that param as '<n>'.
+        """
+        s = s.strip()
+        # unwrap a simple (not (...)) so we inspect the inner operator
+        if s.startswith("(not"):
+            inner = s[4:].strip()
+            if inner.startswith("(") and inner.endswith(")"):
+                s = inner[1:-1].strip()
+
+        m = re.match(r"^\(\s*([^\s()]+)", s)
+        if not m:
+            return False
+        op = m.group(1)
+        # common numeric operators in preconditions
+        return op in {">", "<", ">=", "<=", "=", "+", "-", "*", "/"}
+
     def _format_objects_name_type(self, world: WorldState) -> str:
-        """
-        Render objects as 'name: {type1, type2}'.
-        Example:
-        urn: {appliance, container}
-        bot: {robot}
-        """
         lines = []
         for sym, types in sorted(world.objects.items()):
             type_str = ", ".join(sorted(types)) if types else "untyped"
             lines.append(f"{sym}: {{{type_str}}}")
         return "\n".join(lines) if lines else "(none)"
-
-    def build_system_prompt(self, 
-        *, world: WorldState, 
+    
+    def _scoped_view(
+        self,
+        world: WorldState,
         static_facts: Optional[Set[Predicate]] = None,
-        time_limit: float | None = None) -> str:
+    ) -> tuple[WorldState, Set[Predicate], Optional[str]]:
+        """
+        Return a *scoped* view of (world, static_facts) based on visibility,
+        plus the current room token (if applicable).
+
+        - VisibilityScope.ALL : pass-through
+        - VisibilityScope.ROOM: filter to facts/fluents 'visible in room'
+        """
+        static_facts = static_facts or set()
+
+        match self.cfg.visibility:
+            case VisibilityScope.ALL:
+                return world, static_facts, None
+
+            case VisibilityScope.ROOM:
+                room = self._robot_room(world)
+                if room is None:
+                    return world, static_facts, None
+
+                # Filter dynamic facts / static facts / fluents
+                kept_facts = {fa for fa in world.facts if self._fact_visible_in_room(world, fa, room)}
+                kept_static = {sf for sf in static_facts if self._fact_visible_in_room(world, sf, room)}
+                kept_fluents = {
+                    (fname, args): v
+                    for (fname, args), v in world.fluents.items()
+                    if self._fluent_visible_in_room(world, fname, args, room)
+                }
+
+                # Compute visible symbols (robots, the room, and any object resolving to the room;
+                # also anything referenced by kept facts/fluents/statics)
+                visible_syms: set[str] = {room}
+                visible_syms |= set(self._robots(world))
+                cache: Dict[str, Optional[str]] = {}
+                for sym in world.objects.keys():
+                    if self._loc_of(world, sym, cache) == room:
+                        visible_syms.add(sym)
+                for (_p, args) in kept_facts:
+                    for tok in args:
+                        if tok in world.objects:
+                            visible_syms.add(tok)
+                for (_p, args) in kept_static:
+                    for tok in args:
+                        if tok in world.objects:
+                            visible_syms.add(tok)
+                for (_f, args) in kept_fluents.keys():
+                    for tok in args:
+                        if tok in world.objects:
+                            visible_syms.add(tok)
+
+                # Slice the object registry (preserve type memberships)
+                sliced_objects: Dict[str, set] = {}
+                for sym in visible_syms:
+                    if sym in world.objects:
+                        tys = world.objects[sym]
+                        sliced_objects[sym] = set(tys) if isinstance(tys, (set, list, tuple)) else {str(tys)}
+
+                scoped_world = WorldState(
+                    domain=world.domain,
+                    objects=sliced_objects,
+                    facts=kept_facts,
+                    fluents=kept_fluents,
+                )
+                return scoped_world, kept_static, room
+
+
+            case _:
+                raise NotImplementedError(f"Unhandled visibility scope: {self.cfg.visibility}")
+
+
+    def _ensure_object_registry(self, world: WorldState, static_facts: Set[Predicate]) -> None:
+        """
+        Ensure world.objects has type memberships inferred from current facts,
+        using the domain's predicate signatures. Idempotent and non-destructive.
+        """
+        if not self.domain or not getattr(self.domain, "predicates", None):
+            return
+
+        # predicate -> [arg_type0, arg_type1, ...]
+        pred_arg_types: Dict[str, List[str]] = {
+            name: [typ for (_var, typ) in spec.args]
+            for name, spec in self.domain.predicates.items()
+        }
+
+        def _add(sym: str, typ: str) -> None:
+            if not typ:
+                return
+            s = world.objects.setdefault(sym, set())
+            if isinstance(s, set):
+                s.add(typ)
+            else:
+                # tolerate odd entries (e.g., str) by normalizing to a set
+                world.objects[sym] = {str(s), typ}
+
+        # Walk dynamic + static facts and back-fill object types
+        for (pname, args) in list(world.facts) + list(static_facts or set()):
+            typs = pred_arg_types.get(pname)
+            if not typs:
+                continue
+            for tok, typ in zip(args, typs):
+                _add(tok, typ)
+
+
+    # ---- Room helpers ----
+    def _robots(self, world: WorldState) -> list[str]:
+        return [s for s, tys in world.objects.items() if any(str(t).lower() == "robot" for t in (tys or []))]
+
+    def _robot_room(self, world: WorldState) -> Optional[str]:
+        rob = self.cfg.observer_robot or (self._robots(world)[0] if self._robots(world) else None)
+        if not rob:
+            return None
+        locs = [a[1] for (p, a) in world.facts if p == "at" and len(a) == 2 and a[0] == rob]
+        return locs[0] if len(locs) == 1 else None
+
+    def _loc_of(self, world: WorldState, sym: str, cache: Optional[Dict[str, Optional[str]]] = None) -> Optional[str]:
+        """Resolve an object's room via (obj-at x L) or via container chains (in x c) → loc(c)."""
+        c = cache if cache is not None else {}
+        if sym in c:
+            return c[sym]
+        # direct object location
+        for (p, a) in world.facts:
+            if p == "obj-at" and len(a) == 2 and a[0] == sym:
+                c[sym] = a[1]; return a[1]
+        # nested containment
+        for (p, a) in world.facts:
+            if p == "in" and len(a) == 2 and a[0] == sym:
+                parent = a[1]
+                c[sym] = self._loc_of(world, parent, c)
+                return c[sym]
+        # treat tokens that are used as locations
+        for (p, a) in world.facts:
+            if p in ("at", "obj-at") and len(a) == 2 and a[1] == sym:
+                c[sym] = sym; return sym
+        c[sym] = None
+        return None
+
+    def _fact_visible_in_room(self, world: WorldState, fact: Predicate, room: Optional[str]) -> bool:
+        if room is None:
+            return True
+        name, args = fact
+        if name == "adjacent":
+            return False
+        if name == "at" and len(args) == 2:
+            return True  # always show robot location
+        if name == "obj-at" and len(args) == 2:
+            return args[1] == room
+        # generic rule: if any object arg resolves to this room, show it
+        obj_args = [a for a in args if a in world.objects]
+        cache: Dict[str, Optional[str]] = {}
+        return any(self._loc_of(world, s, cache) == room for s in obj_args)
+
+    def _fluent_visible_in_room(self, world: WorldState, fname: str, args: Tuple[str, ...], room: Optional[str]) -> bool:
+        if room is None:
+            return True
+        # always show robot energy/battery
+        if fname in {"energy", "battery-cap"} and args and args[0] in self._robots(world):
+            return True
+        if args and args[0] in world.objects:
+            return self._loc_of(world, args[0], {}) == room
+        return False
+
+    # ---------- System prompt ----------
+    def build_system_prompt(
+        self,
+        *,
+        world: WorldState,
+        static_facts: Optional[Set[Predicate]] = None,
+        time_limit: float | None = None
+    ) -> str:
 
         if not self.cfg.show_briefing:
             return ""
 
-        # Detect whether energy is actually modeled in this instance
-        has_energy = any(name == "energy" for (name, _args) in world.fluents.keys())
+        # Apply visibility scoping so objects/statics reflect the current view
+        scoped_world, scoped_static, _ = self._scoped_view(world, static_facts or set())
 
-        # Detect whether time/durations matter by inspecting the domain's actions
+        has_energy = any(name == "energy" for (name, _args) in scoped_world.fluents.keys())
+
         has_time = False
         for a in self.domain.actions.values():
             if (a.duration is not None) or (a.duration_var is not None):
@@ -89,7 +282,6 @@ class PromptFormatter:
 
         parts: list[str] = []
 
-        # -------- High-level explainer (plain text, redundant on purpose) --------
         if has_energy or has_time:
             expl = []
             expl.append("You are controlling a robot in a simulated world.")
@@ -102,15 +294,14 @@ class PromptFormatter:
                 )
             if has_time:
                 expl.append(
-                    "Each action takes time. The header shows Time: value. "
+                    "Each action takes time. The header shows Time. "
                     + (
                         f"This task has a strict time limit of {time_limit:.2f}. "
-                        "If the total time exceeds this value the task fails. "
+                        "Exceeding it fails the task. "
                         if time_limit is not None else
-                        "Some tasks may set a maximum time limit. "
-                        "If total time exceeds the limit the task fails. "
+                        "Some tasks have a time limit. Exceeding it fails the task. "
                     )
-                    + "Choose efficient actions to stay within the time limit."
+                    + "Choose efficient actions."
                 )
             expl.append(
                 "The header always shows the current step number and the maximum allowed steps. "
@@ -134,23 +325,20 @@ class PromptFormatter:
             actions or "(none)",
         ]
 
-        # -------- Objects listing --------
+        # -------- Objects & Statics (respect visibility) --------
+        # Build a scoped view once so both objects and statics follow the visibility rule.
+        scoped_world, scoped_static, _ = self._scoped_view(world, static_facts or set())
+
         if self.cfg.show_objects_in_sysprompt:
-            parts += ["", "Objects (name - type):", self._format_objects_name_type(world)]
-        
-        # -------- Static facts listing (do not change) --------
-        if static_facts:
-            pats = ["*"]
-            lines: list[str] = []
-            for pred in sorted(static_facts):
-                name, _ = pred
-                import fnmatch as _fn
-                if not any(_fn.fnmatch(name, pat) for pat in pats):
-                    continue
-                pddl = self._pddl(pred)
-                nl = self._nl_pred(pred) if self.cfg.display_nl else None
-                lines.append(self._inline(pddl, nl))
-            parts += ["", "Statics (do not change):", "\n".join(lines) if lines else "(none)"]
+            parts += ["", "Objects (name - type):", self._format_objects_name_type(scoped_world)]
+
+        # Always show the statics header; render only those that survive scoping.
+        lines: list[str] = []
+        for pred in sorted(scoped_static):
+            pddl = self._pddl(pred)
+            nl = self._nl_pred(pred) if self.cfg.display_nl else None
+            lines.append(self._inline(pddl, nl))
+        parts += ["", "Statics (do not change):", "\n".join(lines) if lines else "(none)"]
 
 
         return "\n".join(parts)
@@ -170,8 +358,13 @@ class PromptFormatter:
         time_limit: float | None,
         termination_rules: Optional[List[dict]] = None,
     ) -> str:
-        # ----- State (compact inline: PDDL – NL) -----
-        facts = [fa for fa in sorted(world.facts) if fa[0] != "adjacent"]
+        # Apply visibility scoping once
+        scoped_world, _scoped_static, _room = self._scoped_view(world, static_facts=None)
+
+        # ----- State (already scoped) -----
+        raw_facts = [fa for fa in sorted(scoped_world.facts) if fa[0] != "adjacent"]
+        facts = raw_facts
+
         state_lines: List[str] = []
         for pred in facts:
             pddl = self._pddl(pred)
@@ -179,68 +372,64 @@ class PromptFormatter:
             state_lines.append(self._inline(pddl, nl))
         state_txt = "State:\n" + ("\n".join(state_lines) if state_lines else "(none)")
 
-        # ----- Goal (derived from termination_rules only) -----
+        # ----- Goal -----
         goal_txt = ""
         success_line = self._render_success_goal_line(termination_rules)
         if success_line:
             goal_txt = "Goal:\n" + success_line
 
-        # ----- Fluents (PDDL only, compact) -----
+        # ----- Fluents (already scoped) -----
         fl_txt = ""
-        if self.cfg.show_fluents and world.fluents:
+        if self.cfg.show_fluents and scoped_world.fluents:
             prec = max(0, int(self.cfg.fluents_precision))
             rows = []
-            for (name, args), val in sorted(world.fluents.items()):
+            for (name, args), val in sorted(scoped_world.fluents.items()):
                 if not any(fnmatch.fnmatch(name, pat) for pat in (self.cfg.visible_fluents or ["*"])):
                     continue
                 argstr = "" if not args else " " + " ".join(args)
                 rows.append(f"- (= ({name}{argstr}) {val:.{prec}f})")
             fl_txt = "Fluents:\n" + ("\n".join(rows) if rows else "")
 
-        # ----- Affordances (compact inline: PDDL – NL) -----
+        # ----- Affordances (render only if enabled) -----
         aff_txt = ""
         if self.cfg.show_affordances and affordances:
             lines = []
             for a in affordances:
-                shown = a  # generate_affordances already returns "(act args)" — single parens
+                shown = a
                 nl_desc = None
                 if self.cfg.display_nl and ("<" not in a and ">" not in a):
                     try:
                         from sere.pddl.grounding import parse_grounded
-                        name, args = parse_grounded(a)  # -> ("move", ["r1","A","B"])
+                        name, args = parse_grounded(a)
                         nl_desc = self.nl.act_to_text(name, tuple(args))
                     except Exception:
                         nl_desc = None
                 lines.append(self._inline(shown, nl_desc))
             aff_txt = "Valid moves:\n" + "\n".join(lines)
 
-
         # ----- Messages (inline, no label) -----
         msg_txt = ""
         if self.cfg.show_messages and messages:
-            if self.cfg.messages_inline:
-                msg_txt = "\n".join(messages)   # exactly as you asked: plain lines
-            else:
-                msg_txt = "Messages:\n  - " + "\n  - ".join(messages)
+            msg_txt = "\n".join(messages) if self.cfg.messages_inline else ("Messages:\n  - " + "\n  - ".join(messages))
 
         # ----- Header -----
         limit = "" if time_limit is None else f"/{time_limit:.2f}"
         time_txt = f" | Time: {time_val:.2f}{limit}" if durations_on else ""
         energy_bits = []
-        for sym, types in sorted(world.objects.items()):
+        for sym, types in sorted(scoped_world.objects.items()):
             if any(t.lower() == "robot" for t in (types or [])):
-                e = world.get_fluent("energy", (sym,))
-                cap = world.get_fluent("battery-cap", (sym,))
-                has_cap = (("battery-cap", (sym,)) in world.fluents)
+                e = scoped_world.get_fluent("energy", (sym,))
+                cap = scoped_world.get_fluent("battery-cap", (sym,))
+                has_cap = (("battery-cap", (sym,)) in scoped_world.fluents)
                 energy_bits.append(f"{sym} {e:.2f}/{cap:.2f}" if has_cap else f"{sym} {e:.2f}")
         energy_txt = (" | Energy: " + ", ".join(energy_bits)) if energy_bits else ""
         header = f"Steps: {steps}/{max_steps}{time_txt}{energy_txt}"
 
-        # ----- Stitch: header → message → state → goal → fluents → affordances -----
+        # ----- Stitch -----
         return "\n\n".join(
             p for p in [
                 header,
-                msg_txt,          # moved up, inline
+                msg_txt,
                 state_txt,
                 goal_txt,
                 fl_txt,
@@ -248,6 +437,7 @@ class PromptFormatter:
                 "Reply with <move>(action args)</move>."
             ] if p
         ).strip()
+
 
 
     # ---------- Affordances ----------
@@ -258,28 +448,33 @@ class PromptFormatter:
         enable_numeric: bool = True,
     ) -> List[str]:
         """
-        Mixed strategy:
-        - Actions with NO 'number' params -> fully grounded affordances (as before).
-        - Actions WITH 'number' params   -> template affordances:
-                use '<n>' for numeric slots, ground object params, and
-                check only non-numeric preconditions (numeric checks are skipped).
+        Generate affordances against the *scoped* world view:
+        - If the action has NO 'number' params -> fully grounded affordances.
+        - If the action HAS 'number' params   -> use '<n>' placeholder(s),
+        and skip *numeric* preconditions while still checking symbolic ones.
         """
         if not self.cfg.show_affordances:
             return []
 
+        # Scope once
+        scoped_world, scoped_static, _room = self._scoped_view(world, static_facts)
+
+        # Ensure object registry is complete before pooling by type
+        self._ensure_object_registry(scoped_world, scoped_static)
+
         # --- helper: type membership that tolerates multi-typed objects ---
         def _is_type(sym: str, typ: str) -> bool:
-            t = world.objects.get(sym)
+            t = scoped_world.objects.get(sym)
             if isinstance(t, str):
                 return t == typ
             if isinstance(t, (set, list, tuple)):
                 return typ in t
-            return False  # unknown/odd entry → not of this type
+            return False
 
         # Build pools per *declared* param type using the world objects.
         by_type: Dict[str, List[str]] = {}
-        for sym in world.objects.keys():
-            t = world.objects[sym]
+        for sym in scoped_world.objects.keys():
+            t = scoped_world.objects[sym]
             if isinstance(t, str):
                 by_type.setdefault(t, []).append(sym)
             elif isinstance(t, (set, list, tuple)):
@@ -289,7 +484,6 @@ class PromptFormatter:
         def cartesian(lists: List[List[str]]) -> List[List[str]]:
             res = [[]]
             for lst in lists:
-                # guard against empty pools to avoid exploding combinations
                 if not lst:
                     return []
                 res = [r + [x] for r in res for x in lst]
@@ -298,18 +492,15 @@ class PromptFormatter:
         afford: List[str] = []
         for act in sorted(self.domain.actions.values(), key=lambda x: x.name):
             # Identify numeric params
-            num_positions = [i for i, (_v, typ) in enumerate(act.params) if typ.lower() == "number"]
+            num_positions = [i for i, (_v, typ) in enumerate(act.params) if str(typ).lower() == "number"]
 
             # Construct candidate pools
             pools: List[List[str]] = []
             for i, (_var, typ) in enumerate(act.params):
-                if typ.lower() == "number":
-                    # Use a single placeholder candidate; we won't enumerate numbers
+                if str(typ).lower() == "number":
                     pools.append(["<n>"])
                 else:
-                    pool = by_type.get(typ)
-                    if pool is None:
-                        pool = [s for s in world.objects if _is_type(s, typ)]
+                    pool = by_type.get(typ) or [s for s in scoped_world.objects if _is_type(s, typ)]
                     pools.append(pool)
 
             combos = cartesian(pools)
@@ -319,15 +510,16 @@ class PromptFormatter:
             for args in combos:
                 bind = {var: val for (var, _), val in zip(act.params, args)}
 
-                # Precondition check:
-                # - For templated (has number): skip numeric evaluation (can't bind <n>)
-                # - For fully grounded (no number): use engine's numeric setting
+                # Precondition check
                 has_number = len(num_positions) > 0
                 numeric_ok = enable_numeric and (not has_number)
 
                 ok = True
                 for pre in (act.pre or []):
-                    if not eval_clause(world, static_facts, pre, bind, enable_numeric=numeric_ok):
+                    # Explicitly skip numeric guards when templating <n>
+                    if has_number and self._is_numeric_clause(pre):
+                        continue
+                    if not eval_clause(scoped_world, scoped_static, pre, bind, enable_numeric=numeric_ok):
                         ok = False
                         break
                 if not ok:
@@ -336,14 +528,15 @@ class PromptFormatter:
                 # Render: if numeric present, show <n> in those slots; otherwise full args
                 shown_args: List[str] = []
                 for i, val in enumerate(args):
-                    if i in num_positions:
-                        shown_args.append("<n>")
-                    else:
-                        shown_args.append(val)
+                    shown_args.append("<n>" if i in num_positions else val)
 
-                afford.append(f"({act.name} {' '.join(shown_args)})")
+                if shown_args:
+                    afford.append(f"({act.name} {' '.join(shown_args)})")
+                else:
+                    afford.append(f"({act.name})")
 
         return afford
+
 
 
     # ---------- Helpers ----------
@@ -360,7 +553,6 @@ class PromptFormatter:
         return "\n".join(rows)
 
 
-    
     # ---------- NL helpers for actions ----------
     def _pick_action_nl(self, action) -> str:
         """
@@ -393,7 +585,6 @@ class PromptFormatter:
             return tmpl.format(**mapping)
         except Exception:
             return None
-
 
 
     # ---------- Success goal rendering from termination_rules ----------
@@ -454,15 +645,11 @@ class PromptFormatter:
                     else:
                         nl_parts = []
                         break
-                if nl_parts:
-                    nl_joined = joiner.join(nl_parts)
-                else:
-                    nl_joined = None
+                nl_joined = joiner.join(nl_parts) if nl_parts else None
             except Exception:
                 nl_joined = None
         else:
             nl_joined = None
-
         return self._inline(pddl_joined, nl_joined)
 
     # ---------- Cost/introspection helpers ----------
@@ -483,17 +670,13 @@ class PromptFormatter:
         """
 
         def _outcome_name(oc) -> str:
-            if oc is None:
-                return ""
-            if isinstance(oc, dict):
-                return str(oc.get("name", "")).lower()
+            if oc is None: return ""
+            if isinstance(oc, dict): return str(oc.get("name", "")).lower()
             return str(getattr(oc, "name", "")).lower()
 
         def _outcome_num_eff(oc):
-            if oc is None:
-                return []
-            if isinstance(oc, dict):
-                return oc.get("num_eff") or []
+            if oc is None: return []
+            if isinstance(oc, dict): return oc.get("num_eff") or []
             return getattr(oc, "num_eff", None) or []
 
         def _action_num_eff(a):
@@ -506,34 +689,23 @@ class PromptFormatter:
             for expr in (num_eff_list or []):
                 s = str(expr).strip()
                 m = self._NUM_EFF_RX.match(s)
-                if not m:
-                    continue
+                if not m: continue
                 op, fname, _argstr, rhs = m.groups()
-                if fname != "energy":
-                    continue
-
+                if fname != "energy": continue
                 if op == "assign":
                     return f"energy \u2192 {rhs.strip()}"
-
                 rhs = rhs.strip()
                 try:
                     val = float(rhs)
-                    if op == "increase":
-                        total += val
-                    elif op == "decrease":
-                        total -= val
+                    if op == "increase": total += val
+                    elif op == "decrease": total -= val
                 except Exception:
                     symbolic.append((op, rhs))
-
             if symbolic and abs(total) < 1e-12:
                 op, rhs = symbolic[-1]
-                if op == "increase":
-                    return f"energy +{rhs}"
-                if op == "decrease":
-                    return f"energy -{rhs}"
-                if op == "assign":
-                    return f"energy \u2192 {rhs}"
-
+                if op == "increase": return f"energy +{rhs}"
+                if op == "decrease": return f"energy -{rhs}"
+                if op == "assign":   return f"energy \u2192 {rhs}"
             sign = "+" if total >= 0 else ""
             return f"energy {sign}{total:.3f}"
 

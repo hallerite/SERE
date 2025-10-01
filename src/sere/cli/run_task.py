@@ -18,7 +18,7 @@ def main():
         formatter_config=dict(
             display_nl=True,        # True => NL+PDDL everywhere; False => PDDL-only
             show_objects_in_sysprompt=True,
-            show_affordances=True,
+            show_affordances="All",
         ),
     )
 
