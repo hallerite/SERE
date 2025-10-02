@@ -315,19 +315,19 @@ class PromptFormatter:
                     "<move>(a1 ...)(a2 ...)...</move>. The environment executes sequentially, "
                     "then the episode ends."
                 )
-                reply_hint = "Reply with a full plan: <move>(a1 ...)(a2 ...)...</move>."
+                reply_hint = "Reply with a full plan: <move>(a1 ...)(a2 ...)...</move>, e.g. <move>(pick-up r1 leaf) (move r1 A B) (steep-tea r1 leaf mug)</move>."
             case RunMode.BATCH:
                 expl.append(
                     "You may submit multiple actions at once as "
                     "<move>(a1 ...)(a2 ...)...</move>. The environment executes them in order and returns."
                 )
-                reply_hint = "Reply with one or more actions: <move>(a1 ...)(a2 ...)...</move>."
+                reply_hint = "Reply with one or more actions: <move>(a1 ...)(a2 ...)...</move>, e.g. <move>(move r1 A B) (pour r1 kettle mug)</move>."
             case RunMode.INTERACTIVE:
                 expl.append(
                     "Submit exactly one action per step as "
                     "<move>(action arg1 arg2 ...)</move>."
                 )
-                reply_hint = "Reply with exactly one action: <move>(action arg1 arg2 ...)</move>."
+                reply_hint = "Reply with exactly one action: <move>(action arg1 arg2 ...)</move>, e.g. <move>(move r1 A B)</move>."
 
         parts.append(" ".join(expl))
 
