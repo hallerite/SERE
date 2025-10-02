@@ -1,6 +1,7 @@
 # tests/test_affordance_generation.py
 
-from sere.core.prompt_formatter import PromptFormatter, PromptFormatterConfig, VisibilityScope
+from sere.core.pddl_env.prompt_formatter import PromptFormatter, PromptFormatterConfig, VisibilityScope
+from sere.core.pddl_env.run_mode import RunMode
 from sere.pddl.domain_spec import DomainSpec, ActionSpec, PredicateSpec
 from sere.core.world_state import WorldState
 
@@ -78,6 +79,7 @@ def _generate_and_render(formatter: PromptFormatter, world: WorldState, static_f
         affordances=affs,
         time_limit=None,
         termination_rules=None,
+        run_mode=RunMode.INTERACTIVE
     )
 
 
@@ -346,7 +348,12 @@ def test_system_prompt_visibility_all_shows_all_objects_and_statics():
         visibility=VisibilityScope.ALL, show_affordances=False, display_nl=False,
         show_objects_in_sysprompt=True, show_briefing=True
     ))
-    sys = fmt.build_system_prompt(world=w, static_facts={("adjacent", ("kitchen", "pantry"))})
+    
+    sys = fmt.build_system_prompt(
+        world=w,
+        static_facts={("adjacent", ("kitchen", "pantry"))},
+        run_mode=RunMode.INTERACTIVE,
+    )
 
     # Objects should list kitchen, pantry, r1, leaf
     assert "Objects (name - type):" in sys
@@ -368,7 +375,12 @@ def test_system_prompt_visibility_room_hides_nonlocal_objects_and_statics():
         visibility=VisibilityScope.ROOM, show_affordances=False, display_nl=False,
         show_objects_in_sysprompt=True, show_briefing=True
     ))
-    sys = fmt.build_system_prompt(world=w, static_facts={("adjacent", ("kitchen", "pantry"))})
+    
+    sys = fmt.build_system_prompt(
+        world=w,
+        static_facts={("adjacent", ("kitchen", "pantry"))},
+        run_mode=RunMode.INTERACTIVE,
+    )
 
     # Objects should only list r1 and kitchen (leaf in pantry is not visible; pantry itself not shown)
     assert "Objects (name - type):" in sys

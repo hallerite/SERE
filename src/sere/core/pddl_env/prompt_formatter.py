@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from typing import List, Tuple, Dict, Set, Optional, Callable
 from sere.pddl.domain_spec import DomainSpec, Predicate
 from sere.pddl.nl_mapper import NLMapper
-from .world_state import WorldState
-from .semantics import eval_clause
+from sere.core.world_state import WorldState
+from sere.core.semantics import eval_clause
 from sere.core.pddl_env.run_mode import RunMode
 import fnmatch
 import re

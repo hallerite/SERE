@@ -1,12 +1,12 @@
 import random
 from typing import Any, Dict, List, Optional, Tuple
 from sere.pddl.domain_spec import DomainSpec
-from sere.core.prompt_formatter import PromptFormatter, PromptFormatterConfig
 from sere.core.semantics import eval_clause, EvalNode
 from sere.core.world_state import WorldState
 from sere.core.invariants import InvariantPlugin
 from . import planning, rendering
-from . import RunMode
+from .run_mode import RunMode
+from .prompt_formatter import PromptFormatter, PromptFormatterConfig
 
 
 def extract_tag(s: str, tag: str) -> Optional[str]:

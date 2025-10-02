@@ -5,7 +5,6 @@ from sere.core.world_state import WorldState
 from sere.pddl.domain_spec import (
     DomainSpec,
     ActionSpec,
-    PredicateSpec,
     FluentSpec,
     OutcomeSpec,
     ConditionalBlock,
