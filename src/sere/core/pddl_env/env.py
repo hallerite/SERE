@@ -1,11 +1,13 @@
-from typing import Any, Dict, List, Optional, Tuple
 import random
+from typing import Any, Dict, List, Optional, Tuple
 from sere.pddl.domain_spec import DomainSpec
 from sere.core.prompt_formatter import PromptFormatter, PromptFormatterConfig
 from sere.core.semantics import eval_clause, EvalNode
 from sere.core.world_state import WorldState
 from sere.core.invariants import InvariantPlugin
 from . import planning, rendering
+from . import RunMode
+
 
 def extract_tag(s: str, tag: str) -> Optional[str]:
     start, end = f"<{tag}>", f"</{tag}>"
@@ -21,6 +23,7 @@ class PDDLEnv:
         max_steps: int = 40, step_penalty: float = -0.01,
         invalid_penalty: float = -0.1,
         termination_rules: Optional[List[dict]] = None,
+        run_mode: str | RunMode = RunMode.INTERACTIVE,
         *,
         illegal_move_retries: int = 0,
         invalid_retry_penalty: float = 0.0,
@@ -64,6 +67,19 @@ class PDDLEnv:
         self._system_prompt_cache = ""
 
         self.plugins = plugins or []
+        
+        # Normalize run_mode exactly once to Enum
+        if isinstance(run_mode, RunMode):
+            self.run_mode = run_mode
+        elif isinstance(run_mode, str):
+            try:
+                self.run_mode = RunMode(run_mode.lower())
+            except ValueError:
+                raise ValueError(f"Invalid run_mode: {run_mode!r}. Use one of: "
+                                f"{', '.join(m.value for m in RunMode)}")
+        else:
+            raise TypeError("run_mode must be a str or RunMode")
+
         self.max_steps = max_steps
         self.step_penalty, self.invalid_penalty = step_penalty, invalid_penalty
         self.steps = 0
@@ -130,7 +146,9 @@ class PDDLEnv:
             world=self.world,
             static_facts=self.static_facts,
             time_limit=self.time_limit,
+            run_mode=self.run_mode,
         )
+
 
         # reward shaping
         self._rs_seen.clear()
@@ -157,7 +175,33 @@ class PDDLEnv:
             plan = planning.parse_move_block(text)
         except Exception as e:
             return self._illegal(f"{e}", {})
-        return planning.execute_plan(self, plan, atomic=False)
+
+        # Mode guard: INTERACTIVE must be exactly one action
+        if self.run_mode == RunMode.INTERACTIVE and len(plan) != 1:
+            return self._illegal(f"Interactive mode expects exactly one action; got {len(plan)}.", {})
+
+        obs, rew, done, info = planning.execute_plan(self, plan, atomic=False)
+
+        # Normalize/annotate info
+        info = dict(info)
+        info.setdefault("plan_mode", self.run_mode.value)
+
+        if info.get("invalid_move"):
+            trace = info.get("plan_trace") or []
+            bad = next((t for t in trace if t.get("outcome") == "invalid_move"), None)
+            if bad:
+                info["plan_aborted"] = True
+                info["aborted_at"] = int(bad.get("i", 0))
+                info["abort_error"] = bad.get("error") or info.get("error")
+
+        # OPEN_LOOP: force terminal after this call unless already terminal
+        if self.run_mode == RunMode.OPEN_LOOP and not (done or self.done):
+            self.done = True
+            info.setdefault("outcome", "terminal")
+            info.setdefault("reason", "open_loop_end")
+
+        return obs, rew, self.done or done, info
+
 
     # ---- helpers (kept on the env for simplicity) ----
 

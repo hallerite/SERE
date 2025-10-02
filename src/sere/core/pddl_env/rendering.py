@@ -19,6 +19,7 @@ def obs(env) -> str:
         affordances=aff,
         time_limit=env.time_limit,
         termination_rules=env.termination_rules,
+        run_mode=env.run_mode,
     )
     env._step_messages.clear()
     return text

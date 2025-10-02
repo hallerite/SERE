@@ -4,6 +4,7 @@ from sere.pddl.domain_spec import DomainSpec, Predicate
 from sere.pddl.nl_mapper import NLMapper
 from .world_state import WorldState
 from .semantics import eval_clause
+from sere.core.pddl_env.run_mode import RunMode
 import fnmatch
 import re
 import random
@@ -263,76 +264,89 @@ class PromptFormatter:
         *,
         world: WorldState,
         static_facts: Optional[Set[Predicate]] = None,
-        time_limit: float | None = None
+        time_limit: float | None = None,
+        run_mode: RunMode
     ) -> str:
 
         if not self.cfg.show_briefing:
             return ""
 
+        mode: RunMode = run_mode  # already normalized by the env
+
         # Apply visibility scoping so objects/statics reflect the current view
         scoped_world, scoped_static, _ = self._scoped_view(world, static_facts or set())
 
         has_energy = any(name == "energy" for (name, _args) in scoped_world.fluents.keys())
-
-        has_time = False
-        for a in self.domain.actions.values():
-            if (a.duration is not None) or (a.duration_var is not None):
-                has_time = True
-                break
+        has_time = any((a.duration is not None) or (a.duration_var is not None)
+                    for a in self.domain.actions.values())
 
         parts: list[str] = []
 
-        if has_energy or has_time:
-            expl = []
-            expl.append("You are controlling a robot in a simulated world.")
-            if has_energy:
-                expl.append(
-                    "The robot has limited energy. The current energy is shown in the header as "
-                    "Energy: r1 current/capacity. When energy is zero the robot cannot perform most actions. "
-                    "Use the recharge action at a charging location to restore energy up to the battery capacity. "
-                    "Energy never exceeds the capacity. Plan actions so the robot does not run out of energy."
-                )
-            if has_time:
-                expl.append(
-                    "Each action takes time. The header shows Time. "
-                    + (
-                        f"This task has a strict time limit of {time_limit:.2f}. "
-                        "Exceeding it fails the task. "
-                        if time_limit is not None else
-                        "Some tasks have a time limit. Exceeding it fails the task. "
-                    )
-                    + "Choose efficient actions."
-                )
+        # High-level briefing + mode banner
+        expl: list[str] = []
+        expl.append("You are controlling a robot in a simulated world.")
+        if has_energy:
             expl.append(
-                "The header always shows the current step number and the maximum allowed steps. "
-                "If time is enabled it also shows total elapsed time. If energy is modeled it shows the energy level "
-                "for each robot, and the battery capacity if defined."
+                "The robot has limited energy. The current energy is shown in the header as "
+                "Energy: r1 current/capacity. When energy is zero the robot cannot perform most actions. "
+                "Use the recharge action at a charging location to restore energy up to the battery capacity. "
+                "Energy never exceeds the capacity. Plan actions so the robot does not run out of energy."
             )
+        if has_time:
             expl.append(
-                "You must output exactly one valid action per step, formatted as <move>(action arg1 arg2 ...)</move>. "
-                "Do not output explanations or multiple actions in one step. Think step by step. "
-                "Watch energy and recharge if needed. Watch time and avoid wasted moves."
+                "Each action takes time. The header shows Time. " +
+                (f"This task has a strict time limit of {time_limit:.2f}. Exceeding it fails the task. "
+                if time_limit is not None else
+                "Some tasks have a time limit. Exceeding it fails the task. ") +
+                "Choose efficient actions."
             )
-            parts.append(" ".join(expl))
+        expl.append(
+            "The header always shows the current step number and the maximum allowed steps. "
+            "If time is enabled it also shows total elapsed time. If energy is modeled it shows the energy level "
+            "for each robot, and the battery capacity if defined."
+        )
+
+        parts.append(f"You are in {mode.value.replace('_','-').upper()} mode.")
+
+        match mode:
+            case RunMode.OPEN_LOOP:
+                expl.append(
+                    "Submit a complete plan as one block: "
+                    "<move>(a1 ...)(a2 ...)...</move>. The environment executes sequentially, "
+                    "then the episode ends."
+                )
+                reply_hint = "Reply with a full plan: <move>(a1 ...)(a2 ...)...</move>."
+            case RunMode.BATCH:
+                expl.append(
+                    "You may submit multiple actions at once as "
+                    "<move>(a1 ...)(a2 ...)...</move>. The environment executes them in order and returns."
+                )
+                reply_hint = "Reply with one or more actions: <move>(a1 ...)(a2 ...)...</move>."
+            case RunMode.INTERACTIVE:
+                expl.append(
+                    "Submit exactly one action per step as "
+                    "<move>(action arg1 arg2 ...)</move>."
+                )
+                reply_hint = "Reply with exactly one action: <move>(action arg1 arg2 ...)</move>."
+
+        parts.append(" ".join(expl))
 
         # -------- Action catalog (always included) --------
-        actions = self._format_action_catalog()  # always PDDL signatures
+        actions = self._format_action_catalog()
         parts += [
             f"You are controlling the robot in the '{self.domain.name}' domain.",
-            "Reply with exactly one action inside <move>…</move>, e.g., <move>(move r1 A B)</move>.",
+            reply_hint,
             "",
             "Actions (signature — description  [costs]):",
             actions or "(none)",
         ]
 
         # -------- Objects & Statics (respect visibility) --------
-        # Build a scoped view once so both objects and statics follow the visibility rule.
         scoped_world, scoped_static, _ = self._scoped_view(world, static_facts or set())
 
         if self.cfg.show_objects_in_sysprompt:
             parts += ["", "Objects (name - type):", self._format_objects_name_type(scoped_world)]
 
-        # Always show the statics header; render only those that survive scoping.
         lines: list[str] = []
         for pred in sorted(scoped_static):
             pddl = self._pddl(pred)
@@ -340,8 +354,8 @@ class PromptFormatter:
             lines.append(self._inline(pddl, nl))
         parts += ["", "Statics (do not change):", "\n".join(lines) if lines else "(none)"]
 
-
         return "\n".join(parts)
+
 
 
     # ---------- Observation ----------
@@ -357,16 +371,17 @@ class PromptFormatter:
         affordances: List[str],
         time_limit: float | None,
         termination_rules: Optional[List[dict]] = None,
-    ) -> str:
+        run_mode: RunMode
+        ) -> str:
+        mode: RunMode = run_mode  # guaranteed enum
+
         # Apply visibility scoping once
         scoped_world, _scoped_static, _room = self._scoped_view(world, static_facts=None)
 
         # ----- State (already scoped) -----
         raw_facts = [fa for fa in sorted(scoped_world.facts) if fa[0] != "adjacent"]
-        facts = raw_facts
-
         state_lines: List[str] = []
-        for pred in facts:
+        for pred in raw_facts:
             pddl = self._pddl(pred)
             nl = self._nl_pred(pred) if self.cfg.display_nl else None
             state_lines.append(self._inline(pddl, nl))
@@ -378,7 +393,7 @@ class PromptFormatter:
         if success_line:
             goal_txt = "Goal:\n" + success_line
 
-        # ----- Fluents (already scoped) -----
+        # ----- Fluents -----
         fl_txt = ""
         if self.cfg.show_fluents and scoped_world.fluents:
             prec = max(0, int(self.cfg.fluents_precision))
@@ -390,7 +405,7 @@ class PromptFormatter:
                 rows.append(f"- (= ({name}{argstr}) {val:.{prec}f})")
             fl_txt = "Fluents:\n" + ("\n".join(rows) if rows else "")
 
-        # ----- Affordances (render only if enabled) -----
+        # ----- Affordances -----
         aff_txt = ""
         if self.cfg.show_affordances and affordances:
             lines = []
@@ -407,7 +422,7 @@ class PromptFormatter:
                 lines.append(self._inline(shown, nl_desc))
             aff_txt = "Valid moves:\n" + "\n".join(lines)
 
-        # ----- Messages (inline, no label) -----
+        # ----- Messages -----
         msg_txt = ""
         if self.cfg.show_messages and messages:
             msg_txt = "\n".join(messages) if self.cfg.messages_inline else ("Messages:\n  - " + "\n  - ".join(messages))
@@ -425,7 +440,15 @@ class PromptFormatter:
         energy_txt = (" | Energy: " + ", ".join(energy_bits)) if energy_bits else ""
         header = f"Steps: {steps}/{max_steps}{time_txt}{energy_txt}"
 
-        # ----- Stitch -----
+        # ----- Footer (mode-specific) -----
+        match mode:
+            case RunMode.OPEN_LOOP:
+                tail = "Submit a full plan as <move>(a1 ...)(a2 ...)...</move>. Episode will end after execution."
+            case RunMode.BATCH:
+                tail = "You may submit multiple actions: <move>(a1 ...)(a2 ...)...</move>."
+            case RunMode.INTERACTIVE:
+                tail = "Reply with <move>(action args)</move>."
+
         return "\n\n".join(
             p for p in [
                 header,
@@ -434,7 +457,7 @@ class PromptFormatter:
                 goal_txt,
                 fl_txt,
                 aff_txt,
-                "Reply with <move>(action args)</move>."
+                tail,
             ] if p
         ).strip()
 
