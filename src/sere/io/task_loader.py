@@ -563,7 +563,7 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
         plugins = _load_invariants_plugin(dn)
 
     # ---- RNG
-    seed = meta.get("seed", None)
+    seed = env_kwargs.get("seed", None)
     rng = random.Random(seed)
 
     # ---- Objects (STRICT) + variant realization

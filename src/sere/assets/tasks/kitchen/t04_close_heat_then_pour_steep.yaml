@@ -11,7 +11,6 @@ meta:
   enable_durations: true
   max_steps: 10
   time_limit: 6.5
-  seed: 204
   init_fluents:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 8]

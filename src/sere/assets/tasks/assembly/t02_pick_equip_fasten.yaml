@@ -10,7 +10,6 @@ meta:
   enable_durations: true
   enable_stochastic: false
   max_steps: 6
-  seed: 102
   init_fluents:
     - ["battery-cap", ["robot"], 8]
     - ["energy", ["robot"], 8]

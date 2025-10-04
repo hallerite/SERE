@@ -11,7 +11,6 @@ meta:
   enable_durations: true
   max_steps: 28
   time_limit: 23
-  seed: 210
   init_fluents:
     - ["battery-cap", ["robot"], 8]
     - ["energy", ["robot"], 3]         # enough to prep + heat, not enough to finish without recharge

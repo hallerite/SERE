@@ -11,7 +11,6 @@ meta:
   enable_durations: true
   max_steps: 25
   time_limit: 22
-  seed: 209
   init_fluents:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 4]          # allows some progress, but not the finish
