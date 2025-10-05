@@ -2,6 +2,7 @@ import re
 from typing import List, Tuple
 from sere.pddl.grounding import parse_grounded
 from .engine import step_one
+from sere.core.pddl_env.run_mode import RunMode
 
 def _dbg(env, *args):
     """Call env._dbg if available and enabled."""
@@ -107,6 +108,15 @@ def execute_plan(env, plan, *, atomic: bool = False):
             # terminal but not invalid → keep state and stop
             break
 
+    # --- classify open-loop cutoff as failed so metrics sum to 100% ---
+    if env.run_mode == RunMode.OPEN_LOOP and not (terminal or env.done):
+        env.done = True
+        final_info = dict(final_info)
+        final_info["outcome"] = "failed"
+        final_info["reason"] = "open_loop_end"
+        terminal = True
+    # ----------------------------------------------------------------------
+
     final_info = dict(final_info)
     final_info["plan_trace"] = plan_trace
     final_info["steps_executed"] = steps_executed
@@ -115,3 +125,4 @@ def execute_plan(env, plan, *, atomic: bool = False):
               f"total_r={total_reward:.2f} total_shape={total_shaping:.2f} "
               f"final_outcome={final_info.get('outcome')}")
     return final_obs, total_reward, terminal, final_info
+
