@@ -27,12 +27,13 @@ src/sere/
 │   ├── world_state.py       # Facts, objects, fluents, invariants
 │   ├── semantics.py         # Clause + numeric evaluation, traces
 │   ├── invariants.py        # Generic + domain-specific plugins
-│   ├── prompt_formatter.py  # Render system prompt + observations
-│   └── pddl_env/            # RL-style environment
+│   └── pddl_env/            # RL-style environment + prompting
 │       ├── env.py           # Env: reset/step/reward/done
 │       ├── engine.py        # Action application, stochastic outcomes
 │       ├── planning.py      # Parse/execute <move>(...) blocks
-│       └── rendering.py     # Messages + obs stitching
+│       ├── rendering.py     # Messages + obs stitching
+│       ├── prompt_formatter.py # System prompt + observations + affordances
+│       └── run_mode.py      # interactive / batch / open_loop
 │
 ├── pddl/                    # Domain parsing, grounding, NL mapping
 ├── io/                      # Task loader utilities
@@ -64,12 +65,15 @@ Requires **Python 3.11+**.
 From the repo root:
 
 ```bash
-python -m src.sere.cli.run_task assets/tasks/kitchen/t01_one_step_steep.yaml
+python -m sere.cli.run_task kitchen/t01_one_step_steep.yaml
 ```
+
+Note: `cli.run_task` looks at `src/sere/assets/tasks/` for the `yaml` file.
 
 You’ll see output like:
 
 ```
+...
 State:
   (at r1 hallway)
   (obj-at kettle1 kitchen)
@@ -106,3 +110,8 @@ The environment will parse and apply the action, update time/energy, and return 
   - **Optional shaping rules** and **reference plans**  
 
 This separation makes it easy to randomize tasks or auto-generate curricula.
+
+## To Do
+- improve docs
+- add domain randomization for tasks
+    - multiple different distinct outcomes for some actions
