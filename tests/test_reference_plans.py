@@ -37,7 +37,7 @@ def test_has_single_success_goal_rule_under_termination(task_id: str):
 
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_reference_plan_succeeds_and_reward_matches(task_id: str):
-    env, meta = load_task(None, task_id)
+    env, meta = load_task(None, task_id, enable_stochastic=False, seed=0)
     env.reset()
 
     plan = meta.get("reference_plan") or []
@@ -60,7 +60,7 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
     expected_baseline = env.step_penalty * n_steps + success_reward
 
     # Non-atomic recompute of shaping on a fresh env with the same plan
-    env2, _ = load_task(None, task_id)
+    env2, _ = load_task(None, task_id, enable_stochastic=False, seed=0)
     env2.reset()
     _, _, _, info2 = execute_plan(env2, plan_seq, atomic=False)
     observed_shaping = float(info2.get("shaping_bonus_total", 0.0))
