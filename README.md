@@ -30,7 +30,7 @@ src/sere/
 │   └── pddl_env/            # RL-style environment + prompting
 │       ├── env.py           # Env: reset/step/reward/done
 │       ├── engine.py        # Action application, stochastic outcomes
-│       ├── planning.py      # Parse/execute <move>(...) blocks
+│       ├── planning.py      # Parse/execute action blocks
 │       ├── rendering.py     # Messages + obs stitching
 │       ├── prompt_formatter.py # System prompt + observations + affordances
 │       └── run_mode.py      # interactive / batch / open_loop
@@ -81,13 +81,13 @@ State:
 Goal:
   (tea-ready mug1)
 
-Reply with <move>(action args)</move>.
+Reply with (action args).
 ```
 
 Example step:
 
-```xml
-<move>(move r1 hallway kitchen)</move>
+```
+(move r1 hallway kitchen)
 ```
 
 The environment will parse and apply the action, update time/energy, and return the next observation plus reward.

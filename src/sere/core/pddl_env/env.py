@@ -172,7 +172,7 @@ class PDDLEnv:
         if self.done:
             raise RuntimeError("Episode finished. Call reset().")
         try:
-            plan = planning.parse_move_block(text)
+            plan = planning.parse_actions(text)
         except Exception as e:
             return self._illegal(f"{e}", {})
 

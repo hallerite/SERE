@@ -55,7 +55,7 @@ def main():
 
     while True:
         try:
-            move = input("\n<move> ").strip()
+            move = input().strip()
         except KeyboardInterrupt:
             print("\nExiting.")
             return
@@ -63,7 +63,7 @@ def main():
             print("Exiting.")
             return
 
-        obs, r, done, step_info = env.step(f"<move>{move}</move>")
+        obs, r, done, step_info = env.step(f"{move}")
 
         if args.raw:
             # Only show the raw observation

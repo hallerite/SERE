@@ -66,20 +66,20 @@ def reset_with(env, *, numeric=True, conditional=True, durations=True, energy=10
         pass
     return env
 
-def M(env, frm, to): return env.step(f"<move>(move r1 {frm} {to})</move>")
-def OPEN(env, c):    return env.step(f"<move>(open r1 {c})</move>")
-def CLOSE(env, c):   return env.step(f"<move>(close r1 {c})</move>")
-def PICK(env, o):    return env.step(f"<move>(pick-up r1 {o})</move>")
-def PUT(env, o):     return env.step(f"<move>(put-down r1 {o})</move>")
-def PUTIN(env, o,c): return env.step(f"<move>(put-in r1 {o} {c})</move>")
-def TAKE(env,o,c):   return env.step(f"<move>(take-out r1 {o} {c})</move>")
-def EQUIP(env,t):    return env.step(f"<move>(equip-tool r1 {t})</move>")
-def UNEQ(env,t):     return env.step(f"<move>(unequip-tool r1 {t})</move>")
-def ALIGN(env,p,a):  return env.step(f"<move>(align r1 {p} {a})</move>")
-def FASTEN(env,p,a,t): return env.step(f"<move>(fasten r1 {p} {a} {t})</move>")
-def UNFASTEN(env,p,a,t): return env.step(f"<move>(unfasten r1 {p} {a} {t})</move>")
-def BENCH(env,o):    return env.step(f"<move>(place-on-bench r1 {o})</move>")
-def RECH(env,l):     return env.step(f"<move>(recharge r1 {l})</move>")
+def M(env, frm, to): return env.step(f"(move r1 {frm} {to})")
+def OPEN(env, c):    return env.step(f"(open r1 {c})")
+def CLOSE(env, c):   return env.step(f"(close r1 {c})")
+def PICK(env, o):    return env.step(f"(pick-up r1 {o})")
+def PUT(env, o):     return env.step(f"(put-down r1 {o})")
+def PUTIN(env, o,c): return env.step(f"(put-in r1 {o} {c})")
+def TAKE(env,o,c):   return env.step(f"(take-out r1 {o} {c})")
+def EQUIP(env,t):    return env.step(f"(equip-tool r1 {t})")
+def UNEQ(env,t):     return env.step(f"(unequip-tool r1 {t})")
+def ALIGN(env,p,a):  return env.step(f"(align r1 {p} {a})")
+def FASTEN(env,p,a,t): return env.step(f"(fasten r1 {p} {a} {t})")
+def UNFASTEN(env,p,a,t): return env.step(f"(unfasten r1 {p} {a} {t})")
+def BENCH(env,o):    return env.step(f"(place-on-bench r1 {o})")
+def RECH(env,l):     return env.step(f"(recharge r1 {l})")
 
 # ---- core assembly flow --------------------------------------------------
 
@@ -234,9 +234,9 @@ def test_wait_and_time_limit_enforced(asm_task_file):
     env, _ = load_task(None, str(asm_task_file), max_steps=10, time_limit=2.0)
     env.enable_durations = True
     reset_with(env)
-    obs, r, done, info = env.step("<move>(wait 2)</move>")
+    obs, r, done, info = env.step("(wait 2)")
     assert not done, "time == limit should not end the episode"
-    obs, r, done, info = env.step("<move>(wait 0.01)</move>")
+    obs, r, done, info = env.step("(wait 0.01)")
     assert done and info.get("outcome") == "timeout" and info.get("reason") == "time_limit_exceeded"
 
 # ---- derived predicate sanity --------------------------------------------
@@ -310,7 +310,7 @@ reference_plan:
     # --- Execute plan: should hit SUCCESS at end
     obs, info = env.reset()
     for step in plan:
-        obs, r, done, info = env.step(f"<move>{step}</move>")
+        obs, r, done, info = env.step(f"{step}")
         if done:
             break
     assert done and info.get("outcome") == "success"

@@ -312,22 +312,22 @@ class PromptFormatter:
             case RunMode.OPEN_LOOP:
                 expl.append(
                     "Submit a complete plan as one block: "
-                    "<move>(a1 ...)(a2 ...)...</move>. The environment executes sequentially, "
+                    "(a1 ...)(a2 ...).... The environment executes sequentially, "
                     "then the episode ends."
                 )
-                reply_hint = "Reply with a full plan: <move>(a1 ...)(a2 ...)...</move>, e.g. <move>(pick-up r1 leaf) (move r1 A B) (steep-tea r1 leaf mug)</move>."
+                reply_hint = "Reply with a full plan: (a1 ...)(a2 ...)..., e.g. (pick-up r1 leaf) (move r1 A B) (steep-tea r1 leaf mug)."
             case RunMode.BATCH:
                 expl.append(
                     "You may submit multiple actions at once as "
-                    "<move>(a1 ...)(a2 ...)...</move>. The environment executes them in order and returns."
+                    "(a1 ...)(a2 ...).... The environment executes them in order and returns."
                 )
-                reply_hint = "Reply with one or more actions: <move>(a1 ...)(a2 ...)...</move>, e.g. <move>(move r1 A B) (pour r1 kettle mug)</move>."
+                reply_hint = "Reply with one or more actions: (a1 ...)(a2 ...)..., e.g. (move r1 A B) (pour r1 kettle mug)."
             case RunMode.INTERACTIVE:
                 expl.append(
                     "Submit exactly one action per step as "
-                    "<move>(action arg1 arg2 ...)</move>."
+                    "(action arg1 arg2 ...)."
                 )
-                reply_hint = "Reply with exactly one action: <move>(action arg1 arg2 ...)</move>, e.g. <move>(move r1 A B)</move>."
+                reply_hint = "Reply with exactly one action: (action arg1 arg2 ...), e.g. (move r1 A B)."
 
         parts.append(" ".join(expl))
 
@@ -443,11 +443,11 @@ class PromptFormatter:
         # ----- Footer (mode-specific) -----
         match mode:
             case RunMode.OPEN_LOOP:
-                tail = "Submit a full plan as <move>(a1 ...)(a2 ...)...</move>. Episode will end after execution."
+                tail = "Submit a full plan as (a1 ...)(a2 ...).... Episode will end after execution."
             case RunMode.BATCH:
-                tail = "You may submit multiple actions: <move>(a1 ...)(a2 ...)...</move>."
+                tail = "You may submit multiple actions: (a1 ...)(a2 ...)...."
             case RunMode.INTERACTIVE:
-                tail = "Reply with <move>(action args)</move>."
+                tail = "Reply with (action args)."
 
         return "\n\n".join(
             p for p in [

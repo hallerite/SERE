@@ -2,7 +2,7 @@ import pytest
 from importlib.resources import files as pkg_files
 
 from sere.io.task_loader import load_task
-from sere.core.pddl_env.planning import execute_plan, parse_move_block
+from sere.core.pddl_env.planning import execute_plan, parse_actions
 
 
 def _iter_task_ids():
@@ -44,9 +44,8 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
     if not plan:
         pytest.xfail(f"{task_id} has no reference_plan")
 
-    # Execute reference plan atomically (ground truth for this episode)
-    plan_str = "<move>" + "".join(plan) + "</move>"
-    plan_seq = parse_move_block(plan_str)
+    plan_str = "".join(plan)  # "(op ...)(op ...)"
+    plan_seq = parse_actions(plan_str)
     obs, total_reward, done, info = execute_plan(env, plan_seq, atomic=True)
 
     assert done, f"{task_id}: plan did not terminate"
@@ -119,7 +118,7 @@ def test_energy_is_clamped_after_first_step_if_above_cap(task_id: str):
         pytest.skip("No battery-cap")
     cap = env.world.get_fluent("battery-cap", (r,))
     env.world.set_fluent("energy", (r,), cap + 10.0)
-    obs, rwd, done, info = env.step("<move>(wait 1)</move>")
+    obs, rwd, done, info = env.step("(wait 1)")
     assert env.world.get_fluent("energy", (r,)) <= cap + 1e-9
 
 
@@ -144,7 +143,7 @@ def test_recharge_does_not_exceed_cap_when_possible(task_id: str):
         pytest.skip("No charger at robot's location")
     start_e = max(0.0, cap - 0.5)
     env.world.set_fluent("energy", (r,), start_e)
-    env.step(f"<move>(recharge {r} {l})</move>")
+    env.step(f"(recharge {r} {l})")
     e_after = env.world.get_fluent("energy", (r,))
     assert e_after <= cap + 1e-9, f"Recharge overflowed cap: after={e_after}, cap={cap}"
     assert e_after >= start_e, "Recharge should not reduce energy"

@@ -85,40 +85,40 @@ def reset_with(env, extra_statics=None, *, numeric=True, conditional=True, energ
     return env
 
 def move(env, frm, to):
-    return env.step(f"<move>(move r1 {frm} {to})</move>")
+    return env.step(f"(move r1 {frm} {to})")
 
 def open_(env, c):
-    return env.step(f"<move>(open r1 {c})</move>")
+    return env.step(f"(open r1 {c})")
 
 def close_(env, c):
-    return env.step(f"<move>(close r1 {c})</move>")
+    return env.step(f"(close r1 {c})")
 
 def pickup(env, o):
-    return env.step(f"<move>(pick-up r1 {o})</move>")
+    return env.step(f"(pick-up r1 {o})")
 
 def putdown(env, o):
-    return env.step(f"<move>(put-down r1 {o})</move>")
+    return env.step(f"(put-down r1 {o})")
 
 def putin(env, o, c):
-    return env.step(f"<move>(put-in r1 {o} {c})</move>")
+    return env.step(f"(put-in r1 {o} {c})")
 
 def takeout(env, o, c):
-    return env.step(f"<move>(take-out r1 {o} {c})</move>")
+    return env.step(f"(take-out r1 {o} {c})")
 
 def power_on(env, a):
-    return env.step(f"<move>(power-on r1 {a})</move>")
+    return env.step(f"(power-on r1 {a})")
 
 def heat(env, k, n):
-    return env.step(f"<move>(heat-kettle r1 {k} {n})</move>")
+    return env.step(f"(heat-kettle r1 {k} {n})")
 
 def pour(env, k, m):
-    return env.step(f"<move>(pour r1 {k} {m})</move>")
+    return env.step(f"(pour r1 {k} {m})")
 
 def steep(env, tb, m):
-    return env.step(f"<move>(steep-tea r1 {tb} {m})</move>")
+    return env.step(f"(steep-tea r1 {tb} {m})")
 
 def fill(env, k, s):
-    return env.step(f"<move>(fill-water r1 {k} {s})</move>")
+    return env.step(f"(fill-water r1 {k} {s})")
 
 def _affordances(env):
     # Ask the same generator the UI uses and RETURN it.
@@ -281,9 +281,9 @@ def test_wait_and_time_limit_enforced(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=10, time_limit=2.0)
     env.enable_durations = True
     reset_with(env)
-    obs, r, done, info = env.step("<move>(wait 1)</move>")
+    obs, r, done, info = env.step("(wait 1)")
     assert not done
-    obs, r, done, info = env.step("<move>(wait 2)</move>")
+    obs, r, done, info = env.step("(wait 2)")
     assert done and info.get("outcome") == "timeout" and info.get("reason") == "time_limit_exceeded"
 
 # --------------------------------------------------------------------------------------
@@ -306,12 +306,6 @@ def test_obj_at_and_in_invariant_caught_on_reset(basic_task_file):
     env.world.facts.add(lit("in", "mug1", "kettle1"))  # nonsense on purpose
     with pytest.raises(ValueError):
         env.reset()
-
-def test_missing_move_tags_is_invalid(basic_task_file):
-    env, _ = load_task(None, str(basic_task_file), max_steps=5)
-    reset_with(env)
-    obs, r, done, info = env.step("(move r1 hallway kitchen)")  # missing <move> tags
-    assert done and info.get("outcome") == "invalid_move"
 
 # --------------------------------------------------------------------------------------
 # Open/Close edges
@@ -456,9 +450,9 @@ def test_time_limit_boundary_exact_ok_exceed_bad(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=10, time_limit=2.0)
     env.enable_durations = True
     reset_with(env)
-    obs, r, done, info = env.step("<move>(wait 2)</move>")
+    obs, r, done, info = env.step("(wait 2)")
     assert not done, "time == limit should not end the episode"
-    obs, r, done, info = env.step("<move>(wait 0.01)</move>")
+    obs, r, done, info = env.step("(wait 0.01)")
     assert done and info.get("outcome") == "timeout"
 
 # ==================== TEST "OR" ====================
@@ -620,7 +614,7 @@ def test_heat_rejects_zero_or_non_numeric_n(basic_task_file):
     reset_with(env)
     move(env, "hallway", "kitchen")
     # Manually craft a non-numeric heat (bypass helper)
-    obs, r, done, info = env.step("<move>(heat-kettle r1 kettle1 foo)</move>")
+    obs, r, done, info = env.step("(heat-kettle r1 kettle1 foo)")
     assert done and info.get("outcome") == "invalid_move"
 
 
@@ -655,7 +649,7 @@ def test_wait_duration_var_and_time_limit_via_heat(basic_task_file):
     # Enable durations now
     env.enable_durations = True
 
-    obs, r, done, info = env.step("<move>(wait 0.4)</move>")
+    obs, r, done, info = env.step("(wait 0.4)")
     assert not done
     assert env.time >= 0.4 - 1e-9
 
@@ -833,7 +827,7 @@ def test_execution_rejects_same_source_and_target_with_distinct_error(basic_task
     open_(env, "mug1")
     fill(env, "mug1", "sink1")  # sets has-water(mug1) and water-temp=20
 
-    obs, r, done, info = env.step("<move>(pour r1 mug1 mug1)</move>")
+    obs, r, done, info = env.step("(pour r1 mug1 mug1)")
     assert done and info.get("outcome") == "invalid_move"
     err = info.get("error", "")
     assert "preconditions were not satisfied" in err.lower()
@@ -883,13 +877,13 @@ def test_invalid_retry_zero_terminates_immediately(basic_task_file):
     env.illegal_move_retries = 0
     reset_with(env)
     # Invalid from hallway: not co-located with kettle
-    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs, r, done, info = env.step("(open r1 kettle1)")
     assert done and info.get("outcome") == "invalid_move"
     assert r == -0.1
     # Next step must raise
     import pytest
     with pytest.raises(RuntimeError):
-        env.step("<move>(move r1 hallway kitchen)</move>")
+        env.step("(move r1 hallway kitchen)")
 
 def test_invalid_retry_one_allows_retry_without_advancing_state(basic_task_file):
     env, _ = load_task(None, str(basic_task_file), max_steps=5, invalid_penalty=-0.1)
@@ -902,7 +896,7 @@ def test_invalid_retry_one_allows_retry_without_advancing_state(basic_task_file)
     facts0 = set(env.world.facts)
 
     # 1st invalid → NOT done, same state, warning in obs
-    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs, r, done, info = env.step("(open r1 kettle1)")
     assert not done
     assert "Invalid:" in obs and "Retries left" in obs
     assert env.steps == steps0, "invalid retry must not increment steps"
@@ -911,7 +905,7 @@ def test_invalid_retry_one_allows_retry_without_advancing_state(basic_task_file)
     assert info.get("invalid_move") is True
 
     # Now issue a valid move → should progress and clear retry counter
-    obs, r, done, info = env.step("<move>(move r1 hallway kitchen)</move>")
+    obs, r, done, info = env.step("(move r1 hallway kitchen)")
     assert info.get("outcome") in ("ongoing", "timeout", "success")
     # a valid transition increments steps and may change world/time
     assert env.steps == steps0 + 1
@@ -924,13 +918,13 @@ def test_invalid_retry_exhausts_then_terminates(basic_task_file):
     reset_with(env)
 
     # 1st invalid (ok)
-    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs, r, done, info = env.step("(open r1 kettle1)")
     assert not done
     # 2nd invalid (still ok)
-    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs, r, done, info = env.step("(open r1 kettle1)")
     assert not done
     # 3rd invalid (exhausted -> terminal)
-    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs, r, done, info = env.step("(open r1 kettle1)")
     assert done and info.get("outcome") == "invalid_move"
     assert r == -0.2
 
@@ -941,12 +935,12 @@ def test_invalid_retry_penalty_applied_on_nonterminal(basic_task_file):
     reset_with(env)
 
     # First invalid → nonterminal, gets retry-penalty (not invalid_penalty)
-    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs, r, done, info = env.step("(open r1 kettle1)")
     assert not done
     assert r == -0.05
 
     # Second invalid → terminal, gets invalid_penalty
-    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs, r, done, info = env.step("(open r1 kettle1)")
     assert done and r == -1.0
 
 def test_invalid_retry_keeps_observation_constant(basic_task_file):
@@ -959,7 +953,7 @@ def test_invalid_retry_keeps_observation_constant(basic_task_file):
     time0 = env.time
     facts0 = set(env.world.facts)
 
-    obs1, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs1, r, done, info = env.step("(open r1 kettle1)")
     assert not done
     assert env.steps == steps0
     assert env.time == time0
@@ -973,7 +967,7 @@ def test_arity_mismatch_is_invalid_not_crash(basic_task_file):
     env.illegal_move_retries = 0  # fail fast for clarity
     reset_with(env)
     # too many args for a 3-ary action
-    obs, r, done, info = env.step("<move>(steep-tea r1 teabag1 mug1 kitchen)</move>")
+    obs, r, done, info = env.step("(steep-tea r1 teabag1 mug1 kitchen)")
     assert done and info.get("outcome") == "invalid_move"
     assert "Arity mismatch" in info.get("error", "")
 
@@ -990,7 +984,7 @@ def test_explain_co_located_precondition(basic_task_file):
     env.illegal_move_retries = 0  # fail fast
     reset_with(env)  # r1@hallway, kettle1@makes kitchen
 
-    obs, r, done, info = env.step("<move>(open r1 kettle1)</move>")
+    obs, r, done, info = env.step("(open r1 kettle1)")
     assert done and info.get("outcome") == "invalid_move"
 
     err = info.get("error", "")
@@ -1014,7 +1008,7 @@ def test_explain_numeric_guard_on_move_energy(basic_task_file):
     reset_with(env, numeric=True)
     env.world.set_fluent("energy", ("r1",), 0.0)
 
-    obs, r, done, info = env.step("<move>(move r1 hallway kitchen)</move>")
+    obs, r, done, info = env.step("(move r1 hallway kitchen)")
     assert done and info.get("outcome") == "invalid_move"
 
     err = info.get("error", "")
@@ -1035,11 +1029,11 @@ def test_explain_distinct_guard_on_degenerate_move(basic_task_file):
     reset_with(env, extra_statics=[lit("adjacent", "kitchen", "kitchen")])
 
     # get to kitchen first
-    obs, r, done, info = env.step("<move>(move r1 hallway kitchen)</move>")
+    obs, r, done, info = env.step("(move r1 hallway kitchen)")
     assert not done
 
     # now try the degenerate move
-    obs, r, done, info = env.step("<move>(move r1 kitchen kitchen)</move>")
+    obs, r, done, info = env.step("(move r1 kitchen kitchen)")
     assert done and info.get("outcome") == "invalid_move"
 
     err = info.get("error", "")
@@ -1059,7 +1053,7 @@ def _write_yaml(tmp_path, name, text):
 def _run_plan(env, plan):
     """Run a list of raw S-exprs through the environment."""
     for a in plan:
-        obs, r, done, info = env.step(f"<move>{a}</move>")
+        obs, r, done, info = env.step(f"{a}")
         if done and info.get("outcome") == "invalid_move":
             # bubble a helpful assertion for easier debugging
             raise AssertionError(f"Plan step failed: {a}\nerror:\n{info.get('error','')}")
@@ -1143,7 +1137,7 @@ reference_plan:
     obs, info = env.reset()
 
     for step in meta["reference_plan"]:
-        obs, r, done, info = env.step(f"<move>{step}</move>")
+        obs, r, done, info = env.step(f"{step}")
         if done and info.get("outcome") == "invalid_move":
             raise AssertionError(f"Plan step failed: {step}\nerror:\n{info.get('error','')}")
         if done:

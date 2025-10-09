@@ -9,15 +9,19 @@ def _dbg(env, *args):
     if getattr(env, "debug", False) and hasattr(env, "_dbg"):
         env._dbg(*args)
 
-def parse_move_block(text: str) -> List[Tuple[str, Tuple[str, ...]]]:
-    start, end = "<move>", "</move>"
-    i, j = text.find(start), text.find(end)
-    if i < 0 or j < 0:
-        raise ValueError("Missing <move>(...)</move>.")
-    block = text[i + len(start): j]
-    toks = re.findall(r"\([^)]+\)", block)
+# Accepts strings like: "(move r1 a b)(pick r1 x)" or with whitespace/newlines.
+_ACTION_RX = re.compile(r"\([^)]+\)")
+
+def parse_actions(block: str) -> List[Tuple[str, Tuple[str, ...]]]:
+    """
+    Parse a block containing one or more grounded actions:
+      (op arg1 arg2 ...)(op2 arg1 ...)
+    Returns: [(name, (args...)), ...]
+    Raises ValueError if no actions are found.
+    """
+    toks = _ACTION_RX.findall(block or "")
     if not toks:
-        raise ValueError("No actions found inside <move>...</move>.")
+        raise ValueError("No actions found.")
     out: List[Tuple[str, Tuple[str, ...]]] = []
     for t in toks:
         name, args = parse_grounded(t)
@@ -125,4 +129,3 @@ def execute_plan(env, plan, *, atomic: bool = False):
               f"total_r={total_reward:.2f} total_shape={total_shaping:.2f} "
               f"final_outcome={final_info.get('outcome')}")
     return final_obs, total_reward, terminal, final_info
-

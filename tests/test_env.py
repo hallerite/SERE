@@ -52,13 +52,13 @@ def test_retry_accumulation_and_penalties(make_env):
     env.invalid_retry_penalty = -0.05
     env.reset()
 
-    obs, r, done, info = env.step("<move>(foo a b)</move>")
+    obs, r, done, info = env.step("(foo a b)")
     assert not done and r == -0.05 and info["outcome"] == "invalid_move"
 
-    obs, r, done, info = env.step("<move>(foo a b)</move>")
+    obs, r, done, info = env.step("(foo a b)")
     assert not done and r == -0.05 and info["outcome"] == "invalid_move"
 
-    obs, r, done, info = env.step("<move>(foo a b)</move>")
+    obs, r, done, info = env.step("(foo a b)")
     assert done and r == -1.0 and info["outcome"] == "invalid_move"
 
 
@@ -72,7 +72,7 @@ def test_step_penalty_and_termination_rule(make_env):
     )
     env.reset()
 
-    obs, r, done, info = env.step("<move>(noop)</move>")
+    obs, r, done, info = env.step("(noop)")
     assert done
     assert info["outcome"] == "success"
     assert r == pytest.approx(-0.01 + 5.0)
@@ -106,7 +106,7 @@ def test_stochastic_outcomes_respect_rng(make_env):
     # Same seed → same outcome branch across resets
     branches = []
     for _ in range(3):
-        obs, r, done, info = env.step("<move>(act)</move>")
+        obs, r, done, info = env.step("(act)")
         branches.append(info.get("outcome_branch"))
         env.reset(seed=42)
     assert len(set(branches)) == 1
@@ -120,7 +120,7 @@ def test_conditional_effects(make_env):
     env.world.facts.add(("at", ("r1", "kitchen")))
     env.reset()
 
-    obs, r, done, info = env.step("<move>(move r1 kitchen)</move>")
+    obs, r, done, info = env.step("(move r1 kitchen)")
     assert ("happy", ()) in env.world.facts
 
 
@@ -129,10 +129,10 @@ def test_renderer_messages_ephemeral(make_env):
     env = make_env(actions={"say": a})
     env.reset()
 
-    obs1, r, done, info1 = env.step("<move>(say)</move>")
+    obs1, r, done, info1 = env.step("(say)")
     assert "hello" in info1["messages"]
 
-    obs2, r, done, info2 = env.step("<move>(say)</move>")
+    obs2, r, done, info2 = env.step("(say)")
     assert "hello" in info2["messages"]
     # Each step exposes only last-turn messages
     assert info1["messages"].count("hello") == 1
@@ -144,7 +144,7 @@ def test_invalid_report_contains_human_text(make_env):
     env = make_env(actions={"needs-fact": a})
     env.reset()
 
-    obs, r, done, info = env.step("<move>(needs-fact)</move>")
+    obs, r, done, info = env.step("(needs-fact)")
     assert "Preconditions were not satisfied" in obs
 
 
@@ -153,8 +153,8 @@ def test_open_loop_atomic_rolls_back(make_env):
     env = make_env(actions={"bad": a})
     env.reset()
 
-    from sere.core.pddl_env.planning import execute_plan, parse_move_block
-    plan = parse_move_block("<move>(bad)</move>")
+    from sere.core.pddl_env.planning import execute_plan, parse_actions
+    plan = parse_actions("(bad)")
     obs, r, done, info = execute_plan(env, plan, atomic=True)
 
     assert not env.world.facts
@@ -169,7 +169,7 @@ def test_sysprompt_and_footer_interactive(make_env):
     # System prompt should mention INTERACTIVE
     assert "You are in INTERACTIVE mode." in info["system_prompt"]
     # Observation footer should be single-action hint
-    assert "Reply with <move>(action args)</move>." in obs
+    assert "Reply with (action args)." in obs
 
 
 def test_sysprompt_and_footer_batch(make_env):
@@ -179,7 +179,7 @@ def test_sysprompt_and_footer_batch(make_env):
     obs, info = env.reset()
     assert "You are in BATCH mode." in info["system_prompt"]
     # Observation footer should allow multiple actions
-    assert "You may submit multiple actions: <move>(a1 ...)(a2 ...)...</move>." in obs
+    assert "You may submit multiple actions: (a1 ...)(a2 ...)...." in obs
 
 
 def test_sysprompt_and_footer_open_loop(make_env):
@@ -198,7 +198,7 @@ def test_interactive_rejects_multi_action(make_env):
     env = make_env(actions={"noop": a}, run_mode=RunMode.INTERACTIVE, illegal_move_retries=0)
     env.reset()
 
-    obs, r, done, info = env.step("<move>(noop)(noop)</move>")
+    obs, r, done, info = env.step("(noop)(noop)")
     assert info["outcome"] == "invalid_move"
     assert "expects exactly one action" in info["error"]
     assert done  # retries=0 -> terminal immediately
@@ -211,7 +211,7 @@ def test_batch_all_valid_keeps_episode_open(make_env):
     env = make_env(actions={"noop": a}, run_mode=RunMode.BATCH)
     env.reset()
 
-    obs, r, done, info = env.step("<move>(noop)(noop)(noop)</move>")
+    obs, r, done, info = env.step("(noop)(noop)(noop)")
     assert info.get("plan_mode") == "batch"
     assert info["steps_executed"] == 3
     assert len(info["plan_trace"]) == 3
@@ -226,7 +226,7 @@ def test_batch_partial_abort_reports_reason_and_progress(make_env):
     env = make_env(actions={"addx": a1, "needs-missing": a2}, run_mode=RunMode.BATCH, illegal_move_retries=0)
     env.reset()
 
-    obs, r, done, info = env.step("<move>(addx)(needs-missing)(addx)</move>")
+    obs, r, done, info = env.step("(addx)(needs-missing)(addx)")
     # First action executed, then aborted on second
     assert ("x", ()) in env.world.facts
     assert info.get("plan_aborted") is True
@@ -242,7 +242,7 @@ def test_open_loop_forces_terminal_even_without_rules(make_env):
     env = make_env(actions={"noop": a}, run_mode=RunMode.OPEN_LOOP)
     env.reset()
 
-    obs, r, done, info = env.step("<move>(noop)(noop)</move>")
+    obs, r, done, info = env.step("(noop)(noop)")
     assert info.get("plan_mode") == "open_loop"
     assert info["steps_executed"] == 2
     # Should force terminal because open-loop ends after one call
@@ -257,7 +257,7 @@ def test_open_loop_invalid_move_is_terminal_and_reports_abort(make_env):
     env = make_env(actions={"bad": bad}, run_mode=RunMode.OPEN_LOOP, illegal_move_retries=0)
     env.reset()
 
-    obs, r, done, info = env.step("<move>(bad)(bad)</move>")
+    obs, r, done, info = env.step("(bad)(bad)")
     assert done
     assert info["outcome"] == "invalid_move"
     assert info.get("plan_aborted") is True
@@ -271,7 +271,7 @@ def test_mode_specific_affordance_footer_text(make_env):
     # INTERACTIVE
     env_i = make_env(actions={"noop": a})
     obs_i, _ = env_i.reset()
-    assert obs_i.strip().endswith("Reply with <move>(action args)</move>.")
+    assert obs_i.strip().endswith("Reply with (action args).")
 
     # BATCH
     from sere.core.pddl_env.env import RunMode
@@ -290,7 +290,7 @@ def test_info_fields_present_in_batch(make_env):
     a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
     env = make_env(actions={"noop": a}, run_mode=RunMode.BATCH)
     env.reset()
-    obs, r, done, info = env.step("<move>(noop)(noop)</move>")
+    obs, r, done, info = env.step("(noop)(noop)")
     # Plan tracing and shaping totals should be present
     assert isinstance(info.get("plan_trace"), list)
     assert isinstance(info.get("steps_executed"), int)
@@ -303,7 +303,7 @@ def test_interactive_single_action_executes_and_continues(make_env):
     a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
     env = make_env(actions={"noop": a}, run_mode=RunMode.INTERACTIVE)
     env.reset()
-    obs, r, done, info = env.step("<move>(noop)</move>")
+    obs, r, done, info = env.step("(noop)")
     assert info["outcome"] in {"ongoing", "success", "timeout", "failed"}  # normalized by env
     assert not done or info["outcome"] in {"success", "timeout"}  # typically not done after one noop
 
@@ -312,7 +312,7 @@ def test_interactive_multi_action_does_not_mutate_state(make_env):
     a = ActionSpec(name="addx", params=[], pre=[], add=[("x", ())], delete=[], nl=["addx"])
     env = make_env(actions={"addx": a}, run_mode=RunMode.INTERACTIVE, illegal_move_retries=0)
     env.reset()
-    obs, r, done, info = env.step("<move>(addx)(addx)</move>")
+    obs, r, done, info = env.step("(addx)(addx)")
     assert ("x", ()) not in env.world.facts
     assert info["outcome"] == "invalid_move"
     assert done
@@ -324,7 +324,7 @@ def test_batch_partial_abort_does_not_apply_later_actions(make_env):
     ok2 = ActionSpec(name="ok2", params=[], pre=[], add=["(c)"], delete=[], nl=["ok2"])
     env = make_env(actions={"ok": ok, "bad": bad, "ok2": ok2}, run_mode=RunMode.BATCH, illegal_move_retries=0)
     env.reset()
-    obs, r, done, info = env.step("<move>(ok)(bad)(ok2)</move>")
+    obs, r, done, info = env.step("(ok)(bad)(ok2)")
     assert ("a", ()) in env.world.facts
     assert ("b", ()) not in env.world.facts
     assert ("c", ()) not in env.world.facts
@@ -340,19 +340,11 @@ def test_open_loop_respects_success_rule_without_extra_reason(make_env):
         static_facts={("done", ())},
     )
     env.reset()
-    obs, r, done, info = env.step("<move>(noop)</move>")
+    obs, r, done, info = env.step("(noop)")
     assert done
     assert info["outcome"] == "success"
     # open_loop_end shouldn't override an explicit success
     assert info.get("reason") in (None, "term", "done", "success")
-
-def test_parse_errors_report_cleanly(make_env):
-    env = make_env(illegal_move_retries=0)
-    env.reset()
-    obs, r, done, info = env.step("no move tags here")
-    assert done
-    assert info["outcome"] == "invalid_move"
-    assert "Missing <move>(...)</move>" in info.get("error", "")
 
 def test_invalid_retries_accumulate_until_valid(make_env):
     from sere.core.pddl_env.env import RunMode
@@ -360,12 +352,12 @@ def test_invalid_retries_accumulate_until_valid(make_env):
     env = make_env(actions={"ok": ok}, run_mode=RunMode.INTERACTIVE, illegal_move_retries=2, invalid_retry_penalty=-0.05)
     env.reset()
     # two invalids, then a valid
-    env.step("<move>(unknown)</move>")
-    env.step("<move>(unknown)</move>")
-    obs, r, done, info = env.step("<move>(ok)</move>")
+    env.step("(unknown)")
+    env.step("(unknown)")
+    obs, r, done, info = env.step("(ok)")
     assert not done
     # retries should reset after a valid action
-    obs2, r2, done2, info2 = env.step("<move>(unknown)</move>")
+    obs2, r2, done2, info2 = env.step("(unknown)")
     assert not done2
     assert r2 == -0.05  # back to first retry penalty
 
@@ -375,7 +367,7 @@ def test_obs_footer_changes_with_mode(make_env):
 
     env_i = make_env(actions={"noop": a}, run_mode=RunMode.INTERACTIVE)
     obs_i, _ = env_i.reset()
-    assert obs_i.strip().endswith("Reply with <move>(action args)</move>.")
+    assert obs_i.strip().endswith("Reply with (action args).")
 
     env_b = make_env(actions={"noop": a}, run_mode=RunMode.BATCH)
     obs_b, _ = env_b.reset()
