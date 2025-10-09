@@ -25,6 +25,7 @@ class PromptFormatterConfig:
     # Visibility
     visibility: VisibilityScope = VisibilityScope.ALL   # ALL or ROOM
     show_affordances: bool = True                      # render affordances in obs
+    show_footer: bool = False
 
     # Misc presentation
     show_briefing: bool = True
@@ -441,6 +442,7 @@ class PromptFormatter:
         header = f"Steps: {steps}/{max_steps}{time_txt}{energy_txt}"
 
         # ----- Footer (mode-specific) -----
+        tail = ""
         match mode:
             case RunMode.OPEN_LOOP:
                 tail = "Submit a full plan as (a1 ...)(a2 ...).... Episode will end after execution."
@@ -448,6 +450,9 @@ class PromptFormatter:
                 tail = "You may submit multiple actions: (a1 ...)(a2 ...)...."
             case RunMode.INTERACTIVE:
                 tail = "Reply with (action args)."
+
+        # Only include the footer when explicitly enabled
+        footer_block = tail if self.cfg.show_footer else ""
 
         return "\n\n".join(
             p for p in [
@@ -457,7 +462,7 @@ class PromptFormatter:
                 goal_txt,
                 fl_txt,
                 aff_txt,
-                tail,
+                footer_block,
             ] if p
         ).strip()
 

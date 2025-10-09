@@ -13,7 +13,15 @@ from sere.pddl.domain_spec import (
 
 @pytest.fixture
 def make_env():
-    def _make_env(actions=None, predicates=None, fluents=None, static_facts=None, **kwargs):
+    def _make_env(
+        actions=None,
+        predicates=None,
+        fluents=None,
+        static_facts=None,
+        *,
+        formatter_config=None,
+        **kwargs
+    ):
         domain = DomainSpec(
             name="dummy",
             types={},
@@ -22,6 +30,11 @@ def make_env():
             fluents=fluents or {},
         )
         world = WorldState(domain=domain, objects={}, facts=set(), fluents={})
+
+        # Ensure footer is rendered in observations for tests that assert on it
+        fc = dict(formatter_config or {})
+        fc.setdefault("show_footer", True)
+
         return PDDLEnv(
             domain=domain,
             world=world,
@@ -29,9 +42,12 @@ def make_env():
             max_steps=5,
             step_penalty=-0.01,
             invalid_penalty=-1.0,
+            formatter_config=fc,
             **kwargs,
         )
+
     return _make_env
+
 
 
 def test_reset_clears_and_initializes(make_env):
