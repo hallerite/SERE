@@ -522,7 +522,7 @@ actions:
         p: 0.95
         when: []
         add: ["(holding ?r ?p)"]
-        delete: ["(fastened ?p ?a)", "(installed ?p ?a)", "(clear-hand ?r)"]
+        delete: ["(fastened ?p ?a)", "(installed ?p ?a)", "(clear-hand ?r)", "(obj-at ?p ?l)"]
         num_eff: ["(decrease (energy ?r) 1.0)"]
         messages:
           - "Unfastened {p} from {a}; now holding {p}."

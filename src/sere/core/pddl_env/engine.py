@@ -162,10 +162,11 @@ def step_one(env, name: str, args: Tuple[str, ...]):
 
         env._advance_time(dur, info)
 
+    errs = env.world.validate_invariants()
     for pl in env.plugins:
-        errs = pl.validate(env.world, env.static_facts)
-        if errs:
-            return env._illegal(f"Postcondition violated: {errs}", info)
+        errs += pl.validate(env.world, env.static_facts)
+    if errs:
+        return env._illegal(f"Postcondition violated: {errs}", info)
 
     env.steps += 1
     obs, base_r, done, info = env._post_apply_success(info)

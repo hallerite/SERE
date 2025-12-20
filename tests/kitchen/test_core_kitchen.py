@@ -420,10 +420,9 @@ def test_putdown_raises_when_robot_location_ambiguous(basic_task_file):
     move(env, "hallway", "kitchen")
     # Corrupt state: two at-locations for r1
     env.world.facts.add(lit("at", "r1", "pantry"))
-    pickup(env, "mug1")
-    with pytest.raises(ValueError) as e:
-        putdown(env, "mug1")
-    assert "infer location" in str(e.value).lower()
+    obs, r, done, info = pickup(env, "mug1")
+    assert done and info.get("outcome") == "invalid_move"
+    assert "robot has" in (info.get("error") or "").lower()
 
 # ==================== CLEAR-HAND ENFORCEMENT ====================
 
