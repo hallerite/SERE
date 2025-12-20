@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Set, Tuple, List
+from typing import Any, Dict, Optional, Set, Tuple, List, Iterable
 from dataclasses import dataclass, field
 import re
 from sere.pddl.grounding import ground_literal
@@ -14,6 +14,9 @@ NUM_EFF = re.compile(
     r"^\(\s*(increase|decrease|assign)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+(.+)\s*\)$",
     re.IGNORECASE,
 )
+
+NUM_HEADS = {">", "<", ">=", "<=", "="}
+LOGICAL_HEADS = {"and", "or", "not"}
 
 
 
@@ -107,8 +110,23 @@ def apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[
 
 # --- Clause evaluator with support for (or ...) and (not ...) ---
 
-def eval_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: Dict[str, str], *, enable_numeric: bool = True) -> bool:
-    return trace_clause(world, static_facts, s, bind, enable_numeric=enable_numeric).satisfied
+def eval_clause(
+    world: WorldState,
+    static_facts: Set[Predicate],
+    s: str,
+    bind: Dict[str, str],
+    *,
+    enable_numeric: bool = True,
+    derived_cache: Optional[Dict[Tuple[str, Tuple[str, ...]], bool]] = None,
+) -> bool:
+    return trace_clause(
+        world,
+        static_facts,
+        s,
+        bind,
+        enable_numeric=enable_numeric,
+        _derived_cache=derived_cache,
+    ).satisfied
 
 
 # =========================
@@ -132,8 +150,21 @@ def _bind_infix(expr: str, bind: Dict[str, str]) -> str:
         return bind.get(v, v)
     return re.sub(r"\?([A-Za-z0-9_\-]+)", _sub, expr)
 
-def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: Dict[str, str], *, enable_numeric: bool = True) -> EvalNode:
+def trace_clause(
+    world: WorldState,
+    static_facts: Set[Predicate],
+    s: str,
+    bind: Dict[str, str],
+    *,
+    enable_numeric: bool = True,
+    _derived_cache: Optional[Dict[Tuple[str, Tuple[str, ...]], bool]] = None,
+    _derived_stack: Optional[Set[Tuple[str, Tuple[str, ...]]]] = None,
+) -> EvalNode:
     s = s.strip()
+    if _derived_cache is None:
+        _derived_cache = {}
+    if _derived_stack is None:
+        _derived_stack = set()
     # numeric comparison
     if enable_numeric and NUM_CMP.match(s):
         m = NUM_CMP.match(s)
@@ -205,7 +236,15 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
                     children=[],
                 )
             child_expr = to_string(parsed[1]) if isinstance(parsed[1], list) else str(parsed[1])
-            child = trace_clause(world, static_facts, child_expr, bind, enable_numeric=enable_numeric)
+            child = trace_clause(
+                world,
+                static_facts,
+                child_expr,
+                bind,
+                enable_numeric=enable_numeric,
+                _derived_cache=_derived_cache,
+                _derived_stack=_derived_stack,
+            )
             return EvalNode(
                 expr=_bind_infix(s, bind),
                 satisfied=not child.satisfied,
@@ -223,6 +262,8 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
                     to_string(c) if isinstance(c, list) else str(c),
                     bind,
                     enable_numeric=enable_numeric,
+                    _derived_cache=_derived_cache,
+                    _derived_stack=_derived_stack,
                 )
                 for c in parsed[1:]
             ]
@@ -243,6 +284,8 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
                     to_string(c) if isinstance(c, list) else str(c),
                     bind,
                     enable_numeric=enable_numeric,
+                    _derived_cache=_derived_cache,
+                    _derived_stack=_derived_stack,
                 )
                 for c in parsed[1:]
             ]
@@ -261,7 +304,15 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
         # unparsable; treat as false
         return EvalNode(expr=_bind_infix(s, bind), satisfied=False, kind="lit", grounded=None)
 
-    truth = (world.holds(litp) or (litp in static_facts))
+    truth = _holds_literal(
+        world,
+        static_facts,
+        litp,
+        bind=bind,
+        enable_numeric=enable_numeric,
+        derived_cache=_derived_cache,
+        derived_stack=_derived_stack,
+    )
     sat = (not truth) if is_neg else truth
 
     details: Dict[str, Any] = {}
@@ -281,3 +332,244 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
         grounded=f"({litp[0]}{' ' if litp[1] else ''}{' '.join(litp[1])})",
         details=details,
     )
+
+
+def _holds_literal(
+    world: WorldState,
+    static_facts: Set[Predicate],
+    litp: Predicate,
+    *,
+    bind: Dict[str, str],
+    enable_numeric: bool,
+    derived_cache: Dict[Tuple[str, Tuple[str, ...]], bool],
+    derived_stack: Set[Tuple[str, Tuple[str, ...]]],
+) -> bool:
+    if litp in world.facts or litp in static_facts:
+        return True
+    name, args = litp
+    rules = getattr(world.domain, "derived", {}).get(name, [])
+    if not rules:
+        return False
+    key = (name, args)
+    if key in derived_cache:
+        return derived_cache[key]
+    if key in derived_stack:
+        return False
+
+    derived_stack.add(key)
+    try:
+        for rule in rules:
+            bind_rule = _bind_derived_head(rule.head_terms, args)
+            if bind_rule is None:
+                continue
+            if _derived_rule_holds(
+                world,
+                static_facts,
+                rule,
+                bind_rule,
+                enable_numeric=enable_numeric,
+                derived_cache=derived_cache,
+                derived_stack=derived_stack,
+            ):
+                derived_cache[key] = True
+                return True
+        derived_cache[key] = False
+        return False
+    finally:
+        derived_stack.discard(key)
+
+
+def _bind_derived_head(head_terms: List[str], args: Tuple[str, ...]) -> Optional[Dict[str, str]]:
+    if len(head_terms) != len(args):
+        return None
+    bind: Dict[str, str] = {}
+    for term, arg in zip(head_terms, args):
+        if term.startswith("?"):
+            v = term[1:]
+            if v in bind and bind[v] != arg:
+                return None
+            bind[v] = arg
+        else:
+            if term != arg:
+                return None
+    return bind
+
+
+def _derived_rule_holds(
+    world: WorldState,
+    static_facts: Set[Predicate],
+    rule,
+    bind: Dict[str, str],
+    *,
+    enable_numeric: bool,
+    derived_cache: Dict[Tuple[str, Tuple[str, ...]], bool],
+    derived_stack: Set[Tuple[str, Tuple[str, ...]]],
+) -> bool:
+    vars_all = set(bind.keys())
+    rule_vars, rule_constraints = _rule_meta(rule, world)
+    vars_all |= rule_vars
+    extra_vars = sorted(vars_all - set(bind.keys()))
+    if not extra_vars:
+        return all(
+            trace_clause(
+                world,
+                static_facts,
+                c,
+                bind,
+                enable_numeric=enable_numeric,
+                _derived_cache=derived_cache,
+                _derived_stack=derived_stack,
+            ).satisfied
+            for c in (rule.when or [])
+        )
+
+    candidates = _candidate_map(world, extra_vars, rule_constraints)
+    if any(not v for v in candidates.values()):
+        return False
+
+    def _iter_assignments(
+        vars_list: List[str],
+        base: Dict[str, str],
+    ) -> Iterable[Dict[str, str]]:
+        if not vars_list:
+            yield dict(base)
+            return
+        v = vars_list[0]
+        for cand in candidates.get(v, []):
+            base[v] = cand
+            yield from _iter_assignments(vars_list[1:], base)
+        base.pop(v, None)
+
+    # smallest domains first
+    ordered = sorted(extra_vars, key=lambda v: len(candidates.get(v, [])))
+
+    for assignment in _iter_assignments(ordered, dict(bind)):
+        if all(
+            trace_clause(
+                world,
+                static_facts,
+                c,
+                assignment,
+                enable_numeric=enable_numeric,
+                _derived_cache=derived_cache,
+                _derived_stack=derived_stack,
+            ).satisfied
+            for c in (rule.when or [])
+        ):
+            return True
+    return False
+
+
+def _vars_in_expr(expr: str) -> Set[str]:
+    try:
+        parsed = parse_one(expr)
+    except SExprError:
+        return set()
+
+    return _vars_in_parsed(parsed)
+
+
+def _vars_in_parsed(parsed: Any) -> Set[str]:
+    out: Set[str] = set()
+
+    def _walk(node):
+        if isinstance(node, list):
+            for x in node:
+                _walk(x)
+        else:
+            tok = str(node)
+            if tok.startswith("?") and len(tok) > 1:
+                out.add(tok[1:])
+
+    _walk(parsed)
+    return out
+
+
+def _candidate_map(
+    world: WorldState,
+    vars_needed: List[str],
+    constraints: Dict[str, Set[str]],
+) -> Dict[str, List[str]]:
+    all_objs = sorted(world.objects.keys())
+    candidates: Dict[str, List[str]] = {}
+    for v in vars_needed:
+        reqs = constraints.get(v) or set()
+        if "number" in reqs:
+            candidates[v] = []
+            continue
+        if not reqs:
+            candidates[v] = list(all_objs)
+            continue
+        matches = []
+        for sym, tys in world.objects.items():
+            if not tys:
+                continue
+            ok = True
+            for req in reqs:
+                if not any(world.domain.is_subtype(t, req) for t in tys):
+                    ok = False
+                    break
+            if ok:
+                matches.append(sym)
+        candidates[v] = sorted(matches)
+    return candidates
+
+
+def _collect_type_constraints(
+    parsed: Any,
+    world: WorldState,
+    out: Dict[str, Set[str]],
+) -> None:
+    if not isinstance(parsed, list) or not parsed:
+        return
+    head = str(parsed[0]).lower()
+    if head in LOGICAL_HEADS:
+        for x in parsed[1:]:
+            _collect_type_constraints(x, world, out)
+        return
+    if head == "distinct":
+        return
+    if head in NUM_HEADS:
+        if len(parsed) < 2:
+            return
+        term = parsed[1]
+        if isinstance(term, list) and term:
+            fname = str(term[0]).lower()
+            spec = world.domain.fluents.get(fname)
+            if not spec:
+                return
+            for arg, (_var, typ) in zip(term[1:], spec.args):
+                if isinstance(arg, str) and arg.startswith("?"):
+                    out.setdefault(arg[1:], set()).add(str(typ).lower())
+        return
+    spec = world.domain.predicates.get(head)
+    if not spec:
+        return
+    for arg, (_var, typ) in zip(parsed[1:], spec.args):
+        if isinstance(arg, str) and arg.startswith("?"):
+            out.setdefault(arg[1:], set()).add(str(typ).lower())
+
+
+def _rule_meta(rule, world: WorldState) -> Tuple[Set[str], Dict[str, Set[str]]]:
+    vars_cached = getattr(rule, "vars_in_when", None)
+    cons_cached = getattr(rule, "constraints", None)
+    if vars_cached is not None and cons_cached is not None:
+        return vars_cached, cons_cached
+
+    vars_all: Set[str] = set()
+    constraints: Dict[str, Set[str]] = {}
+    for clause in (rule.when or []):
+        try:
+            parsed = parse_one(clause)
+        except SExprError:
+            continue
+        vars_all |= _vars_in_parsed(parsed)
+        _collect_type_constraints(parsed, world, constraints)
+
+    try:
+        rule.vars_in_when = vars_all
+        rule.constraints = constraints
+    except Exception:
+        pass
+
+    return vars_all, constraints

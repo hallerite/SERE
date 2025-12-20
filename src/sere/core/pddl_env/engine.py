@@ -38,8 +38,16 @@ def step_one(env, name: str, args: Tuple[str, ...]):
             return env._illegal(f"Duration multiplier '{n_name}' must be > 0.", info)
 
     failures: List[EvalNode] = []
+    derived_cache = {}
     for s in (act.pre or []):
-        node = trace_clause(env.world, env.static_facts, s, bind, enable_numeric=env.enable_numeric)
+        node = trace_clause(
+            env.world,
+            env.static_facts,
+            s,
+            bind,
+            enable_numeric=env.enable_numeric,
+            _derived_cache=derived_cache,
+        )
         if not node.satisfied:
             failures.append(node)
     if failures:
@@ -62,11 +70,19 @@ def step_one(env, name: str, args: Tuple[str, ...]):
     env.world.apply(add, dele)
 
     if env.enable_conditional and act.cond:
+        derived_cache = {}
         cond_world = pre_world or env.world
         for cb in act.cond:
             ok = True
             for w in cb.when:
-                if not eval_clause(cond_world, env.static_facts, w, bind, enable_numeric=env.enable_numeric):
+                if not eval_clause(
+                    cond_world,
+                    env.static_facts,
+                    w,
+                    bind,
+                    enable_numeric=env.enable_numeric,
+                    derived_cache=derived_cache,
+                ):
                     ok = False
                     break
             if ok:
@@ -89,11 +105,19 @@ def step_one(env, name: str, args: Tuple[str, ...]):
     env._enforce_energy_bounds()
 
     if getattr(act, "outcomes", None):
+        derived_cache = {}
         valid = []
         for oc in act.outcomes:
             ok = True
             for w in (oc.when or []):
-                if not eval_clause(env.world, env.static_facts, w, bind, enable_numeric=env.enable_numeric):
+                if not eval_clause(
+                    env.world,
+                    env.static_facts,
+                    w,
+                    bind,
+                    enable_numeric=env.enable_numeric,
+                    derived_cache=derived_cache,
+                ):
                     ok = False
                     break
             if ok:
@@ -202,10 +226,11 @@ def step_one(env, name: str, args: Tuple[str, ...]):
             if abs(rs_bonus) > 0:
                 triggered.append(("potential", rs_bonus))
         else:
+            derived_cache = {}
             for i, (expr, w, once) in enumerate(env.rs_milestones):
                 if once and i in env._rs_seen:
                     continue
-                if env._eval_expr(expr):
+                if env._eval_expr(expr, derived_cache=derived_cache):
                     rs_bonus += w
                     triggered.append((i, expr, w, once))
                     if once:
@@ -248,7 +273,7 @@ def format_msg(env, template: str, bind: Dict[str, str]) -> str:
             if val != 0.0 or (name, args) in env.world.fluents:
                 s = s.replace(token, f"{val:.2f}")
             else:
-                truth = env.world.holds((name, args))
+                truth = eval_clause(env.world, env.static_facts, token, {}, enable_numeric=env.enable_numeric)
                 s = s.replace(token, "true" if truth else "false")
         except Exception:
             pass

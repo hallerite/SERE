@@ -30,6 +30,7 @@ def make_env():
             predicates=predicates or {},
             actions=actions or {},
             fluents=fluents or {},
+            derived={},
         )
         world = WorldState(domain=domain, objects={}, facts=set(), fluents={})
 

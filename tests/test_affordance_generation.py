@@ -43,6 +43,7 @@ def _mini_domain_for_filters() -> DomainSpec:
         predicates=preds,
         actions={"move": move, "pick-up": pickup},
         fluents={},
+        derived={},
     )
 
 

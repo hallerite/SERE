@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Set
 from pathlib import Path
 import yaml
 
@@ -51,6 +51,14 @@ class PredicateSpec:
     static: bool = False
 
 @dataclass
+class DerivedRule:
+    name: str
+    head_terms: List[str]
+    when: List[str]
+    vars_in_when: Optional[Set[str]] = None
+    constraints: Optional[Dict[str, Set[str]]] = None
+
+@dataclass
 class ActionSpec:
     name: str
     params: List[Tuple[str, str]]
@@ -73,6 +81,7 @@ class DomainSpec:
     predicates: Dict[str, PredicateSpec]
     actions: Dict[str, ActionSpec]
     fluents: Dict[str, FluentSpec]
+    derived: Dict[str, List[DerivedRule]]
 
     @staticmethod
     def from_yaml(path: str | Path) -> "DomainSpec":
@@ -180,7 +189,9 @@ class DomainSpec:
 
         _validate_static_effects(actions, preds)
 
-        return DomainSpec(y["domain"], types, preds, actions, fls)
+        derived = _parse_derived(y.get("derived") or [], preds)
+
+        return DomainSpec(y["domain"], types, preds, actions, fls, derived)
 
     def supertypes(self, typ: str) -> List[str]:
         """Return all ancestor types for `typ` (excluding `typ`), nearest-first."""
@@ -228,6 +239,41 @@ def _effect_head(expr: str) -> str:
     if not isinstance(inner[0], str):
         raise ValueError(f"Bad effect literal: {expr!r}")
     return str(inner[0]).lower()
+
+
+def _parse_derived(items: List[Dict[str, Any]], preds: Dict[str, PredicateSpec]) -> Dict[str, List[DerivedRule]]:
+    rules: Dict[str, List[DerivedRule]] = {}
+    if not items:
+        return rules
+    for d in items:
+        if not isinstance(d, dict):
+            raise ValueError(f"Bad derived entry: {d!r}")
+        head = d.get("head")
+        if not isinstance(head, str) or not head.strip():
+            raise ValueError(f"Derived rule missing head: {d!r}")
+        try:
+            parsed = parse_one(head)
+        except SExprError as exc:
+            raise ValueError(f"Bad derived head: {head!r}") from exc
+        if not isinstance(parsed, list) or not parsed or not isinstance(parsed[0], str):
+            raise ValueError(f"Bad derived head: {head!r}")
+        if any(isinstance(x, list) for x in parsed[1:]):
+            raise ValueError(f"Bad derived head: {head!r}")
+        name = str(parsed[0]).lower()
+        if name not in preds:
+            raise ValueError(f"Derived predicate '{name}' not declared in predicates.")
+        head_terms = [str(x) for x in parsed[1:]]
+        when = d.get("when")
+        if isinstance(when, str):
+            when_list = [when]
+        elif isinstance(when, list):
+            when_list = [str(x) for x in when if str(x).strip()]
+        else:
+            raise ValueError(f"Derived rule '{head}' must include 'when' as str or list.")
+        if not when_list:
+            raise ValueError(f"Derived rule '{head}' has empty 'when'.")
+        rules.setdefault(name, []).append(DerivedRule(name=name, head_terms=head_terms, when=when_list))
+    return rules
 
 
 def _validate_static_effects(actions: Dict[str, ActionSpec], preds: Dict[str, PredicateSpec]) -> None:

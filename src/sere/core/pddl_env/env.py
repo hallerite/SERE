@@ -249,9 +249,10 @@ class PDDLEnv:
         if self.done:
             pass
         else:
+            derived_cache: dict = {}
             for r in self.termination_rules:
                 try:
-                    if self._eval_expr(r["when"]):
+                    if self._eval_expr(r["when"], derived_cache=derived_cache):
                         self.done = True
                         info["outcome"] = r.get("outcome", "terminal")
                         info["terminal_rule"] = r.get("name", "term")
@@ -313,14 +314,22 @@ class PDDLEnv:
         )
         return retry_hdr + rendering.obs(self), self.invalid_retry_penalty, False, info
 
-    def _eval_expr(self, s: str) -> bool:
+    def _eval_expr(self, s: str, *, derived_cache: Optional[dict] = None) -> bool:
         try:
-            return eval_clause(self.world, self.static_facts, s, {}, enable_numeric=self.enable_numeric)
+            return eval_clause(
+                self.world,
+                self.static_facts,
+                s,
+                {},
+                enable_numeric=self.enable_numeric,
+                derived_cache=derived_cache,
+            )
         except Exception:
             return False
 
     def _rs_phi(self, world: WorldState) -> float:
-        return sum(w for (expr, w, _) in self.rs_milestones if self._eval_expr(expr))
+        derived_cache: dict = {}
+        return sum(w for (expr, w, _) in self.rs_milestones if self._eval_expr(expr, derived_cache=derived_cache))
 
     def _energy_cap(self, r: str) -> float | None:
         if not self.enable_numeric:

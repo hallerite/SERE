@@ -527,6 +527,8 @@ class PromptFormatter:
             if not combos:
                 continue
 
+            derived_cache: Dict[Tuple[str, Tuple[str, ...]], bool] = {}
+
             for args in combos:
                 bind = {var: val for (var, _), val in zip(act.params, args)}
 
@@ -539,7 +541,14 @@ class PromptFormatter:
                     # Explicitly skip numeric guards when templating <n>
                     if has_number and self._is_numeric_clause(pre):
                         continue
-                    if not eval_clause(scoped_world, scoped_static, pre, bind, enable_numeric=numeric_ok):
+                    if not eval_clause(
+                        scoped_world,
+                        scoped_static,
+                        pre,
+                        bind,
+                        enable_numeric=numeric_ok,
+                        derived_cache=derived_cache,
+                    ):
                         ok = False
                         break
                 if not ok:

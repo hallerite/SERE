@@ -69,14 +69,20 @@ class WorldState:
             locs.add(sym)
         return locs
 
-    def holds(self, p: Predicate) -> bool:
+    def holds(self, p: Predicate, static_facts: Optional[AbstractSet[Predicate]] = None) -> bool:
+        if p in self.facts:
+            return True
+        if static_facts and p in static_facts:
+            return True
         name, args = p
-        if name == "co-located":
-            x, y = args
-            lx = self.locations_of(x)
-            ly = self.locations_of(y)
-            return bool(lx & ly)
-        return p in self.facts
+        if name in (getattr(self.domain, "derived", {}) or {}):
+            expr = f"({name}{' ' if args else ''}{' '.join(args)})"
+            try:
+                from sere.core.semantics import eval_clause
+                return bool(eval_clause(self, set(static_facts or set()), expr, {}, enable_numeric=True))
+            except Exception:
+                return False
+        return False
 
 
     def get_fluent(self, name: str, args: Tuple[str, ...]) -> float:
@@ -96,7 +102,7 @@ class WorldState:
             if p in facts:
                 continue
             # consult derived semantics (e.g., co-located) if not a literal fact
-            if self.holds(p):
+            if self.holds(p, extra):
                 continue
             missing.append(p)
         return missing

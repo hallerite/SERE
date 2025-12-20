@@ -157,6 +157,33 @@ predicates:
       - "{c} must be open to pour into"
       - "Pouring into {c} requires opening"
 
+# ---------- Derived predicates ----------
+derived:
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (at ?x ?l) (at ?y ?l))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (at ?x ?l) (obj-at ?y ?l))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (obj-at ?x ?l) (at ?y ?l))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (obj-at ?x ?l) (obj-at ?y ?l))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (in ?x ?c) (co-located ?c ?y))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (in ?y ?c) (co-located ?x ?c))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (holding ?r ?x) (co-located ?r ?y))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (holding ?r ?y) (co-located ?x ?r))"
+
 fluents:
   - name: energy
     args: [{name: r, type: robot}]

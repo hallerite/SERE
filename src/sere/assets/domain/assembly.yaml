@@ -110,6 +110,33 @@ predicates:
     args: [{name: a, type: assembly}]
     nl: "{a} needs rework"
 
+# ---------- Derived predicates ----------
+derived:
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (at ?x ?l) (at ?y ?l))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (at ?x ?l) (obj-at ?y ?l))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (obj-at ?x ?l) (at ?y ?l))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (obj-at ?x ?l) (obj-at ?y ?l))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (in ?x ?c) (co-located ?c ?y))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (in ?y ?c) (co-located ?x ?c))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (holding ?r ?x) (co-located ?r ?y))"
+  - head: "(co-located ?x ?y)"
+    when:
+      - "(and (holding ?r ?y) (co-located ?x ?r))"
+
 # ---------- Fluents (numeric state) ----------
 fluents:
   - name: battery-cap
