@@ -80,7 +80,9 @@ init:
 
 termination:
   - name: goal
-    when: "(and (tea-ready cup) (at r1 table))"
+    all:
+      - "(tea-ready cup)"
+      - "(at r1 table)"
     outcome: success
     reward: 1.0
   - name: spill_fail

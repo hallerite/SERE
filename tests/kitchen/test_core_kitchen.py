@@ -1145,6 +1145,38 @@ reference_plan:
     assert done and info.get("outcome") == "success"
 
 
+def test_termination_structured_all_any_renamed(tmp_path):
+    yaml_text = """
+id: t_loader_term_structured
+name: loader_term_structured
+meta:
+  domain: kitchen
+objects:
+  r:   {types: [robot],    variants: [r1]}
+  k:   {types: [location], variants: [kitchen]}
+  t:   {types: [location], variants: [table]}
+  cup: {types: [container], variants: [mug1]}
+static_facts: []
+init:
+  - (at r k)
+termination:
+  - name: goal
+    all:
+      - "(at r t)"
+      - any:
+          - "(tea-ready cup)"
+          - "(has-hot-water cup)"
+    outcome: success
+"""
+    path = _write_yaml(tmp_path, "t_loader_term_structured.yaml", yaml_text)
+    _env, meta = load_task(None, path)
+
+    when = meta["termination"][0]["when"]
+    assert "(and" in when
+    assert "(or" in when
+    assert "(at r1 table)" in when
+    assert "(tea-ready mug1)" in when
+
 
 def test_rename_does_not_touch_heads_kitchen(tmp_path):
     """

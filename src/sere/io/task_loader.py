@@ -554,10 +554,23 @@ def _rename_everywhere(task: Dict[str, Any], mapping: Dict[str, str]) -> Dict[st
 
     # 3) termination.when may be a complex clause; rename non-head atoms everywhere
     if isinstance(y.get("termination"), list):
-        for r in y["termination"]:
-            w = r.get("when")
-            if isinstance(w, str):
-                r["when"] = _rename_atoms_nonheads_in_sexpr(w, mapping)
+        def _rename_term_block(block):
+            if isinstance(block, str):
+                return _rename_atoms_nonheads_in_sexpr(block, mapping)
+            if isinstance(block, list):
+                return [_rename_term_block(x) for x in block]
+            if isinstance(block, dict):
+                out = dict(block)
+                if "when" in out:
+                    out["when"] = _rename_term_block(out.get("when"))
+                if "all" in out:
+                    out["all"] = _rename_term_block(out.get("all"))
+                if "any" in out:
+                    out["any"] = _rename_term_block(out.get("any"))
+                return out
+            return block
+
+        y["termination"] = [_rename_term_block(r) for r in y["termination"]]
 
     # 4) meta.init_fluents (args)
     mf = ((y.get("meta") or {}).get("init_fluents") or [])
@@ -597,13 +610,55 @@ def _rename_everywhere(task: Dict[str, Any], mapping: Dict[str, str]) -> Dict[st
 #  Termination parsing
 # =========================
 
+def _combine_expr(op: str, exprs: List[str]) -> str:
+    exprs = [e for e in (exprs or []) if isinstance(e, str) and e.strip()]
+    if not exprs:
+        raise ValueError(f"Termination '{op}' requires at least one clause.")
+    if len(exprs) == 1:
+        return exprs[0]
+    return f"({op} {' '.join(exprs)})"
+
+
+def _expr_from_block(block) -> str:
+    if isinstance(block, str):
+        s = block.strip()
+        if not s:
+            raise ValueError("Termination clause must be a non-empty string.")
+        return s
+    if isinstance(block, list):
+        return _combine_expr("and", [_expr_from_block(x) for x in block])
+    if isinstance(block, dict):
+        if "when" in block:
+            return _expr_from_block(block.get("when"))
+        has_all = "all" in block
+        has_any = "any" in block
+        if has_all and has_any:
+            raise ValueError("Termination block cannot contain both 'all' and 'any'.")
+        if has_all:
+            items = block.get("all")
+            if not isinstance(items, list):
+                raise ValueError("Termination 'all' must be a list.")
+            return _combine_expr("and", [_expr_from_block(x) for x in items])
+        if has_any:
+            items = block.get("any")
+            if not isinstance(items, list):
+                raise ValueError("Termination 'any' must be a list.")
+            return _combine_expr("or", [_expr_from_block(x) for x in items])
+    raise ValueError(f"Bad termination clause: {block!r}")
+
+
 def _parse_termination(yaml_block) -> List[dict]:
     rules = []
     for r in (yaml_block or []):
+        if not isinstance(r, dict):
+            raise ValueError(f"Termination rule must be a mapping: {r!r}")
+        if "when" not in r and "all" not in r and "any" not in r:
+            raise ValueError(f"Termination rule missing 'when'/'all'/'any': {r!r}")
+        when_expr = _expr_from_block(r.get("when", r))
         rules.append(
             dict(
                 name=str(r.get("name", "term")),
-                when=str(r["when"]),
+                when=when_expr,
                 outcome=str(r.get("outcome", "terminal")),
                 reward=float(r.get("reward", 0.0)),
             )

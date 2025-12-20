@@ -46,7 +46,10 @@ init:
 
 termination:
   - name: goal
-    when: "(and (installed good asm) (fastened good asm) (obj-at bad bench))"
+    all:
+      - "(installed good asm)"
+      - "(fastened good asm)"
+      - "(obj-at bad bench)"
     outcome: success
     reward: 1.0
 
