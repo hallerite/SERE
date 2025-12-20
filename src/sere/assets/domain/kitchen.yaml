@@ -5,8 +5,10 @@ types:
   - name: robot
   - name: location
   - name: object
-  - name: container
+  - name: movable
     parent: object
+  - name: container
+    parent: movable
   - name: appliance
     parent: object
   - name: number
@@ -303,7 +305,7 @@ actions:
           - "{c} is now closed."
 
   - name: pick-up
-    params: [{r: robot}, {o: object}]
+    params: [{r: robot}, {o: movable}]
     pre: ["(co-located ?r ?o)", "(clear-hand ?r)"]
     add: []
     del: []
@@ -333,7 +335,7 @@ actions:
           - "Picked up {o}."
 
   - name: put-down
-    params: [{r: robot}, {o: object}]
+    params: [{r: robot}, {o: movable}]
     pre: ["(holding ?r ?o)"]
     add: []
     del: []
@@ -363,7 +365,7 @@ actions:
           - "Placed {o} down."
 
   - name: put-in
-    params: [{r: robot}, {o: object}, {c: container}]
+    params: [{r: robot}, {o: movable}, {c: container}]
     pre:
       - "(co-located ?r ?c)"
       - "(holding ?r ?o)"
@@ -396,7 +398,7 @@ actions:
           - "{o} is now in {c}."
 
   - name: take-out
-    params: [{r: robot}, {o: object}, {c: container}]
+    params: [{r: robot}, {o: movable}, {c: container}]
     pre:
       - "(clear-hand ?r)"
       - "(co-located ?r ?c)"
@@ -598,7 +600,7 @@ actions:
           - "Water transferred to {m} (not hot)."
 
   - name: steep-tea
-    params: [{r: robot}, {tb: object}, {m: container}]
+    params: [{r: robot}, {tb: movable}, {m: container}]
     pre: ["(co-located ?r ?m)", "(in ?tb ?m)", "(>= (water-temp ?m) 80)"]
     add: []
     del: []

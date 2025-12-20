@@ -23,12 +23,12 @@ meta:
     budget: {min: 1, max: 3}
     items:
       - name: coaster
-        types: [object]
+        types: [movable]
         variants: [coaster1, coaster2]
         at: [kitchen]
         count: {min: 0, max: 2}
       - name: rag
-        types: [object]
+        types: [movable]
         at: [kitchen]
         count: {min: 0, max: 2}
 
@@ -42,7 +42,7 @@ objects:
     types: [container, appliance]
     variants: [kettle1, kettle, boiler, samovar, urn]
   leaf:
-    types: [object]
+    types: [movable]
     variants: [teabag1, sachet, bag]
 
 static_facts:

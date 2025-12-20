@@ -16,6 +16,8 @@ class WorldState:
     def add_object(self, sym: str, typ: str):
         s = self.objects.setdefault(sym, set())
         s.add(typ)
+        for sup in self.domain.supertypes(typ):
+            s.add(sup)
 
     def locations_of(
         self,

@@ -29,17 +29,17 @@ meta:
     budget: {min: 3, max: 7}
     items:
       - name: cable
-        types: [object]
+        types: [movable]
         variants: [cable1, cable2]
         at: [kitchen]
         count: {min: 0, max: 2}
       - name: tray
-        types: [object]
+        types: [movable]
         variants: [tray1, tray2]
         at: [table]
         count: {min: 0, max: 2}
       - name: sponge
-        types: [object]
+        types: [movable]
         at: [kitchen]
         count: {min: 0, max: 2}
 
@@ -61,7 +61,7 @@ objects:
     types: [container, appliance]
     variants: [kettle, boiler, samovar, urn]
   leaf:
-    types: [object]
+    types: [movable]
     variants: [teabag, sachet]
 
 static_facts:

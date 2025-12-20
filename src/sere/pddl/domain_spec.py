@@ -85,12 +85,21 @@ class DomainSpec:
         # types
         types: Dict[str, str] = {}
         for t in y.get("types", []):
-            raw = t["name"]
-            if ":" in raw:
-                a, b = [s.strip() for s in raw.split(":")]
-                types[a] = b
+            parent = ""
+            if isinstance(t, str):
+                raw = t
+            elif isinstance(t, dict):
+                raw = t.get("name")
+                if raw is None:
+                    raise ValueError("Type entry missing 'name'.")
+                parent = str(t.get("parent", "") or "")
             else:
-                types[raw] = ""
+                raise ValueError(f"Bad type entry: {t!r}")
+            if ":" in raw:
+                a, b = [s.strip() for s in raw.split(":", 1)]
+                types[a] = parent or b
+            else:
+                types[raw] = parent
 
         # predicates (nl -> List[str])
         preds: Dict[str, PredicateSpec] = {}
@@ -163,3 +172,28 @@ class DomainSpec:
             )
 
         return DomainSpec(y["domain"], types, preds, actions, fls)
+
+    def supertypes(self, typ: str) -> List[str]:
+        """Return all ancestor types for `typ` (excluding `typ`), nearest-first."""
+        out: List[str] = []
+        seen = set()
+        cur = typ
+        while cur and cur not in seen:
+            seen.add(cur)
+            cur = self.types.get(cur, "") or ""
+            if cur:
+                out.append(cur)
+        return out
+
+    def is_subtype(self, child: str, parent: str) -> bool:
+        """Return True if child == parent or child inherits from parent."""
+        if child == parent:
+            return True
+        cur = child
+        seen = set()
+        while cur and cur not in seen:
+            seen.add(cur)
+            cur = self.types.get(cur, "") or ""
+            if cur == parent:
+                return True
+        return False

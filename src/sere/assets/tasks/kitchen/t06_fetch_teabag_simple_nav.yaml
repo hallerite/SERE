@@ -25,17 +25,17 @@ meta:
     budget: {min: 2, max: 5}
     items:
       - name: spoon
-        types: [object]
+        types: [movable]
         variants: [spoon1, spoon2, spoon3]
         at: [kitchen]
         count: {min: 0, max: 2}
       - name: can
-        types: [object]
+        types: [movable]
         variants: [can1, can2]
         at: [pantry]
         count: {min: 0, max: 2}
       - name: rag
-        types: [object]
+        types: [movable]
         at: [kitchen]
         count: {min: 0, max: 1}
 
@@ -50,7 +50,7 @@ objects:
     types: [container, appliance]
     variants: [kettle1, boiler, samovar, urn]
   leaf:
-    types: [object]
+    types: [movable]
     variants: [teabag1, sachet]
 
 static_facts:

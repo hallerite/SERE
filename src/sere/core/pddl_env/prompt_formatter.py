@@ -188,9 +188,13 @@ class PromptFormatter:
             s = world.objects.setdefault(sym, set())
             if isinstance(s, set):
                 s.add(typ)
+                for sup in self.domain.supertypes(typ):
+                    s.add(sup)
             else:
                 # tolerate odd entries (e.g., str) by normalizing to a set
                 world.objects[sym] = {str(s), typ}
+                for sup in self.domain.supertypes(typ):
+                    world.objects[sym].add(sup)
 
         # Walk dynamic + static facts and back-fill object types
         for (pname, args) in list(world.facts) + list(static_facts or set()):
@@ -482,9 +486,9 @@ class PromptFormatter:
         def _is_type(sym: str, typ: str) -> bool:
             t = scoped_world.objects.get(sym)
             if isinstance(t, str):
-                return t == typ
+                return self.domain.is_subtype(t, typ)
             if isinstance(t, (set, list, tuple)):
-                return typ in t
+                return any(self.domain.is_subtype(str(tt), typ) for tt in t)
             return False
 
         # Build pools per *declared* param type using the world objects.
