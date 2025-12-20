@@ -150,6 +150,44 @@ def _resolve_seed(meta: Dict[str, Any], overrides: Dict[str, Any]) -> Optional[i
     return meta.get("seed", None)
 
 
+@dataclass
+class TaskSpec:
+    id: str
+    name: str
+    description: str
+    domain: str
+    path: str
+    meta: Dict[str, Any]
+    objects: Dict[str, Set[str]]
+    static_facts: Set[tuple]
+    init_facts: Set[tuple]
+    init_fluents: List[list]
+    termination_rules: List[dict]
+    reference_plan: List[str]
+    realized_names: Dict[str, str]
+    env_config: EnvConfig
+
+    def to_task_meta(self, env: PDDLEnv) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "seed": self.env_config.seed,
+            "features": {
+                "numeric": env.enable_numeric,
+                "conditional": env.enable_conditional,
+                "durations": env.enable_durations,
+                "stochastic": env.enable_stochastic,
+            },
+            "limits": {"max_steps": env.max_steps, "time_limit": env.time_limit},
+            "reference_plan": self.reference_plan,
+            "path": self.path,
+            "domain": self.domain,
+            "termination": self.termination_rules,
+            "realized_names": self.realized_names,
+        }
+
+
 # =========================
 #  Domain resolution
 # =========================
@@ -701,33 +739,50 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
                 where=f"reward_shaping.milestones[{j}].expr",
             )
 
-    # --- world & objects ---
-    w = WorldState(dom)
-    for sym, tys in types_by_placeholder.items():
-        for t in tys:
-            w.add_object(sym, t)
-
-    # --- facts
-    static_facts: Set[tuple] = set(_parse_lit(x) for x in (y.get("static_facts") or []))
-    for fact in (y.get("init") or []):
-        w.facts.add(_parse_lit(fact))
-
-    # --- fluents (now renamed)
-    init_fluents = (meta.get("init_fluents") or [])
-    if init_fluents:
-        _apply_init_fluents(w, init_fluents)
-
-    # --- Optional clutter injection ---
-    try:
-        _apply_clutter(meta, w, static_facts, rng)
-    except Exception:
-        pass
-
     # --- Env config (merge meta + overrides once)
     cfg = EnvConfig.from_meta(meta, seed_override=resolved_seed)
     extras = cfg.apply_overrides(env_kwargs or {})
     env_cfg = cfg.to_env_kwargs()
     env_cfg.update(extras)
+
+    domain_name = domain_hint or dom_file.stem
+    spec = TaskSpec(
+        id=y["id"],
+        name=y.get("name", y["id"]),
+        description=y.get("description", ""),
+        domain=domain_name,
+        path=task_path,
+        meta=meta,
+        objects=types_by_placeholder,
+        static_facts=set(_parse_lit(x) for x in (y.get("static_facts") or [])),
+        init_facts=set(_parse_lit(x) for x in (y.get("init") or [])),
+        init_fluents=(meta.get("init_fluents") or []),
+        termination_rules=termination_rules,
+        reference_plan=y.get("reference_plan", []),
+        realized_names=mapping,
+        env_config=cfg,
+    )
+
+    # --- world & objects ---
+    w = WorldState(dom)
+    for sym, tys in spec.objects.items():
+        for t in tys:
+            w.add_object(sym, t)
+
+    # --- facts
+    static_facts = spec.static_facts
+    for fact in spec.init_facts:
+        w.facts.add(fact)
+
+    # --- fluents (now renamed)
+    if spec.init_fluents:
+        _apply_init_fluents(w, spec.init_fluents)
+
+    # --- Optional clutter injection ---
+    try:
+        _apply_clutter(spec.meta, w, static_facts, rng)
+    except Exception:
+        pass
 
     env = PDDLEnv(
         dom,
@@ -738,22 +793,4 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
         **env_cfg,
     )
 
-    task_meta = {
-        "id": y["id"],
-        "name": y.get("name", y["id"]),
-        "description": y.get("description", ""),
-        "seed": cfg.seed,
-        "features": {
-            "numeric": env.enable_numeric,
-            "conditional": env.enable_conditional,
-            "durations": env.enable_durations,
-            "stochastic": env.enable_stochastic,
-        },
-        "limits": {"max_steps": env.max_steps, "time_limit": env.time_limit},
-        "reference_plan": y.get("reference_plan", []),
-        "path": task_path,
-        "domain": domain_hint or dom_file.stem,
-        "termination": termination_rules,
-        "realized_names": mapping,  # handy for tests/asserts
-    }
-    return env, task_meta
+    return env, spec.to_task_meta(env)
