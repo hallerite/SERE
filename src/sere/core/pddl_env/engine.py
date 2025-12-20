@@ -21,6 +21,10 @@ def step_one(env, name: str, args: Tuple[str, ...]):
     if type_err:
         return env._illegal(type_err, info)
 
+    static_err = _check_static_effects(env, act)
+    if static_err:
+        return env._illegal(static_err, info)
+
     bind = {var: val for (var, _), val in zip(act.params, args)}
 
     if getattr(act, "duration_var", None):
@@ -262,6 +266,47 @@ def _candidates_of_type(env, typ: str) -> List[str]:
         sym for sym, tys in env.world.objects.items()
         if tys and any(env.domain.is_subtype(t, typ) for t in tys)
     )
+
+def _static_predicates(env) -> set[str]:
+    return {
+        name for name, spec in (env.domain.predicates or {}).items()
+        if getattr(spec, "static", False)
+    }
+
+def _effect_pred_name(effect: str) -> Optional[str]:
+    try:
+        _, litp = ground_literal(effect, {})
+    except Exception:
+        return None
+    return litp[0]
+
+def _check_static_effects(env, act: ActionSpec) -> Optional[str]:
+    static_preds = _static_predicates(env)
+    if not static_preds:
+        return None
+    offenders: List[str] = []
+
+    def _scan(effects: List[str], where: str) -> None:
+        for eff in effects or []:
+            pname = _effect_pred_name(eff)
+            if pname and pname in static_preds:
+                offenders.append(f"{where}: {eff}")
+
+    _scan(getattr(act, "add", []) or [], "add")
+    _scan(getattr(act, "delete", []) or [], "delete")
+    for i, cb in enumerate(getattr(act, "cond", []) or []):
+        _scan(cb.add, f"cond[{i}].add")
+        _scan(cb.delete, f"cond[{i}].delete")
+    for i, oc in enumerate(getattr(act, "outcomes", []) or []):
+        _scan(oc.add, f"outcomes[{i}].add")
+        _scan(oc.delete, f"outcomes[{i}].delete")
+
+    if offenders:
+        return (
+            f"Action '{act.name}' modifies static predicates, which is disallowed: "
+            + "; ".join(offenders)
+        )
+    return None
 
 def _check_arg_types(env, act: ActionSpec, args: Tuple[str, ...]) -> Optional[str]:
     for (var, typ), arg in zip(act.params, args):

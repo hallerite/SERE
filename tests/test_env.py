@@ -5,6 +5,7 @@ from sere.core.world_state import WorldState
 from sere.pddl.domain_spec import (
     DomainSpec,
     ActionSpec,
+    PredicateSpec,
     FluentSpec,
     OutcomeSpec,
     ConditionalBlock,
@@ -145,6 +146,17 @@ def test_conditional_effects(make_env):
 
     obs, r, done, info = env.step("(move r1 kitchen)")
     assert ("happy", ()) in env.world.facts
+
+
+def test_static_predicates_cannot_change(make_env):
+    adj = PredicateSpec(name="adjacent", args=[], nl=["adjacent"], static=True)
+    a = ActionSpec(name="bad", params=[], pre=[], add=["(adjacent)"], delete=[], nl=["bad"])
+    env = make_env(actions={"bad": a}, predicates={"adjacent": adj})
+    env.reset()
+
+    obs, r, done, info = env.step("(bad)")
+    assert info.get("outcome") == "invalid_move"
+    assert "static" in info.get("error", "").lower()
 
 
 def test_renderer_messages_ephemeral(make_env):

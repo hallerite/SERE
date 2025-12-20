@@ -3,6 +3,7 @@ from typing import List, Tuple, Optional, Dict, Any
 from pathlib import Path
 import yaml
 
+from .sexpr import parse_one, SExprError
 Predicate = Tuple[str, Tuple[str, ...]]
 
 # ---------- helper: normalize nl -> List[str] ----------
@@ -177,6 +178,8 @@ class DomainSpec:
                 outcomes=outcomes or [],
             )
 
+        _validate_static_effects(actions, preds)
+
         return DomainSpec(y["domain"], types, preds, actions, fls)
 
     def supertypes(self, typ: str) -> List[str]:
@@ -205,3 +208,51 @@ class DomainSpec:
             if cur == parent:
                 return True
         return False
+
+
+def _effect_head(expr: str) -> str:
+    if not isinstance(expr, str):
+        raise ValueError(f"Effect must be a string literal, got: {expr!r}")
+    try:
+        parsed = parse_one(expr)
+    except SExprError as exc:
+        raise ValueError(f"Bad effect literal: {expr!r}") from exc
+    if not isinstance(parsed, list) or not parsed or not isinstance(parsed[0], str):
+        raise ValueError(f"Bad effect literal: {expr!r}")
+    head = str(parsed[0]).lower()
+    if head != "not":
+        return head
+    if len(parsed) != 2 or not isinstance(parsed[1], list) or not parsed[1]:
+        raise ValueError(f"Bad effect literal: {expr!r}")
+    inner = parsed[1]
+    if not isinstance(inner[0], str):
+        raise ValueError(f"Bad effect literal: {expr!r}")
+    return str(inner[0]).lower()
+
+
+def _validate_static_effects(actions: Dict[str, ActionSpec], preds: Dict[str, PredicateSpec]) -> None:
+    static_preds = {name for name, spec in (preds or {}).items() if spec.static}
+    if not static_preds:
+        return
+    offenders: List[str] = []
+
+    def _scan(effects: List[str], where: str) -> None:
+        for eff in effects or []:
+            pname = _effect_head(eff)
+            if pname in static_preds:
+                offenders.append(f"{where}: {eff}")
+
+    for act in (actions or {}).values():
+        _scan(act.add, f"{act.name}.add")
+        _scan(act.delete, f"{act.name}.delete")
+        for i, cb in enumerate(act.cond or []):
+            _scan(cb.add, f"{act.name}.cond[{i}].add")
+            _scan(cb.delete, f"{act.name}.cond[{i}].delete")
+        for i, oc in enumerate(act.outcomes or []):
+            _scan(oc.add, f"{act.name}.outcomes[{i}].add")
+            _scan(oc.delete, f"{act.name}.outcomes[{i}].delete")
+
+    if offenders:
+        raise ValueError(
+            "Static predicate effects are not allowed: " + "; ".join(offenders)
+        )

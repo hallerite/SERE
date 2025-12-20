@@ -147,6 +147,16 @@ def test_action_nl_present(dom_path: Path):
     assert not bad, f"{dom_path.name}: actions missing NL description: {bad}"
 
 
+def test_domain_load_rejects_static_effects():
+    y = {
+        "domain": "dummy",
+        "predicates": [{"name": "p", "args": [], "static": True}],
+        "actions": [{"name": "a", "params": [], "pre": [], "add": ["(p)"], "delete": [], "nl": "a"}],
+    }
+    with pytest.raises(ValueError, match="Static predicate effects"):
+        DomainSpec.from_dict(y)
+
+
 # -------------------------
 # Mutual exclusivity of outcome guards (boolean-only)
 # -------------------------
