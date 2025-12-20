@@ -2,6 +2,7 @@ from typing import Any, Dict, Tuple, List, Optional
 from sere.pddl.domain_spec import ActionSpec, Predicate
 from sere.pddl.grounding import ground_literal
 from sere.core.semantics import apply_num_eff, eval_clause, trace_clause, EvalNode
+from sere.core.world_state import WorldState
 from . import rendering
 
 def step_one(env, name: str, args: Tuple[str, ...]):
@@ -40,13 +41,23 @@ def step_one(env, name: str, args: Tuple[str, ...]):
     dele = _expand_delete_patterns(dele, env.world.facts)
     add  = _expand_add_patterns(add, env.world, act, args)
 
+    pre_world: WorldState | None = None
+    if env.enable_conditional and act.cond:
+        pre_world = WorldState(
+            domain=env.world.domain,
+            objects=env.world.objects,
+            facts=set(env.world.facts),
+            fluents=dict(env.world.fluents),
+        )
+
     env.world.apply(add, dele)
 
     if env.enable_conditional and act.cond:
+        cond_world = pre_world or env.world
         for cb in act.cond:
             ok = True
             for w in cb.when:
-                if not eval_clause(env.world, env.static_facts, w, bind, enable_numeric=env.enable_numeric):
+                if not eval_clause(cond_world, env.static_facts, w, bind, enable_numeric=env.enable_numeric):
                     ok = False
                     break
             if ok:
