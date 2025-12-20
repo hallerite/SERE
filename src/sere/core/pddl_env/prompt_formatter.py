@@ -79,7 +79,7 @@ class PromptFormatter:
         if s.startswith("(not"):
             inner = s[4:].strip()
             if inner.startswith("(") and inner.endswith(")"):
-                s = inner[1:-1].strip()
+                s = inner
 
         m = re.match(r"^\(\s*([^\s()]+)", s)
         if not m:
