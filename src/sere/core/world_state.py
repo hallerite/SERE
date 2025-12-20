@@ -14,9 +14,10 @@ class WorldState:
     fluents: Dict[Tuple[str, Tuple[str, ...]], float] = field(default_factory=dict)
 
     def add_object(self, sym: str, typ: str):
+        t = str(typ).lower()
         s = self.objects.setdefault(sym, set())
-        s.add(typ)
-        for sup in self.domain.supertypes(typ):
+        s.add(t)
+        for sup in self.domain.supertypes(t):
             s.add(sup)
 
     def locations_of(
@@ -79,10 +80,10 @@ class WorldState:
 
 
     def get_fluent(self, name: str, args: Tuple[str, ...]) -> float:
-        return self.fluents.get((name, args), 0.0)
+        return self.fluents.get((str(name).lower(), args), 0.0)
 
     def set_fluent(self, name: str, args: Tuple[str, ...], value: float):
-        self.fluents[(name, args)] = float(value)
+        self.fluents[(str(name).lower(), args)] = float(value)
 
     def apply(self, add: List[Predicate], delete: List[Predicate]):
         for d in delete: self.facts.discard(d)

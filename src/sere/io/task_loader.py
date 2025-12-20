@@ -218,7 +218,7 @@ def _parse_lit(s: str) -> Tuple[str, Tuple[str, ...]]:
     if not parts:
         raise ValueError(f"Bad literal: {s!r}")
     head, args = parts[0], parts[1:]
-    return head, tuple(args)
+    return head.lower(), tuple(args)
 
 
 def _apply_init_fluents(world: WorldState, init_fluents: List[list]) -> None:
@@ -230,7 +230,7 @@ def _apply_init_fluents(world: WorldState, init_fluents: List[list]) -> None:
         fname, args, val = entry
         if not isinstance(args, list):
             raise ValueError(f"init_fluents args must be a list: {entry}")
-        world.set_fluent(str(fname), tuple(str(a) for a in args), float(val))
+        world.set_fluent(str(fname).lower(), tuple(str(a) for a in args), float(val))
 
 
 # =========================
@@ -260,21 +260,23 @@ def _normalize_objects_strict(objs: dict, domain: DomainSpec) -> tuple[Dict[str,
 
     for sym, val in objs.items():
         if isinstance(val, str):
-            if val not in valid_types:
+            t = str(val).lower()
+            if t not in valid_types:
                 raise ValueError(
                     f"objects[{sym}] = {val!r} is not a declared type. Valid: {sorted(valid_types)}"
                 )
-            types_by_sym.setdefault(sym, set()).add(val)
+            types_by_sym.setdefault(sym, set()).add(t)
 
         elif isinstance(val, list):
             if not val or not all(isinstance(t, str) for t in val):
                 raise ValueError(f"objects[{sym}] list must contain type strings.")
-            bad = [t for t in val if t not in valid_types]
+            lowered = [str(t).lower() for t in val]
+            bad = [t for t in lowered if t not in valid_types]
             if bad:
                 raise ValueError(
                     f"objects[{sym}] has unknown types {bad}. Valid: {sorted(valid_types)}"
                 )
-            for t in val:
+            for t in lowered:
                 types_by_sym.setdefault(sym, set()).add(t)
 
         elif isinstance(val, dict):
@@ -287,12 +289,13 @@ def _normalize_objects_strict(objs: dict, domain: DomainSpec) -> tuple[Dict[str,
                 raise ValueError(
                     f"objects[{sym}].types must be a non-empty string or list of strings."
                 )
-            bad = [t for t in ts if t not in valid_types]
+            lowered = [str(t).lower() for t in ts]
+            bad = [t for t in lowered if t not in valid_types]
             if bad:
                 raise ValueError(
                     f"objects[{sym}].types has unknown types {bad}. Valid: {sorted(valid_types)}"
                 )
-            types_by_sym[sym] = set(ts)
+            types_by_sym[sym] = set(lowered)
 
             vs = val.get("variants") or []
             if not isinstance(vs, list) or (vs and not all(isinstance(x, str) for x in vs)):
@@ -452,7 +455,7 @@ def _apply_clutter(
         if n <= 0:
             continue
         base = str(spec.get("name") or "clutter")
-        types = list(spec.get("types") or [])
+        types = [str(t).lower() for t in (spec.get("types") or [])]
         locs  = list(spec.get("at") or [])
         variants = list(spec.get("variants") or [])  # optional
 
@@ -656,7 +659,14 @@ def _validate_expr_symbols_exist(
     toks = _symbols_in_sexpr(expr)
     known_preds = set(domain.predicates.keys())
     known_fl = set(domain.fluents.keys())
-    unknown = toks - declared_objects - known_preds - known_fl - _BUILTIN_HEADS
+    unknown: Set[str] = set()
+    for tok in toks:
+        if tok in declared_objects:
+            continue
+        tl = tok.lower()
+        if tl in known_preds or tl in known_fl or tl in _BUILTIN_HEADS:
+            continue
+        unknown.add(tok)
     if unknown:
         # Don't false-positive on obvious location/var words if user forgot to declare.
         raise ValueError(f"Unknown symbols in {where}: {sorted(unknown)}")

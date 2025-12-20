@@ -97,38 +97,44 @@ class DomainSpec:
                 raise ValueError(f"Bad type entry: {t!r}")
             if ":" in raw:
                 a, b = [s.strip() for s in raw.split(":", 1)]
-                types[a] = parent or b
+                name = a.strip().lower()
+                parent = (parent or b).strip().lower()
+                types[name] = parent
             else:
-                types[raw] = parent
+                name = str(raw).strip().lower()
+                types[name] = parent.strip().lower() if parent else ""
 
         # predicates (nl -> List[str])
         preds: Dict[str, PredicateSpec] = {}
         for p in y.get("predicates", []):
-            args = [(a["name"], a["type"]) for a in p.get("args", [])]
-            preds[p["name"]] = PredicateSpec(
-                name=p["name"],
+            pname = str(p["name"]).lower()
+            args = [(a["name"], str(a["type"]).lower()) for a in p.get("args", [])]
+            preds[pname] = PredicateSpec(
+                name=pname,
                 args=args,
-                nl=_as_nl_list(p.get("nl"), p["name"]),
+                nl=_as_nl_list(p.get("nl"), pname),
                 static=p.get("static", False),
             )
 
         # fluents (nl -> List[str])
         fls: Dict[str, FluentSpec] = {}
         for f in y.get("fluents", []):
-            args = [(a["name"], a["type"]) for a in f.get("args", [])]
-            fls[f["name"]] = FluentSpec(
-                name=f["name"],
+            fname = str(f["name"]).lower()
+            args = [(a["name"], str(a["type"]).lower()) for a in f.get("args", [])]
+            fls[fname] = FluentSpec(
+                name=fname,
                 args=args,
-                nl=_as_nl_list(f.get("nl"), f["name"]),
+                nl=_as_nl_list(f.get("nl"), fname),
             )
 
         # actions (nl already normalized)
         actions: Dict[str, ActionSpec] = {}
         for a in y["actions"]:
+            aname = str(a["name"]).lower()
             params: List[Tuple[str, str]] = []
             for d in a.get("params", []):
                 ((var, typ),) = d.items()
-                params.append((var, typ))
+                params.append((var, str(typ).lower()))
 
             # cond blocks
             cond_blocks: List[ConditionalBlock] = []
@@ -155,13 +161,13 @@ class DomainSpec:
                     messages=oc.get("messages", []) or [],
                 ))
 
-            actions[a["name"]] = ActionSpec(
-                name=a["name"],
+            actions[aname] = ActionSpec(
+                name=aname,
                 params=params,
                 pre=a.get("pre", []) or [],
                 add=a.get("add", []) or [],
                 delete=a.get("del", a.get("delete", [])) or [],
-                nl=_as_nl_list(a.get("nl"), a["name"]),
+                nl=_as_nl_list(a.get("nl"), aname),
                 num_eff=a.get("num_eff", []) or [],
                 cond=cond_blocks or [],
                 duration=a.get("duration", None),
@@ -177,7 +183,7 @@ class DomainSpec:
         """Return all ancestor types for `typ` (excluding `typ`), nearest-first."""
         out: List[str] = []
         seen = set()
-        cur = typ
+        cur = str(typ).lower()
         while cur and cur not in seen:
             seen.add(cur)
             cur = self.types.get(cur, "") or ""
@@ -187,6 +193,8 @@ class DomainSpec:
 
     def is_subtype(self, child: str, parent: str) -> bool:
         """Return True if child == parent or child inherits from parent."""
+        child = str(child).lower()
+        parent = str(parent).lower()
         if child == parent:
             return True
         cur = child

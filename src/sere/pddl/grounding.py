@@ -24,7 +24,7 @@ def substitute(template: str, bind: Dict[str, str]) -> Predicate:
         raise ValueError(f"Bad literal: {template}")
     if any(isinstance(x, list) for x in parsed[1:]):
         raise ValueError(f"Bad literal (nested expr): {template}")
-    name = str(parsed[0])
+    name = str(parsed[0]).lower()
     args = tuple(
         bind.get(t[1:], t) if t.startswith("?") else t for t in (str(x) for x in parsed[1:])
     )
@@ -36,13 +36,13 @@ def ground_literal(template: str, bind: Dict[str, str]) -> Tuple[bool, Predicate
     except SExprError as exc:
         raise ValueError(f"Bad literal: {template}") from exc
 
-    if isinstance(parsed, list) and parsed and str(parsed[0]) == "not":
+    if isinstance(parsed, list) and parsed and str(parsed[0]).lower() == "not":
         if len(parsed) != 2 or not isinstance(parsed[1], list) or not parsed[1]:
             raise ValueError(f"Bad literal: {template}")
         inner = parsed[1]
         if not isinstance(inner[0], str) or any(isinstance(x, list) for x in inner[1:]):
             raise ValueError(f"Bad literal: {template}")
-        name = str(inner[0])
+        name = str(inner[0]).lower()
         args = tuple(
             bind.get(t[1:], t) if t.startswith("?") else t
             for t in (str(x) for x in inner[1:])
@@ -53,7 +53,7 @@ def ground_literal(template: str, bind: Dict[str, str]) -> Tuple[bool, Predicate
         raise ValueError(f"Bad literal: {template}")
     if any(isinstance(x, list) for x in parsed[1:]):
         raise ValueError(f"Bad literal: {template}")
-    name = str(parsed[0])
+    name = str(parsed[0]).lower()
     args = tuple(
         bind.get(t[1:], t) if t.startswith("?") else t for t in (str(x) for x in parsed[1:])
     )

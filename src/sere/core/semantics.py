@@ -11,7 +11,8 @@ NUM_CMP = re.compile(
     r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
 )
 NUM_EFF = re.compile(
-    r"^\(\s*(increase|decrease|assign)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+(.+)\s*\)$"
+    r"^\(\s*(increase|decrease|assign)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+(.+)\s*\)$",
+    re.IGNORECASE,
 )
 
 
@@ -25,6 +26,7 @@ def eval_num_pre(world: WorldState, expr: str, bind: Dict[str, str]) -> bool:
     if not m:
         raise ValueError(f"Bad num_pre: {expr}")
     op, fname, argstr, rhs = m.groups()
+    fname = fname.lower()
     args = _bind_args(argstr, bind)
     val = world.get_fluent(fname, args)
     rhsf = float(rhs)
@@ -71,7 +73,7 @@ def _eval_rhs_token(rhs: str, bind: dict, world: Optional[WorldState] = None) ->
         if not inner:
             raise ValueError(f"Unsupported numeric RHS: {rhs!r}")
         parts = inner.split()
-        fname = parts[0]
+        fname = parts[0].lower()
         raw_args = parts[1:]
         # bind ?vars in args
         args = tuple(bind.get(a[1:], a) if a.startswith("?") else a for a in raw_args)
@@ -90,6 +92,8 @@ def apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[
     if not m:
         raise ValueError(f"Bad num_eff: {expr}")
     op, fname, argstr, rhs = m.groups()
+    op = op.lower()
+    fname = fname.lower()
     args = _bind_args(argstr, bind)
     d = _eval_rhs_token(rhs, bind, world)  # now supports (fluent ...) and products
     if op == "assign":
@@ -135,6 +139,7 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
         m = NUM_CMP.match(s)
         assert m
         op, fname, argstr, rhs = m.groups()
+        fname = fname.lower()
         args = _bind_args(argstr, bind)
         current = world.get_fluent(fname, args)
         rhsf = float(rhs)
@@ -153,10 +158,10 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
         )
 
     # distinct
-    if s.startswith("(distinct"):
+    if s.lstrip().lower().startswith("(distinct"):
         try:
             parsed = parse_one(s)
-            if not (isinstance(parsed, list) and parsed and str(parsed[0]) == "distinct"):
+            if not (isinstance(parsed, list) and parsed and str(parsed[0]).lower() == "distinct"):
                 raise SExprError("not distinct")
             terms = [str(x) for x in parsed[1:]]
             if len(terms) < 2:
@@ -187,7 +192,7 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
         parsed = None
 
     if isinstance(parsed, list) and parsed:
-        head = str(parsed[0])
+        head = str(parsed[0]).lower()
 
         # negation
         if head == "not":
