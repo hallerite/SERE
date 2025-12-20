@@ -9,6 +9,7 @@ import yaml
 import re
 import random
 import copy
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Tuple, Set, Optional, Dict, Any, List
 from importlib.resources import files as pkg_files, as_file
@@ -67,6 +68,86 @@ def _resolve_domain_file(dom_path: str) -> Path:
         )
     with as_file(cand) as real_path:
         return Path(real_path)
+
+
+# =========================
+#  Env config / meta merge
+# =========================
+
+_SEED_UNSET = object()
+
+
+@dataclass
+class EnvConfig:
+    max_steps: int = 40
+    step_penalty: float = -0.01
+    invalid_penalty: float = -0.1
+    enable_numeric: bool = False
+    enable_conditional: bool = False
+    enable_durations: bool = False
+    enable_stochastic: bool = False
+    time_limit: Optional[float] = None
+    default_duration: float = 1.0
+    seed: Optional[int] = None
+    max_messages: int = 8
+    reward_shaping: Optional[dict] = None
+
+    @classmethod
+    def from_meta(cls, meta: Dict[str, Any], *, seed_override: object = _SEED_UNSET) -> "EnvConfig":
+        cfg = cls(
+            max_steps=int(meta.get("max_steps", 40)),
+            step_penalty=float(meta.get("step_penalty", -0.01)),
+            invalid_penalty=float(meta.get("invalid_penalty", -0.1)),
+            enable_numeric=bool(meta.get("enable_numeric", False)),
+            enable_conditional=bool(meta.get("enable_conditional", False)),
+            enable_durations=bool(meta.get("enable_durations", False)),
+            enable_stochastic=bool(meta.get("enable_stochastic", False)),
+            time_limit=meta.get("time_limit", None),
+            default_duration=float(meta.get("default_duration", 1.0)),
+            seed=meta.get("seed", None),
+            max_messages=int(meta.get("max_messages", 8)),
+        )
+        if seed_override is not _SEED_UNSET:
+            cfg.seed = seed_override  # allow None to explicitly clear meta seed
+
+        rs_cfg = meta.get("reward_shaping") or {}
+        if rs_cfg:
+            cfg.reward_shaping = dict(
+                mode=(rs_cfg.get("mode") or "instant"),
+                gamma=float(rs_cfg.get("gamma", 1.0)),
+                milestones=[
+                    dict(
+                        expr=str(m.get("expr")),
+                        reward=float(m.get("reward", 0.0)),
+                        once=bool(m.get("once", True)),
+                    )
+                    for m in (rs_cfg.get("milestones") or [])
+                    if m and m.get("expr") is not None
+                ],
+            )
+
+        return cfg
+
+    def apply_overrides(self, overrides: Dict[str, Any]) -> Dict[str, Any]:
+        extras: Dict[str, Any] = {}
+        for k, v in (overrides or {}).items():
+            if hasattr(self, k):
+                setattr(self, k, v)
+            else:
+                extras[k] = v
+        return extras
+
+    def to_env_kwargs(self) -> Dict[str, Any]:
+        data = asdict(self)
+        if data.get("reward_shaping") is None:
+            data.pop("reward_shaping", None)
+        return data
+
+
+def _resolve_seed(meta: Dict[str, Any], overrides: Dict[str, Any]) -> Optional[int]:
+    if overrides and "seed" in overrides:
+        return overrides.get("seed")
+    return meta.get("seed", None)
 
 
 # =========================
@@ -561,6 +642,7 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
 
     # ---- Domain hint BEFORE rename is fine
     meta = y.get("meta", {}) or {}
+    resolved_seed = _resolve_seed(meta, env_kwargs or {})
     domain_hint = (meta.get("domain") or "").strip().lower() or None
     dom_path = _resolve_domain_path(domain_hint, task_path, domain_path)
     dom_file = _resolve_domain_file(dom_path)
@@ -572,8 +654,7 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
         plugins = _load_invariants_plugin(dn)
 
     # ---- RNG
-    seed = env_kwargs.get("seed", None)
-    rng = random.Random(seed)
+    rng = random.Random(resolved_seed)
 
     # ---- Objects (STRICT) + variant realization
     types_by_placeholder, variants_by_placeholder = _normalize_objects_strict(
@@ -642,39 +723,11 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
     except Exception:
         pass
 
-    # --- Env config
-    env_cfg: Dict[str, Any] = {
-        "max_steps": meta.get("max_steps", 40),
-        "step_penalty": meta.get("step_penalty", -0.01),
-        "invalid_penalty": meta.get("invalid_penalty", -0.1),
-        "enable_numeric": meta.get("enable_numeric", False),
-        "enable_conditional": meta.get("enable_conditional", False),
-        "enable_durations": meta.get("enable_durations", False),
-        "enable_stochastic": meta.get("enable_stochastic", False),
-        "time_limit": meta.get("time_limit", None),
-        "default_duration": meta.get("default_duration", 1.0),
-        "seed": meta.get("seed", None),
-        "max_messages": meta.get("max_messages", 8),
-    }
-
-    # --- Reward shaping
-    rs_cfg = meta.get("reward_shaping") or {}
-    if rs_cfg:
-        env_cfg["reward_shaping"] = dict(
-            mode=(rs_cfg.get("mode") or "instant"),
-            gamma=float(rs_cfg.get("gamma", 1.0)),
-            milestones=[
-                dict(
-                    expr=str(m.get("expr")),
-                    reward=float(m.get("reward", 0.0)),
-                    once=bool(m.get("once", True)),
-                )
-                for m in (rs_cfg.get("milestones") or [])
-                if m and m.get("expr") is not None
-            ],
-        )
-
-    env_cfg.update(env_kwargs or {})
+    # --- Env config (merge meta + overrides once)
+    cfg = EnvConfig.from_meta(meta, seed_override=resolved_seed)
+    extras = cfg.apply_overrides(env_kwargs or {})
+    env_cfg = cfg.to_env_kwargs()
+    env_cfg.update(extras)
 
     env = PDDLEnv(
         dom,
@@ -689,7 +742,7 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
         "id": y["id"],
         "name": y.get("name", y["id"]),
         "description": y.get("description", ""),
-        "seed": meta.get("seed", None),
+        "seed": cfg.seed,
         "features": {
             "numeric": env.enable_numeric,
             "conditional": env.enable_conditional,
