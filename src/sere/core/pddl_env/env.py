@@ -194,12 +194,6 @@ class PDDLEnv:
                 info["aborted_at"] = int(bad.get("i", 0))
                 info["abort_error"] = bad.get("error") or info.get("error")
 
-        # OPEN_LOOP: force terminal after this call unless already terminal
-        if self.run_mode == RunMode.OPEN_LOOP and not (done or self.done):
-            self.done = True
-            info.setdefault("outcome", "terminal")
-            info.setdefault("reason", "open_loop_end")
-
         return obs, rew, self.done or done, info
 
 
