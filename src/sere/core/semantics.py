@@ -102,76 +102,9 @@ def apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[
         raise ValueError(f"Unsupported numeric op: {op}")
 
 # --- Clause evaluator with support for (or ...) and (not ...) ---
-def _split_top_level(expr: str) -> List[str]:
-    # splits "(or X Y Z)" children into ["X","Y","Z"] using a light parser
-    try:
-        parsed = parse_one(expr)
-    except SExprError as exc:
-        raise AssertionError(str(exc)) from exc
-    if not isinstance(parsed, list) or not parsed:
-        return []
-    parts: List[str] = []
-    for child in parsed[1:]:
-        if isinstance(child, list):
-            parts.append(to_string(child))
-        else:
-            parts.append(str(child))
-    return parts
 
 def eval_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: Dict[str, str], *, enable_numeric: bool = True) -> bool:
-    s = s.strip()
-    # numeric guard?
-    if enable_numeric and NUM_CMP.match(s):
-        return eval_num_pre(world, s, bind)
-
-    # built-in: (distinct a b [c ...]) — true iff all bound tokens are pairwise different
-    if s.startswith("(distinct"):
-        try:
-            assert s.endswith(")")
-            inner = s[1:-1].strip()        # drop surrounding parens
-            parts = inner.split()          # ["distinct", "X", "Y", ...]
-            if len(parts) < 3:             # need at least two terms after 'distinct'
-                return False
-            terms = parts[1:]
-            vals = []
-            for t in terms:
-                v = bind.get(t[1:], t) if t.startswith("?") else t
-                vals.append(v)
-            return len(vals) == len(set(vals))
-        except Exception:
-            return False
-
-    # negation
-    if s.startswith("(not"):
-        # "(not X)" -> extract X
-        assert s.endswith(")")
-        inner = s[4:-1].strip()
-        return not eval_clause(world, static_facts, inner, bind, enable_numeric=enable_numeric)
-
-    # conjunction
-    if s.startswith("(and"):
-        children = _split_top_level(s)
-        return all(
-            eval_clause(world, static_facts, c, bind, enable_numeric=enable_numeric)
-            for c in children
-        )
-
-    # disjunction
-    if s.startswith("(or"):
-        children = _split_top_level(s)
-        return any(
-            eval_clause(world, static_facts, c, bind, enable_numeric=enable_numeric)
-            for c in children
-        )
-
-    # plain literal
-    try:
-        is_neg, litp = ground_literal(s, bind)
-    except Exception:
-        # be permissive: unknown pattern -> false
-        return False
-    h = (world.holds(litp) or (litp in static_facts))
-    return (not h) if is_neg else h
+    return trace_clause(world, static_facts, s, bind, enable_numeric=enable_numeric).satisfied
 
 
 # =========================
@@ -221,9 +154,21 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
 
     # distinct
     if s.startswith("(distinct"):
-        # (distinct a b c ...)
-        inner = s[1:-1].strip().split()
-        terms = inner[1:]
+        try:
+            parsed = parse_one(s)
+            if not (isinstance(parsed, list) and parsed and str(parsed[0]) == "distinct"):
+                raise SExprError("not distinct")
+            terms = [str(x) for x in parsed[1:]]
+            if len(terms) < 2:
+                raise SExprError("distinct requires at least two terms")
+        except SExprError:
+            return EvalNode(
+                expr=_bind_infix(s, bind),
+                satisfied=False,
+                kind="distinct",
+                grounded=None,
+                details={"duplicates": []},
+            )
         bound = [bind.get(t[1:], t) if t.startswith("?") else t for t in terms]
         sat = len(bound) == len(set(bound))
         dupes = sorted(list({x for x in bound if bound.count(x) > 1}))
@@ -235,42 +180,74 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
             details={"duplicates": dupes},
         )
 
-    # negation
-    if s.startswith("(not"):
-        inner = s[4:-1].strip()
-        child = trace_clause(world, static_facts, inner, bind, enable_numeric=enable_numeric)
-        return EvalNode(
-            expr=_bind_infix(s, bind),
-            satisfied=not child.satisfied,
-            kind="not",
-            grounded=None,
-            children=[child],
-        )
+    # parse once to detect logical heads
+    try:
+        parsed = parse_one(s)
+    except SExprError:
+        parsed = None
 
-    # conjunction
-    if s.startswith("(and"):
-        parts = _split_top_level(s)
-        kids = [trace_clause(world, static_facts, c, bind, enable_numeric=enable_numeric) for c in parts]
-        sat = all(k.satisfied for k in kids)
-        return EvalNode(
-            expr=_bind_infix(s, bind),
-            satisfied=sat,
-            kind="and",
-            children=kids,
-        )
+    if isinstance(parsed, list) and parsed:
+        head = str(parsed[0])
 
-    # disjunction
-    if s.startswith("(or"):
-        parts = _split_top_level(s)
-        kids = [trace_clause(world, static_facts, c, bind, enable_numeric=enable_numeric) for c in parts]
-        sat = any(k.satisfied for k in kids)
-        return EvalNode(
-            expr=_bind_infix(s, bind),
-            satisfied=sat,
-            kind="or",
-            children=kids,
-        )
+        # negation
+        if head == "not":
+            if len(parsed) != 2:
+                return EvalNode(
+                    expr=_bind_infix(s, bind),
+                    satisfied=False,
+                    kind="not",
+                    grounded=None,
+                    children=[],
+                )
+            child_expr = to_string(parsed[1]) if isinstance(parsed[1], list) else str(parsed[1])
+            child = trace_clause(world, static_facts, child_expr, bind, enable_numeric=enable_numeric)
+            return EvalNode(
+                expr=_bind_infix(s, bind),
+                satisfied=not child.satisfied,
+                kind="not",
+                grounded=None,
+                children=[child],
+            )
 
+        # conjunction
+        if head == "and":
+            kids = [
+                trace_clause(
+                    world,
+                    static_facts,
+                    to_string(c) if isinstance(c, list) else str(c),
+                    bind,
+                    enable_numeric=enable_numeric,
+                )
+                for c in parsed[1:]
+            ]
+            sat = all(k.satisfied for k in kids)
+            return EvalNode(
+                expr=_bind_infix(s, bind),
+                satisfied=sat,
+                kind="and",
+                children=kids,
+            )
+
+        # disjunction
+        if head == "or":
+            kids = [
+                trace_clause(
+                    world,
+                    static_facts,
+                    to_string(c) if isinstance(c, list) else str(c),
+                    bind,
+                    enable_numeric=enable_numeric,
+                )
+                for c in parsed[1:]
+            ]
+            sat = any(k.satisfied for k in kids)
+            return EvalNode(
+                expr=_bind_infix(s, bind),
+                satisfied=sat,
+                kind="or",
+                children=kids,
+            )
 
     # plain literal (positive or negated via ground_literal)
     try:
