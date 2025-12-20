@@ -2,6 +2,7 @@ from typing import Any, Dict, Optional, Set, Tuple, List
 from dataclasses import dataclass, field
 import re
 from sere.pddl.grounding import ground_literal
+from sere.pddl.sexpr import parse_one, to_string, SExprError
 from .world_state import WorldState
 
 Predicate = Tuple[str, Tuple[str, ...]]
@@ -102,44 +103,19 @@ def apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[
 
 # --- Clause evaluator with support for (or ...) and (not ...) ---
 def _split_top_level(expr: str) -> List[str]:
-    # splits "(or X Y Z)" children into ["X","Y","Z"] without parsing deeply
-    expr = expr.strip()
-    assert expr.startswith("(") and expr.endswith(")")
-    inner = expr[1:-1].strip()
-    # remove leading head symbol ("or" or "not")
-    parts = []
-    depth = 0
-    cur = []
-    tokens = list(inner)
-    i = 0
-    # skip head symbol
-    while i < len(tokens) and not tokens[i].isspace():
-        i += 1
-    # skip spaces after head
-    while i < len(tokens) and tokens[i].isspace():
-        i += 1
-    # now parse children s-exprs
-    while i < len(tokens):
-        ch = tokens[i]
-        cur.append(ch)
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth == 0:
-                parts.append("".join(cur).strip())
-                cur = []
-                # skip spaces between children
-                i += 1
-                while i < len(tokens) and tokens[i].isspace():
-                    i += 1
-                continue
-        i += 1
-    # also allow bare atoms inside or (rare)
-    if cur:
-        s = "".join(cur).strip()
-        if s:
-            parts.append(s)
+    # splits "(or X Y Z)" children into ["X","Y","Z"] using a light parser
+    try:
+        parsed = parse_one(expr)
+    except SExprError as exc:
+        raise AssertionError(str(exc)) from exc
+    if not isinstance(parsed, list) or not parsed:
+        return []
+    parts: List[str] = []
+    for child in parsed[1:]:
+        if isinstance(child, list):
+            parts.append(to_string(child))
+        else:
+            parts.append(str(child))
     return parts
 
 def eval_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: Dict[str, str], *, enable_numeric: bool = True) -> bool:

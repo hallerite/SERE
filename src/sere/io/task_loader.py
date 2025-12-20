@@ -14,6 +14,7 @@ from typing import Tuple, Set, Optional, Dict, Any, List
 from importlib.resources import files as pkg_files, as_file
 
 from sere.pddl.domain_spec import DomainSpec
+from sere.pddl.sexpr import parse_one, to_string, SExprError
 from sere.core.world_state import WorldState
 from sere.core.pddl_env import PDDLEnv
 
@@ -369,24 +370,27 @@ def _apply_clutter(
 #  Rename utilities
 # =========================
 
-# Atom = letters/digits/underscore/hyphen only (no '?' vars, no dots).
-# Preceded by start or whitespace, NOT directly by '('; followed by )/space/end.
-_ATOM_RX = re.compile(r"(?:(?<=\s)|(?<=^))([A-Za-z0-9_-]+)(?=(?=[()\s])|$)")
-
-
 def _rename_atoms_nonheads_in_sexpr(s: str, mapping: Dict[str, str]) -> str:
     """
     Rename object symbols inside any S-expression, but NEVER rename head symbols.
     Works for nested forms: (and (p a) (q b)) and numeric: (>= (f x) 10)
-    Strategy: replace any atom token that is preceded by space/start (not '(')
-    and followed by space/paren/end. This excludes heads (which follow '(').
-    We also exclude ?vars and numeric atoms.
+    Strategy: parse and rename only non-head atoms (skip ?vars and numeric atoms).
     """
     if not isinstance(s, str):
         return s
+    try:
+        parsed = parse_one(s)
+    except SExprError:
+        return s
 
-    def _sub(m: re.Match[str]) -> str:
-        tok = m.group(1)
+    def _rename(node):
+        if isinstance(node, list):
+            if not node:
+                return node
+            head = node[0]
+            rest = [_rename(x) for x in node[1:]]
+            return [head] + rest
+        tok = str(node)
         if not tok:
             return tok
         if tok[0] == "?":  # variables untouched
@@ -395,7 +399,7 @@ def _rename_atoms_nonheads_in_sexpr(s: str, mapping: Dict[str, str]) -> str:
             return tok
         return mapping.get(tok, tok)
 
-    return _ATOM_RX.sub(_sub, s)
+    return to_string(_rename(parsed))
 
 
 def _tokenwise_replace_lit(s: str, mapping: Dict[str, str]) -> str:
@@ -403,12 +407,17 @@ def _tokenwise_replace_lit(s: str, mapping: Dict[str, str]) -> str:
     s = s.strip()
     if not (s.startswith("(") and s.endswith(")")):
         return s
-    parts = s[1:-1].split()
-    if not parts:
+    try:
+        parsed = parse_one(s)
+    except SExprError:
         return s
-    head, args = parts[0], parts[1:]
-    args2 = [mapping.get(t, t) for t in args]
-    return "(" + " ".join([head] + args2) + ")"
+    if not isinstance(parsed, list) or not parsed or not isinstance(parsed[0], str):
+        return s
+    if any(isinstance(x, list) for x in parsed[1:]):
+        return s
+    head = str(parsed[0])
+    args = [mapping.get(str(t), str(t)) for t in parsed[1:]]
+    return to_string([head] + args)
 
 
 def _rename_everywhere(task: Dict[str, Any], mapping: Dict[str, str]) -> Dict[str, Any]:

@@ -1,16 +1,12 @@
-import re
 from typing import List, Tuple
-from sere.pddl.grounding import parse_grounded
 from .engine import step_one
 from sere.core.pddl_env.run_mode import RunMode
+from sere.pddl.sexpr import parse_many, SExprError
 
 def _dbg(env, *args):
     """Call env._dbg if available and enabled."""
     if getattr(env, "debug", False) and hasattr(env, "_dbg"):
         env._dbg(*args)
-
-# Accepts strings like: "(move r1 a b)(pick r1 x)" or with whitespace/newlines.
-_ACTION_RX = re.compile(r"\([^)]+\)")
 
 def parse_actions(block: str) -> List[Tuple[str, Tuple[str, ...]]]:
     """
@@ -19,13 +15,24 @@ def parse_actions(block: str) -> List[Tuple[str, Tuple[str, ...]]]:
     Returns: [(name, (args...)), ...]
     Raises ValueError if no actions are found.
     """
-    toks = _ACTION_RX.findall(block or "")
-    if not toks:
-        raise ValueError("No actions found.")
+    try:
+        exprs = parse_many(block or "")
+    except SExprError as exc:
+        raise ValueError(f"{exc}") from exc
     out: List[Tuple[str, Tuple[str, ...]]] = []
-    for t in toks:
-        name, args = parse_grounded(t)
-        out.append((name, tuple(args)))
+    for expr in exprs:
+        if not isinstance(expr, list) or not expr:
+            continue
+        head = expr[0]
+        if not isinstance(head, str):
+            raise ValueError("Bad action expression: non-atom head.")
+        if any(isinstance(x, list) for x in expr[1:]):
+            raise ValueError("Bad action expression: nested list.")
+        name = head.lower()
+        args = tuple(str(x) for x in expr[1:])
+        out.append((name, args))
+    if not out:
+        raise ValueError("No actions found.")
     return out
 
 def execute_plan(env, plan, *, atomic: bool = False):
