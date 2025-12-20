@@ -685,10 +685,12 @@ class PromptFormatter:
         Supports OutcomeSpec objects or plain dicts.
         """
 
-        def _outcome_name(oc) -> str:
-            if oc is None: return ""
-            if isinstance(oc, dict): return str(oc.get("name", "")).lower()
-            return str(getattr(oc, "name", "")).lower()
+        def _outcome_status(oc) -> str:
+            if oc is None:
+                return ""
+            if isinstance(oc, dict):
+                return str(oc.get("status", "")).lower()
+            return str(getattr(oc, "status", "")).lower()
 
         def _outcome_num_eff(oc):
             if oc is None: return []
@@ -728,10 +730,10 @@ class PromptFormatter:
         # Outcomes may be objects or dicts
         outcomes = list(getattr(act, "outcomes", []) or [])
 
-        # 1) Prefer an outcome literally named 'success'
+        # 1) Prefer an outcome with status 'success'
         chosen = None
         for oc in outcomes:
-            if _outcome_name(oc) == "success":
+            if _outcome_status(oc) == "success":
                 chosen = oc
                 break
 

@@ -21,6 +21,7 @@ def _as_nl_list(v: Any, fallback: str) -> List[str]:
 class OutcomeSpec:
     name: str
     p: float
+    status: Optional[str] = None
     add: List[str] = field(default_factory=list)
     delete: List[str] = field(default_factory=list)
     num_eff: List[str] = field(default_factory=list)
@@ -137,6 +138,7 @@ class DomainSpec:
                 outcomes.append(OutcomeSpec(
                     name=oc.get("name", "outcome"),
                     p=float(oc["p"]),
+                    status=(str(oc.get("status")) if oc.get("status") is not None else None),
                     add=oc.get("add", []) or [],
                     delete=oc.get("del", oc.get("delete", [])) or [],
                     num_eff=oc.get("num_eff", []) or [],

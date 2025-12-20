@@ -61,8 +61,8 @@ def test_every_action_has_success_and_a_non_success_outcome(dom_path: Path):
     """
     Contract: Each action in every domain must define outcome branches and
     include BOTH:
-      - at least one branch literally named 'success' (case-insensitive), and
-      - at least one branch with a different name (e.g., 'fail', 'spill', etc.).
+      - at least one branch with status 'success' (case-insensitive), and
+      - at least one branch with a different status (e.g., 'fail', 'spill', etc.).
     This supports deterministic runs (enable_stochastic=False) where we prefer
     the 'success' branch if multiple are valid, but still have a non-success path.
     """
@@ -77,14 +77,19 @@ def test_every_action_has_success_and_a_non_success_outcome(dom_path: Path):
             offenders.append(f"{aname}: has no outcomes[] defined")
             continue
 
-        names = {str(getattr(oc, "name", "")).lower() for oc in outcomes}
-        has_success = "success" in names
-        has_non_success = any(n and n != "success" for n in names)
+        missing_status = [oc for oc in outcomes if not getattr(oc, "status", None)]
+        if missing_status:
+            offenders.append(f"{aname}: all outcomes must define status (success/fail)")
+            continue
+
+        statuses = {str(getattr(oc, "status", "")).lower() for oc in outcomes}
+        has_success = "success" in statuses
+        has_non_success = any(s and s != "success" for s in statuses)
 
         if not has_success or not has_non_success:
             offenders.append(
                 f"{aname}: requires both a 'success' branch and a non-success branch; "
-                f"found={sorted(names)}"
+                f"found={sorted(statuses)}"
             )
 
     assert not offenders, (

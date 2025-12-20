@@ -139,6 +139,7 @@ actions:
     nl: "Wait for {n} ticks"
     outcomes:
       - name: fail
+        status: fail
         p: 0.0
         when: []
         add: []
@@ -146,6 +147,7 @@ actions:
         messages:
           - "Time passed but nothing changed."
       - name: success
+        status: success
         p: 1.0
         when: []
         add: []
@@ -167,6 +169,7 @@ actions:
     nl: "Move {r} from {from} to {to}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -175,6 +178,7 @@ actions:
         messages:
           - "{r} tried to move from {from} to {to} but got stuck."
       - name: success
+        status: success
         p: 0.95
         when: []
         add: ["(at ?r ?to)"]
@@ -192,6 +196,7 @@ actions:
     nl: "Open {c}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -200,6 +205,7 @@ actions:
         messages:
           - "Failed to open {c}."
       - name: success
+        status: success
         p: 0.95
         when: []
         add: ["(open ?c)"]
@@ -217,6 +223,7 @@ actions:
     nl: "Close {c}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -225,6 +232,7 @@ actions:
         messages:
           - "Failed to close {c}."
       - name: success
+        status: success
         p: 0.95
         when: []
         add: []
@@ -242,6 +250,7 @@ actions:
     nl: "Pick up {o}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.10
         when: []
         add: []
@@ -250,6 +259,7 @@ actions:
         messages:
           - "You fumbled {o}."
       - name: success
+        status: success
         p: 0.90
         when: []
         add: ["(holding ?r ?o)"]
@@ -267,6 +277,7 @@ actions:
     nl: "Put down {o}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.07
         when: []
         add: []
@@ -275,6 +286,7 @@ actions:
         messages:
           - "{o} slipped; still in hand."
       - name: success
+        status: success
         p: 0.93
         when: []
         add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
@@ -292,6 +304,7 @@ actions:
     nl: "Put {o} into {c}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.10
         when: []
         add: []
@@ -300,6 +313,7 @@ actions:
         messages:
           - "Missed the opening on {c}."
       - name: success
+        status: success
         p: 0.90
         when: []
         add: ["(in ?o ?c)", "(clear-hand ?r)"]
@@ -317,6 +331,7 @@ actions:
     nl: "Take {o} out of {c}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.10
         when: []
         add: []
@@ -325,6 +340,7 @@ actions:
         messages:
           - "You couldn’t get a grip on {o} in {c}."
       - name: success
+        status: success
         p: 0.90
         when: []
         add: ["(holding ?r ?o)"]
@@ -342,6 +358,7 @@ actions:
     nl: "Equip {t}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -350,6 +367,7 @@ actions:
         messages:
           - "Failed to equip {t}."
       - name: success
+        status: success
         p: 0.95
         when: []
         add: ["(equipped ?r ?t)", "(clear-hand ?r)"]
@@ -367,6 +385,7 @@ actions:
     nl: "Unequip {t}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -375,6 +394,7 @@ actions:
         messages:
           - "Failed to unequip {t}."
       - name: success
+        status: success
         p: 0.95
         when: []
         add: ["(holding ?r ?t)"]
@@ -392,6 +412,7 @@ actions:
     nl: "Align {p} with {a}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.10
         when: []
         add: []
@@ -400,6 +421,7 @@ actions:
         messages:
           - "Failed to align {p} with {a}."
       - name: success
+        status: success
         p: 0.90
         when: []
         add: ["(aligned ?p ?a)"]
@@ -424,6 +446,7 @@ actions:
         messages: []
     outcomes:
       - name: hard_defect
+        status: fail
         p: 0.10
         when: []
         add: ["(defective ?a)"]
@@ -432,6 +455,7 @@ actions:
         messages:
           - "QC: Hard defect on {a} detected. Disassemble and reassemble."
       - name: soft_defect
+        status: fail
         p: 0.30
         when: []
         add: ["(needs-rework ?a)"]
@@ -440,6 +464,7 @@ actions:
         messages:
           - "QC: Marginal quality on {a}. Rework needed."
       - name: success
+        status: success
         p: 0.60
         when: []
         add: []
@@ -457,6 +482,7 @@ actions:
     nl: "Set torque on {t} to {lvl}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.00
         when: []
         add: []
@@ -465,6 +491,7 @@ actions:
         messages:
           - "Torque dial slipped; setting unchanged."
       - name: success
+        status: success
         p: 1.00
         when: []
         add: []
@@ -482,6 +509,7 @@ actions:
     nl: "Unfasten {p} from {a}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -490,6 +518,7 @@ actions:
         messages:
           - "Could not break {p} loose from {a}."
       - name: success
+        status: success
         p: 0.95
         when: []
         add: ["(holding ?r ?p)"]
@@ -507,6 +536,7 @@ actions:
     nl: "Place {o} on the bench"
     outcomes:
       - name: fail
+        status: fail
         p: 0.00
         when: []
         add: []
@@ -515,6 +545,7 @@ actions:
         messages:
           - "You hesitated; still holding {o}."
       - name: success
+        status: success
         p: 1.00
         when: []
         add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
@@ -532,6 +563,7 @@ actions:
     nl: "Power on {m}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.05
         when: []
         add: []
@@ -540,6 +572,7 @@ actions:
         messages:
           - "Power button on {m} didn’t register."
       - name: success
+        status: success
         p: 0.95
         when: []
         add: ["(powered ?m)"]
@@ -557,6 +590,7 @@ actions:
     nl: "Recharge at {l}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.02
         when: []
         add: []
@@ -565,6 +599,7 @@ actions:
         messages:
           - "Charger at {l} didn’t connect properly."
       - name: success
+        status: success
         p: 0.98
         when: []
         add: []
@@ -582,6 +617,7 @@ actions:
     nl: "QC check for {a}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.00
         when: []
         add: []
@@ -590,6 +626,7 @@ actions:
         messages:
           - "QC device not responding."
       - name: success
+        status: success
         p: 1.00
         when: []
         add: []
@@ -607,6 +644,7 @@ actions:
     nl: "Realign {p} with {a}"
     outcomes:
       - name: fail
+        status: fail
         p: 0.00
         when: []
         add: []
@@ -615,6 +653,7 @@ actions:
         messages:
           - "Adjustment failed; alignment unchanged."
       - name: success
+        status: success
         p: 1.00
         when: []
         add: ["(aligned ?p ?a)"]

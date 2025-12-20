@@ -199,6 +199,14 @@ actions:
         delete: []
         messages:
           - "Waited {n} ticks."
+      - name: fail
+        status: fail
+        p: 0.00
+        when: []
+        add: []
+        delete: []
+        messages:
+          - "Nothing happened."
 
   - name: move
     params: [{r: robot}, {from: location}, {to: location}]

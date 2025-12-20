@@ -126,8 +126,9 @@ def step_one(env, name: str, args: Tuple[str, ...]):
                 rendering.push_msg(env, format_msg(env, m, bind))
 
             info["outcome_branch"] = str(getattr(choice, "name", "chosen"))
-            if hasattr(choice, "status"):
-                info["action_status"] = str(getattr(choice, "status"))
+            status = getattr(choice, "status", None)
+            if status:
+                info["action_status"] = str(status)
 
             if bool(getattr(choice, "terminal", False)):
                 env.done = True
