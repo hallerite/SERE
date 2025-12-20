@@ -6,16 +6,26 @@ gpu_memory_utilization: 0.7
 max_model_len: null
 
 inference:
-  temperature: 0.0
-  max_tokens: 256
+  temperature: 0.7
+  max_tokens: 2000
 
 eval:
-  max_steps: 40
+  max_steps: 10
   timeout_s: null
-  concurrency: 16
+  concurrency: 64
 
 env_defaults:
   enable_stochastic: false
+
+use_action_tags: true
+action_tag: action
+system_prompt_suffix: |
+  First, think about the current state of the world and figure out what you need to do. Then put your final answer into <action> tags,
+  such as <action>(action_name param1 param2 ...)</action>
+
+context:
+  kind: truncated_thinking
+  placeholder: "[TRUNCATED]"
 
 out_dir: eval_outputs
 
@@ -23,29 +33,74 @@ experiments:
   - name: kitchen-t01
     tasks:
       - task: kitchen/t01_one_step_steep.yaml
-        episodes: 5
+        episodes: 100
 
   - name: kitchen-t02
     tasks:
       - task: kitchen/t02_pour_then_steep.yaml
-        episodes: 5
+        episodes: 100
 
   - name: kitchen-t03
     tasks:
       - task: kitchen/t03_close_source_then_pour_steep.yaml
-        episodes: 5
+        episodes: 100
 
   - name: kitchen-t04
     tasks:
       - task: kitchen/t04_close_heat_then_pour_steep.yaml
-        episodes: 5
+        episodes: 100
 
   - name: kitchen-t05
     tasks:
       - task: kitchen/t05_heat_once_then_pour_steep.yaml
-        episodes: 5
+        episodes: 100
+
+  - name: kitchen-t06
+    tasks:
+      - task: kitchen/t06_fetch_teabag_simple_nav.yaml
+        episodes: 100
+
+  - name: kitchen-t07
+    tasks:
+      - task: kitchen/t07_power_on_and_heat_then_tea.yaml
+        episodes: 100
+
+  - name: kitchen-t08
+    tasks:
+      - task: kitchen/t08_more_nav_scatter_objects.yaml
+        episodes: 100
+
+  - name: kitchen-t09
+    tasks:
+      - task: kitchen/t09_energy_gate_recharge_once.yaml
+        episodes: 100
+
+  - name: kitchen-t10
+    tasks:
+      - task: kitchen/t10_full_constraints_time_energy_power.yaml
+        episodes: 100
 
   - name: assembly-t01
     tasks:
       - task: assembly/t01_simple_fasten.yaml
-        episodes: 5
+        episodes: 100
+
+  - name: assembly-t02
+    tasks:
+      - task: assembly/t02_pick_equip_fasten.yaml
+        episodes: 100
+
+  - name: assembly-t03
+    tasks:
+      - task: assembly/t03_get_tool_from_bin_align_and_fasten.yaml
+        episodes: 100
+
+  - name: assembly-t04
+    tasks:
+      - task: assembly/t04_multilocation_recharge_then_fasten.yaml
+        episodes: 100
+
+  - name: assembly-t05
+    tasks:
+      - task: assembly/t05_replace_installed_part.yaml
+        episodes: 100

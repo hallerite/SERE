@@ -462,6 +462,8 @@ class PromptFormatter:
         # Only include the footer when explicitly enabled
         footer_block = tail if self.cfg.show_footer else ""
 
+        prompt_line = "What will be your next move?"
+
         return "\n\n".join(
             p for p in [
                 header,
@@ -471,6 +473,7 @@ class PromptFormatter:
                 fl_txt,
                 aff_txt,
                 footer_block,
+                prompt_line,
             ] if p
         ).strip()
 

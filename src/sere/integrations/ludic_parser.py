@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from ludic.parsers import ParseResult, Parser
+from ludic.parsers import ParseResult, Parser, xml_tag_parser, compose_parsers
 
 from sere.core.pddl_env import planning
 
@@ -48,3 +48,29 @@ def pddl_action_parser(
         )
 
     return _parser
+
+
+def pddl_action_tag_parser(
+    *,
+    tag: str = "action",
+    success_reward: float = 0.0,
+    error_reward: float = -1.0,
+) -> Parser:
+    """
+    Parse a PDDL action wrapped in an XML-like tag.
+
+    Example input: "<action>(move r1 kitchen pantry)</action>"
+    """
+    tag_parser = xml_tag_parser(
+        tag,
+        exact=False,
+        success_reward=0.0,
+        error_reward=error_reward,
+    )
+
+    pddl_parser = pddl_action_parser(
+        success_reward=success_reward,
+        error_reward=error_reward,
+    )
+    
+    return compose_parsers(tag_parser, pddl_parser)

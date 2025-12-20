@@ -27,6 +27,7 @@ class SereLudicEnv(LudicEnv[str, str, str]):
         *,
         agent_ids: Optional[List[str]] = None,
         force_interactive: bool = True,
+        system_prompt_suffix: Optional[str] = None,
     ) -> None:
         self._env = env
         if force_interactive and env.run_mode != RunMode.INTERACTIVE:
@@ -40,6 +41,9 @@ class SereLudicEnv(LudicEnv[str, str, str]):
 
         self._last_obs = ""
         self._suggested_sysprompt: Optional[str] = None
+        self._system_prompt_suffix = (
+            system_prompt_suffix.strip() if system_prompt_suffix else None
+        )
 
     @property
     def env(self) -> PDDLEnv:
@@ -62,7 +66,7 @@ class SereLudicEnv(LudicEnv[str, str, str]):
     def reset(self, *, seed: Optional[int] = None) -> Dict[str, Tuple[str, Info]]:
         obs, info = self._env.reset(seed=seed)
         self._last_obs = obs
-        self._suggested_sysprompt = info.get("system_prompt")
+        self._suggested_sysprompt = self._apply_prompt_suffix(info.get("system_prompt"))
         return {agent_id: (obs, dict(info)) for agent_id in self._agent_ids}
 
     def step(self, actions: Dict[str, str]) -> Dict[str, StepOutcome]:
@@ -162,6 +166,14 @@ class SereLudicEnv(LudicEnv[str, str, str]):
                 robots.append(sym)
         return sorted(robots)
 
+    def _apply_prompt_suffix(self, base_prompt: Optional[str]) -> Optional[str]:
+        suffix = self._system_prompt_suffix
+        if not suffix:
+            return base_prompt
+        if base_prompt:
+            return f"{base_prompt}\n\n{suffix}"
+        return suffix
+
 
 def make_ludic_env(
     domain_path: Optional[str],
@@ -170,6 +182,7 @@ def make_ludic_env(
     plugins=None,
     agent_ids: Optional[List[str]] = None,
     force_interactive: bool = True,
+    system_prompt_suffix: Optional[str] = None,
     **env_kwargs,
 ) -> Tuple[SereLudicEnv, dict]:
     env, meta = load_task(domain_path, task_path, plugins=plugins, **env_kwargs)
@@ -177,4 +190,5 @@ def make_ludic_env(
         env,
         agent_ids=agent_ids,
         force_interactive=force_interactive,
+        system_prompt_suffix=system_prompt_suffix,
     ), meta
