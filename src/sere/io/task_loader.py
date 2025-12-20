@@ -73,8 +73,6 @@ def _load_domain_yaml(dom_path: str) -> Dict[str, Any]:
 #  Env config / meta merge
 # =========================
 
-_SEED_UNSET = object()
-
 
 @dataclass
 class EnvConfig:
@@ -92,7 +90,7 @@ class EnvConfig:
     reward_shaping: Optional[dict] = None
 
     @classmethod
-    def from_meta(cls, meta: Dict[str, Any], *, seed_override: object = _SEED_UNSET) -> "EnvConfig":
+    def from_meta(cls, meta: Dict[str, Any]) -> "EnvConfig":
         cfg = cls(
             max_steps=int(meta.get("max_steps", 40)),
             step_penalty=float(meta.get("step_penalty", -0.01)),
@@ -106,8 +104,6 @@ class EnvConfig:
             seed=meta.get("seed", None),
             max_messages=int(meta.get("max_messages", 8)),
         )
-        if seed_override is not _SEED_UNSET:
-            cfg.seed = seed_override  # allow None to explicitly clear meta seed
 
         rs_cfg = meta.get("reward_shaping") or {}
         if rs_cfg:
@@ -131,6 +127,8 @@ class EnvConfig:
         extras: Dict[str, Any] = {}
         for k, v in (overrides or {}).items():
             if hasattr(self, k):
+                if k == "seed":
+                    raise ValueError("Seed is resolved separately; do not override it here.")
                 setattr(self, k, v)
             else:
                 extras[k] = v
@@ -141,12 +139,6 @@ class EnvConfig:
         if data.get("reward_shaping") is None:
             data.pop("reward_shaping", None)
         return data
-
-
-def _resolve_seed(meta: Dict[str, Any], overrides: Dict[str, Any]) -> Optional[int]:
-    if overrides and "seed" in overrides:
-        return overrides.get("seed")
-    return meta.get("seed", None)
 
 
 @dataclass
@@ -679,7 +671,12 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
 
     # ---- Domain hint BEFORE rename is fine
     meta = y.get("meta", {}) or {}
-    resolved_seed = _resolve_seed(meta, env_kwargs or {})
+    overrides = dict(env_kwargs or {})
+    seed_override = overrides.pop("seed", None)
+    meta_seed = meta.get("seed", None)
+    if seed_override is not None and meta_seed is not None:
+        raise ValueError("Seed specified in both task meta and load_task; choose one source.")
+    resolved_seed = seed_override if seed_override is not None else meta_seed
     domain_hint = (meta.get("domain") or "").strip().lower() or None
     dom_path = _resolve_domain_path(domain_hint, task_path, domain_path)
     dom_yaml = _load_domain_yaml(dom_path)
@@ -740,8 +737,10 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
             )
 
     # --- Env config (merge meta + overrides once)
-    cfg = EnvConfig.from_meta(meta, seed_override=resolved_seed)
-    extras = cfg.apply_overrides(env_kwargs or {})
+    cfg = EnvConfig.from_meta(meta)
+    if resolved_seed is not None:
+        cfg.seed = resolved_seed
+    extras = cfg.apply_overrides(overrides)
     env_cfg = cfg.to_env_kwargs()
     env_cfg.update(extras)
 
