@@ -18,13 +18,14 @@ def make_env():
         predicates=None,
         fluents=None,
         static_facts=None,
+        types=None,
         *,
         formatter_config=None,
         **kwargs
     ):
         domain = DomainSpec(
             name="dummy",
-            types={},
+            types=types or {},
             predicates=predicates or {},
             actions=actions or {},
             fluents=fluents or {},
@@ -132,7 +133,13 @@ def test_stochastic_outcomes_respect_rng(make_env):
 def test_conditional_effects(make_env):
     a = ActionSpec(name="move", params=[("r", "robot"), ("l", "loc")], pre=[], add=[], delete=[], nl=["move"], cond=[])
     a.cond = [ConditionalBlock(when=["(at r1 kitchen)"], add=["(happy)"], delete=[], num_eff=[], messages=[])]
-    env = make_env(actions={"move": a}, enable_conditional=True)
+    env = make_env(
+        actions={"move": a},
+        types={"robot": "", "loc": ""},
+        enable_conditional=True,
+    )
+    env.world.objects["r1"] = {"robot"}
+    env.world.objects["kitchen"] = {"loc"}
     env.world.facts.add(("at", ("r1", "kitchen")))
     env.reset()
 

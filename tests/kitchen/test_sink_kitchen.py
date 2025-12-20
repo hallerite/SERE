@@ -21,7 +21,7 @@ objects:
   sink1: { types: [container] }
   kettle1: { types: [container, appliance] }
   mug1: { types: [container] }
-  teabag1: object
+  teabag1: movable
 
 static_facts:
   - (adjacent kitchen pantry)

@@ -16,6 +16,11 @@ def step_one(env, name: str, args: Tuple[str, ...]):
     expected, got = len(act.params), len(args)
     if got != expected:
         return env._illegal(f"Arity mismatch for action '{name}': expected {expected}, got {got}", info)
+
+    type_err = _check_arg_types(env, act, args)
+    if type_err:
+        return env._illegal(type_err, info)
+
     bind = {var: val for (var, _), val in zip(act.params, args)}
 
     if getattr(act, "duration_var", None):
@@ -244,6 +249,40 @@ def format_msg(env, template: str, bind: Dict[str, str]) -> str:
         except Exception:
             pass
     return s
+
+def _is_number_token(tok: str) -> bool:
+    try:
+        float(tok)
+        return True
+    except Exception:
+        return False
+
+def _candidates_of_type(env, typ: str) -> List[str]:
+    return sorted(
+        sym for sym, tys in env.world.objects.items()
+        if tys and any(env.domain.is_subtype(t, typ) for t in tys)
+    )
+
+def _check_arg_types(env, act: ActionSpec, args: Tuple[str, ...]) -> Optional[str]:
+    for (var, typ), arg in zip(act.params, args):
+        ptyp = str(typ).lower()
+        if ptyp == "number":
+            if _is_number_token(arg):
+                continue
+            return f"Bad argument for '{act.name}': {var} expects a number, got '{arg}'."
+        if ptyp not in env.domain.types:
+            return f"Bad parameter type for '{act.name}': {var} has unknown type '{ptyp}'."
+        obj_types = env.world.objects.get(arg)
+        if not obj_types:
+            return f"Unknown object '{arg}' for '{act.name}' parameter '{var}'."
+        if not any(env.domain.is_subtype(t, ptyp) for t in obj_types):
+            choices = _candidates_of_type(env, ptyp)
+            hint = f" Candidates: {choices}." if choices else ""
+            return (
+                f"Type mismatch for '{act.name}': {var} expects {ptyp}, "
+                f"got '{arg}' with types {sorted(obj_types)}.{hint}"
+            )
+    return None
 
 def _is_unbound(x: Any) -> bool:
     return isinstance(x, str) and x.startswith("?")

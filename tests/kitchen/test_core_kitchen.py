@@ -22,7 +22,7 @@ objects:
     types: [container]
   sink1:
     types: [container]
-  teabag1: object
+  teabag1: movable
 
 
 static_facts:
@@ -1080,7 +1080,7 @@ objects:
   t:      {types: [location], variants: [table]}
   kettle: {types: [appliance, container], variants: [kettle1]}
   cup:    {types: [container], variants: [mug1]}
-  tb:     {types: [object],   variants: [teabag1]}
+  tb:     {types: [movable],   variants: [teabag1]}
   s:      {types: [container], variants: [sink1]}
 static_facts:
   - (adjacent h k)
