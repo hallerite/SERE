@@ -18,6 +18,9 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
 ]
+ludic = [
+    "ludic @ git+https://github.com/hallerite/ludic",
+]
 
 [project.scripts]
 sere-run = "sere.cli.run_task:main"
@@ -32,6 +35,14 @@ include = [
   "LICENSE",
 ]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.pytest.ini_options]
 pythonpath = "."
 testpaths = ["tests"]
+
+[dependency-groups]
+ludic = [
+    "ludic @ git+https://github.com/hallerite/ludic",
+]

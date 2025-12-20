@@ -1,0 +1,51 @@
+model: Qwen/Qwen2.5-7B-Instruct
+host: 127.0.0.1
+port: 8000
+start_server: false
+gpu_memory_utilization: 0.7
+max_model_len: null
+
+inference:
+  temperature: 0.0
+  max_tokens: 256
+
+eval:
+  max_steps: 40
+  timeout_s: null
+  concurrency: 16
+
+env_defaults:
+  enable_stochastic: false
+
+out_dir: eval_outputs
+
+experiments:
+  - name: kitchen-t01
+    tasks:
+      - task: kitchen/t01_one_step_steep.yaml
+        episodes: 5
+
+  - name: kitchen-t02
+    tasks:
+      - task: kitchen/t02_pour_then_steep.yaml
+        episodes: 5
+
+  - name: kitchen-t03
+    tasks:
+      - task: kitchen/t03_close_source_then_pour_steep.yaml
+        episodes: 5
+
+  - name: kitchen-t04
+    tasks:
+      - task: kitchen/t04_close_heat_then_pour_steep.yaml
+        episodes: 5
+
+  - name: kitchen-t05
+    tasks:
+      - task: kitchen/t05_heat_once_then_pour_steep.yaml
+        episodes: 5
+
+  - name: assembly-t01
+    tasks:
+      - task: assembly/t01_simple_fasten.yaml
+        episodes: 5

@@ -96,6 +96,38 @@ The environment will parse and apply the action, update time/energy, and return 
 
 ---
 
+## 🤖 Ludic integration (multi-agent)
+
+SERE includes a Ludic wrapper that exposes each robot as a separate Ludic agent.
+Agent IDs are the sorted robot symbols (e.g. `r1`, `r2`). Actions are **raw PDDL
+S-expressions** with exactly one action per agent per step. Use `(idle r)` for no-op.
+
+Make sure `ludic` is importable (e.g. `export PYTHONPATH="$PWD/ludic/src"` when
+using this monorepo).
+
+```python
+from sere.core.pddl_env.run_mode import RunMode
+from sere.integrations.ludic_env import SereLudicEnv
+from sere.integrations.ludic_parser import pddl_action_parser
+from sere.io.task_loader import load_task
+
+env, meta = load_task(
+    None,
+    "kitchen/t11_multi_agent_parallel_brew.yaml",
+    run_mode=RunMode.INTERACTIVE,
+)
+ludic_env = SereLudicEnv(env)
+
+parser = pddl_action_parser()
+# agent_map = {aid: Agent(..., parser=parser, ...) for aid in ludic_env.agent_ids}
+# protocol = MultiAgentProtocol(agent_map)
+```
+
+If any active agent is missing an action for a step, the wrapper returns an
+`invalid_move` outcome and the episode may terminate (same semantics as SERE).
+
+---
+
 ## 🛠 Authoring Domains & Tasks
 
 - **Domains** (`assets/domain/*.yaml`) define:
