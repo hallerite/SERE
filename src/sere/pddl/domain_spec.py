@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Dict, Any
+from pathlib import Path
 import yaml
 
 Predicate = Tuple[str, Tuple[str, ...]]
@@ -72,8 +73,13 @@ class DomainSpec:
     fluents: Dict[str, FluentSpec]
 
     @staticmethod
-    def from_yaml(path: str) -> "DomainSpec":
-        y = yaml.safe_load(open(path, "r"))
+    def from_yaml(path: str | Path) -> "DomainSpec":
+        with open(path, "r", encoding="utf-8") as f:
+            y = yaml.safe_load(f)
+        return DomainSpec.from_dict(y)
+
+    @staticmethod
+    def from_dict(y: Dict[str, Any]) -> "DomainSpec":
 
         # types
         types: Dict[str, str] = {}

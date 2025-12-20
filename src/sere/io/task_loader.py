@@ -12,7 +12,7 @@ import copy
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Tuple, Set, Optional, Dict, Any, List
-from importlib.resources import files as pkg_files, as_file
+from importlib.resources import files as pkg_files
 
 from sere.pddl.domain_spec import DomainSpec
 from sere.pddl.sexpr import parse_one, to_string, SExprError
@@ -48,15 +48,14 @@ def _load_yaml_from_task(task_path: str) -> Dict[str, Any]:
     )
 
 
-def _resolve_domain_file(dom_path: str) -> Path:
+def _load_domain_yaml(dom_path: str) -> Dict[str, Any]:
     """
-    Return a real filesystem Path to the domain YAML, resolving against packaged
-    sere.assets.domain if not present on disk. Uses as_file() so DomainSpec.from_yaml
-    can consume a path string.
+    Load a domain YAML from filesystem or from the packaged 'sere.assets.domain'.
     """
     p = Path(dom_path)
     if p.exists():
-        return p
+        with open(p, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
     # allow 'domain/...' or 'domains/...'
     rel = Path(dom_path)
     if rel.parts and rel.parts[0] in {"domain", "domains"}:
@@ -66,8 +65,8 @@ def _resolve_domain_file(dom_path: str) -> Path:
         raise FileNotFoundError(
             f"Domain file not found: {dom_path} (looked on disk and under sere.assets.domain/{rel})"
         )
-    with as_file(cand) as real_path:
-        return Path(real_path)
+    with cand.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 
 # =========================
@@ -683,12 +682,13 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
     resolved_seed = _resolve_seed(meta, env_kwargs or {})
     domain_hint = (meta.get("domain") or "").strip().lower() or None
     dom_path = _resolve_domain_path(domain_hint, task_path, domain_path)
-    dom_file = _resolve_domain_file(dom_path)
-    dom = DomainSpec.from_yaml(str(dom_file))
+    dom_yaml = _load_domain_yaml(dom_path)
+    dom = DomainSpec.from_dict(dom_yaml)
 
     # ---- Plugins
     if plugins is None:
-        dn = domain_hint or _infer_domain_from_path(task_path) or dom_file.stem
+        dom_stem = Path(dom_path).stem
+        dn = domain_hint or _infer_domain_from_path(task_path) or dom_stem
         plugins = _load_invariants_plugin(dn)
 
     # ---- RNG
@@ -745,7 +745,7 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
     env_cfg = cfg.to_env_kwargs()
     env_cfg.update(extras)
 
-    domain_name = domain_hint or dom_file.stem
+    domain_name = domain_hint or Path(dom_path).stem
     spec = TaskSpec(
         id=y["id"],
         name=y.get("name", y["id"]),
