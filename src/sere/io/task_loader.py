@@ -629,7 +629,7 @@ def _load_invariants_plugin(domain_name: str) -> List[Any]:
 
 # Symbols we treat as non-object heads/ops across expressions
 _BUILTIN_HEADS = {
-    "and", "or", "not", "<", ">", "<=", ">=", "=",
+    "and", "or", "not", "distinct", "<", ">", "<=", ">=", "=",
 }
 
 
