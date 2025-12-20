@@ -1,0 +1,54 @@
+id: t06_multi_agent_parallel_fasten
+name: Multi-agent parallel fasten
+description: |
+  One robot aligns the part while the other retrieves the tool and fastens.
+
+meta:
+  domain: assembly
+  multi_agent: true
+  enable_numeric: true
+  enable_conditional: true
+  enable_stochastic: false
+  max_steps: 6
+  init_fluents:
+    - ["battery-cap", ["r1"], 8]
+    - ["battery-cap", ["r2"], 8]
+    - ["energy", ["r1"], 8]
+    - ["energy", ["r2"], 8]
+
+objects:
+  r1: robot
+  r2: robot
+  bench: location
+  cell: location
+  part: part
+  asm: assembly
+  tool: tool
+
+static_facts:
+  - (adjacent bench cell)
+  - (adjacent cell bench)
+  - (tool-for tool asm)
+
+init:
+  - (at r1 cell)
+  - (at r2 bench)
+  - (obj-at part cell)
+  - (obj-at asm cell)
+  - (obj-at tool bench)
+  - (clear-hand r1)
+  - (clear-hand r2)
+
+termination:
+  - name: goal
+    all:
+      - "(installed part asm)"
+      - "(fastened part asm)"
+    outcome: success
+    reward: 1.0
+
+reference_plan:
+  - (align r1 part asm)(pick-up r2 tool)
+  - (idle r1)(move r2 bench cell)
+  - (idle r1)(equip-tool r2 tool)
+  - (idle r1)(fasten r2 part asm tool)

@@ -2,7 +2,7 @@ import pytest
 from importlib.resources import files as pkg_files
 
 from sere.io.task_loader import load_task
-from sere.core.pddl_env.planning import execute_plan, parse_actions
+from sere.core.pddl_env.planning import execute_plan, execute_joint, parse_actions
 
 
 def _iter_task_ids():
@@ -46,13 +46,16 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
 
     plan_str = "".join(plan)  # "(op ...)(op ...)"
     plan_seq = parse_actions(plan_str)
-    obs, total_reward, done, info = execute_plan(env, plan_seq, atomic=True)
+    if env.multi_agent:
+        obs, total_reward, done, info = execute_joint(env, plan_seq)
+    else:
+        obs, total_reward, done, info = execute_plan(env, plan_seq, atomic=True)
 
     assert done, f"{task_id}: plan did not terminate"
     assert info.get("outcome") == "success", f"{task_id}: plan outcome = {info.get('outcome')}"
 
     # Baseline: step penalties + termination reward
-    n_steps = len(plan_seq)
+    n_steps = int(info.get("steps_executed", len(plan_seq)))
     term_rules = [r for r in env.termination_rules if str(r.get("outcome", "")).lower() == "success"]
     assert len(term_rules) == 1
     success_reward = float(term_rules[0].get("reward", 0.0))
@@ -61,7 +64,10 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
     # Non-atomic recompute of shaping on a fresh env with the same plan
     env2, _ = load_task(None, task_id, enable_stochastic=False, seed=0)
     env2.reset()
-    _, _, _, info2 = execute_plan(env2, plan_seq, atomic=False)
+    if env2.multi_agent:
+        _, _, _, info2 = execute_joint(env2, plan_seq)
+    else:
+        _, _, _, info2 = execute_plan(env2, plan_seq, atomic=False)
     observed_shaping = float(info2.get("shaping_bonus_total", 0.0))
 
     expected_total = expected_baseline + observed_shaping
@@ -118,7 +124,11 @@ def test_energy_is_clamped_after_first_step_if_above_cap(task_id: str):
         pytest.skip("No battery-cap")
     cap = env.world.get_fluent("battery-cap", (r,))
     env.world.set_fluent("energy", (r,), cap + 10.0)
-    obs, rwd, done, info = env.step("(wait 1)")
+    if env.multi_agent:
+        joint = "".join(f"(idle {sym})" for sym in robots)
+        env.step(joint)
+    else:
+        env.step("(wait 1)")
     assert env.world.get_fluent("energy", (r,)) <= cap + 1e-9
 
 
@@ -143,7 +153,14 @@ def test_recharge_does_not_exceed_cap_when_possible(task_id: str):
         pytest.skip("No charger at robot's location")
     start_e = max(0.0, cap - 0.5)
     env.world.set_fluent("energy", (r,), start_e)
-    env.step(f"(recharge {r} {l})")
+    if env.multi_agent:
+        joint = "".join(
+            f"(recharge {r} {l})" if sym == r else f"(idle {sym})"
+            for sym in robots
+        )
+        env.step(joint)
+    else:
+        env.step(f"(recharge {r} {l})")
     e_after = env.world.get_fluent("energy", (r,))
     assert e_after <= cap + 1e-9, f"Recharge overflowed cap: after={e_after}, cap={cap}"
     assert e_after >= start_e, "Recharge should not reduce energy"

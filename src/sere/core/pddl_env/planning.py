@@ -1,5 +1,5 @@
 from typing import List, Tuple
-from .engine import step_one
+from .engine import step_one, step_joint
 from sere.core.pddl_env.run_mode import RunMode
 from sere.pddl.sexpr import parse_many, SExprError
 
@@ -135,4 +135,62 @@ def execute_plan(env, plan, *, atomic: bool = False):
     _dbg(env, f"[PLAN-END] atomic={atomic} steps={steps_executed} "
               f"total_r={total_reward:.2f} total_shape={total_shaping:.2f} "
               f"final_outcome={final_info.get('outcome')}")
+    return final_obs, total_reward, terminal, final_info
+
+
+def execute_joint(env, plan):
+    """
+    Execute a joint-action plan with simultaneous semantics.
+    Groups actions into steps of one action per robot.
+    """
+    robots = env._robots()
+    if not robots:
+        return env._illegal("Joint mode requires at least one robot.", {})
+    n = len(robots)
+    if len(plan) % n != 0:
+        return env._illegal(
+            f"Joint mode expects {n} actions per step (one per robot). "
+            f"Got {len(plan)} actions total.",
+            {},
+        )
+
+    plan_trace = []
+    total_reward = 0.0
+    total_shaping = 0.0
+    steps_executed = 0
+    final_obs, final_info, terminal = "", {}, False
+
+    for i in range(0, len(plan), n):
+        group = plan[i:i + n]
+        obs, rew, done, info = step_joint(env, group)
+
+        plan_trace.append({
+            "i": steps_executed + 1,
+            "actions": [{"action": a, "args": list(args)} for a, args in group],
+            "outcome": info.get("outcome"),
+            "error": info.get("error"),
+            "messages": info.get("messages", []),
+        })
+
+        total_reward += float(rew)
+        step_shape = float(info.get("shaping_bonus", 0.0))
+        total_shaping += step_shape
+        steps_executed += 1
+
+        final_obs, final_info, terminal = obs, info, bool(done)
+
+        if info.get("invalid_move") or done:
+            break
+
+    if env.run_mode == RunMode.OPEN_LOOP and not (terminal or env.done):
+        env.done = True
+        final_info = dict(final_info)
+        final_info["outcome"] = "failed"
+        final_info["reason"] = "open_loop_end"
+        terminal = True
+
+    final_info = dict(final_info)
+    final_info["plan_trace"] = plan_trace
+    final_info["steps_executed"] = steps_executed
+    final_info["shaping_bonus_total"] = total_shaping
     return final_obs, total_reward, terminal, final_info

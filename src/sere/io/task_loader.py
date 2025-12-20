@@ -88,6 +88,7 @@ class EnvConfig:
     seed: Optional[int] = None
     max_messages: int = 8
     reward_shaping: Optional[dict] = None
+    multi_agent: bool = False
 
     @classmethod
     def from_meta(cls, meta: Dict[str, Any]) -> "EnvConfig":
@@ -103,6 +104,7 @@ class EnvConfig:
             default_duration=float(meta.get("default_duration", 1.0)),
             seed=meta.get("seed", None),
             max_messages=int(meta.get("max_messages", 8)),
+            multi_agent=bool(meta.get("multi_agent", False)),
         )
 
         rs_cfg = meta.get("reward_shaping") or {}
@@ -169,6 +171,7 @@ class TaskSpec:
                 "conditional": env.enable_conditional,
                 "durations": env.enable_durations,
                 "stochastic": env.enable_stochastic,
+                "multi_agent": env.multi_agent,
             },
             "limits": {"max_steps": env.max_steps, "time_limit": env.time_limit},
             "reference_plan": self.reference_plan,

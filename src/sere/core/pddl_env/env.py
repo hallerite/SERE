@@ -35,7 +35,8 @@ class PDDLEnv:
         time_limit: Optional[float] = None,
         default_duration: float = 1.0,
         seed: Optional[int] = None,
-        reward_shaping: Optional[dict] = None):
+        reward_shaping: Optional[dict] = None,
+        multi_agent: bool = False):
 
         self.debug = False # must be explicitly overriden
 
@@ -62,6 +63,7 @@ class PDDLEnv:
             if cfg.nl_rng_seed is None and seed is not None:
                 cfg.nl_rng_seed = int(seed)
 
+            cfg.multi_agent = bool(multi_agent)
             self.formatter = PromptFormatter(self.domain, cfg)
 
         self._system_prompt_cache = ""
@@ -88,6 +90,7 @@ class PDDLEnv:
         self.enable_conditional = enable_conditional
         self.enable_durations = enable_durations
         self.enable_stochastic = enable_stochastic
+        self.multi_agent = bool(multi_agent)
 
         self.illegal_move_retries = max(0, int(illegal_move_retries))
         self.invalid_retry_penalty = float(invalid_retry_penalty)
@@ -176,11 +179,22 @@ class PDDLEnv:
         except Exception as e:
             return self._illegal(f"{e}", {})
 
-        # Mode guard: INTERACTIVE must be exactly one action
-        if self.run_mode == RunMode.INTERACTIVE and len(plan) != 1:
-            return self._illegal(f"Interactive mode expects exactly one action; got {len(plan)}.", {})
+        # Mode guard: INTERACTIVE must be exactly one action (or one per robot in multi-agent)
+        if self.run_mode == RunMode.INTERACTIVE:
+            if self.multi_agent:
+                n = len(self._robots())
+                if len(plan) != n:
+                    return self._illegal(
+                        f"Interactive multi-agent expects {n} actions (one per robot); got {len(plan)}.",
+                        {},
+                    )
+            elif len(plan) != 1:
+                return self._illegal(f"Interactive mode expects exactly one action; got {len(plan)}.", {})
 
-        obs, rew, done, info = planning.execute_plan(self, plan, atomic=False)
+        if self.multi_agent:
+            obs, rew, done, info = planning.execute_joint(self, plan)
+        else:
+            obs, rew, done, info = planning.execute_plan(self, plan, atomic=False)
 
         # Normalize/annotate info
         info = dict(info)

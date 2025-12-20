@@ -2,6 +2,7 @@
 import pytest
 from sere.core.pddl_env.env import PDDLEnv
 from sere.core.world_state import WorldState
+from sere.core.pddl_env.run_mode import RunMode
 from sere.pddl.domain_spec import (
     DomainSpec,
     ActionSpec,
@@ -158,6 +159,61 @@ def test_static_predicates_cannot_change(make_env):
     obs, r, done, info = env.step("(bad)")
     assert info.get("outcome") == "invalid_move"
     assert "static" in info.get("error", "").lower()
+
+
+def test_joint_actions_simultaneous_swap(make_env):
+    at = PredicateSpec(name="at", args=[("r", "robot"), ("l", "loc")], nl=["{r} at {l}"])
+    move = ActionSpec(
+        name="move",
+        params=[("r", "robot"), ("from", "loc"), ("to", "loc")],
+        pre=["(at ?r ?from)"],
+        add=["(at ?r ?to)"],
+        delete=["(at ?r ?from)"],
+        nl=["move"],
+    )
+    env = make_env(
+        actions={"move": move},
+        predicates={"at": at},
+        types={"robot": "", "loc": ""},
+        run_mode=RunMode.INTERACTIVE,
+        multi_agent=True,
+    )
+    env.world.objects["r1"] = {"robot"}
+    env.world.objects["r2"] = {"robot"}
+    env.world.objects["A"] = {"loc"}
+    env.world.objects["B"] = {"loc"}
+    env.world.facts |= {("at", ("r1", "A")), ("at", ("r2", "B"))}
+    env.reset()
+
+    obs, r, done, info = env.step("(move r1 A B)(move r2 B A)")
+    assert info.get("outcome") != "invalid_move"
+    assert ("at", ("r1", "B")) in env.world.facts
+    assert ("at", ("r2", "A")) in env.world.facts
+
+
+def test_joint_actions_require_each_robot(make_env):
+    move = ActionSpec(
+        name="move",
+        params=[("r", "robot"), ("to", "loc")],
+        pre=[],
+        add=[],
+        delete=[],
+        nl=["move"],
+    )
+    env = make_env(
+        actions={"move": move},
+        types={"robot": "", "loc": ""},
+        run_mode=RunMode.INTERACTIVE,
+        multi_agent=True,
+    )
+    env.world.objects["r1"] = {"robot"}
+    env.world.objects["r2"] = {"robot"}
+    env.world.objects["A"] = {"loc"}
+    env.reset()
+
+    obs, r, done, info = env.step("(move r1 A)")
+    assert info.get("outcome") == "invalid_move"
+    assert "expects 2 actions" in info.get("error", "").lower()
 
 
 def test_renderer_messages_ephemeral(make_env):

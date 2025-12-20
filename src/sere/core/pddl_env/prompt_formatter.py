@@ -31,6 +31,7 @@ class PromptFormatterConfig:
     show_briefing: bool = True
     show_objects_in_sysprompt: bool = True
     observer_robot: Optional[str] = None
+    multi_agent: bool = False
 
     # Goal / fluents / messages
     show_goal: bool = True
@@ -300,6 +301,11 @@ class PromptFormatter:
         )
 
         parts.append(f"You are in {mode.value.replace('_','-').upper()} mode.")
+        if self.cfg.multi_agent:
+            expl.append(
+                "Multi-agent mode: submit one action per robot each step. "
+                "Use (idle r) if a robot should do nothing."
+            )
 
         match mode:
             case RunMode.OPEN_LOOP:
@@ -321,6 +327,11 @@ class PromptFormatter:
                     "(action arg1 arg2 ...)."
                 )
                 reply_hint = "Reply with exactly one action: (action arg1 arg2 ...), e.g. (move r1 A B)."
+            case _:
+                raise NotImplementedError(f"Unhandled run mode: {mode}")
+
+        if self.cfg.multi_agent:
+            reply_hint += " One action per robot; use (idle r) for no-op."
 
         parts.append(" ".join(expl))
 
@@ -442,6 +453,11 @@ class PromptFormatter:
                 tail = "You may submit multiple actions: (a1 ...)(a2 ...)...."
             case RunMode.INTERACTIVE:
                 tail = "Reply with (action args)."
+            case _:
+                raise NotImplementedError(f"Unhandled run mode: {mode}")
+
+        if self.cfg.multi_agent:
+            tail = tail.rstrip(".") + " One action per robot; use (idle r) for no-op."
 
         # Only include the footer when explicitly enabled
         footer_block = tail if self.cfg.show_footer else ""
@@ -564,6 +580,11 @@ class PromptFormatter:
                 else:
                     afford.append(f"({act.name})")
 
+        if self.cfg.multi_agent:
+            for sym, types in sorted(scoped_world.objects.items()):
+                if any(t.lower() == "robot" for t in (types or [])):
+                    afford.append(f"(idle {sym})")
+
         return afford
 
 
@@ -579,6 +600,8 @@ class PromptFormatter:
             energy = self._energy_hint(a)
             dur = self._duration_hint(a)
             rows.append(f"- {sig} — {catalog_nl}  [{energy}; {dur}]")
+        if self.cfg.multi_agent:
+            rows.append("- idle(r:robot) — do nothing  [0; 0]")
         return "\n".join(rows)
 
 

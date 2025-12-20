@@ -1,0 +1,54 @@
+id: t12_multi_agent_set_table
+name: Multi-agent set the table
+description: |
+  Two robots bring items to the table in parallel.
+
+meta:
+  domain: kitchen
+  multi_agent: true
+  enable_numeric: true
+  enable_stochastic: false
+  max_steps: 6
+  init_fluents:
+    - ["battery-cap", ["r1"], 8]
+    - ["battery-cap", ["r2"], 8]
+    - ["energy", ["r1"], 8]
+    - ["energy", ["r2"], 8]
+
+objects:
+  r1: robot
+  r2: robot
+  kitchen: location
+  pantry: location
+  table: location
+  cup: movable
+  plate: movable
+
+static_facts:
+  - (adjacent kitchen pantry)
+  - (adjacent pantry kitchen)
+  - (adjacent kitchen table)
+  - (adjacent table kitchen)
+
+init:
+  - (at r1 kitchen)
+  - (at r2 kitchen)
+  - (obj-at cup pantry)
+  - (obj-at plate kitchen)
+  - (clear-hand r1)
+  - (clear-hand r2)
+
+termination:
+  - name: goal
+    all:
+      - "(obj-at cup table)"
+      - "(obj-at plate table)"
+    outcome: success
+    reward: 1.0
+
+reference_plan:
+  - (move r1 kitchen pantry)(pick-up r2 plate)
+  - (pick-up r1 cup)(move r2 kitchen table)
+  - (move r1 pantry kitchen)(put-down r2 plate)
+  - (move r1 kitchen table)(idle r2)
+  - (put-down r1 cup)(idle r2)

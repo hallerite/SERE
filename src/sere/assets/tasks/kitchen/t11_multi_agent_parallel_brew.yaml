@@ -1,0 +1,68 @@
+id: t11_multi_agent_parallel_brew
+name: Multi-agent parallel brew
+description: |
+  Two robots split the work: one prepares the kettle, the other handles the teabag.
+
+meta:
+  domain: kitchen
+  multi_agent: true
+  enable_numeric: true
+  enable_conditional: true
+  enable_stochastic: false
+  max_steps: 10
+  init_fluents:
+    - ["battery-cap", ["r1"], 10]
+    - ["battery-cap", ["r2"], 10]
+    - ["energy", ["r1"], 10]
+    - ["energy", ["r2"], 10]
+
+objects:
+  r1: robot
+  r2: robot
+  kitchen: location
+  pantry: location
+  table: location
+  kettle: {types: [container, appliance]}
+  cup: {types: [container]}
+  sink: {types: [container]}
+  leaf: movable
+
+static_facts:
+  - (adjacent kitchen pantry)
+  - (adjacent pantry kitchen)
+  - (adjacent kitchen table)
+  - (adjacent table kitchen)
+  - (openable kettle)
+  - (openable cup)
+  - (is-sink sink)
+  - (pour-in-needs-open cup)
+  - (pour-out-needs-closed kettle)
+
+init:
+  - (at r1 kitchen)
+  - (at r2 pantry)
+  - (obj-at kettle kitchen)
+  - (obj-at cup kitchen)
+  - (obj-at sink kitchen)
+  - (obj-at leaf pantry)
+  - (clear-hand r1)
+  - (clear-hand r2)
+
+termination:
+  - name: goal
+    all:
+      - "(tea-ready cup)"
+      - "(at r1 table)"
+      - "(at r2 table)"
+    outcome: success
+    reward: 1.0
+
+reference_plan:
+  - (open r1 kettle)(pick-up r2 leaf)
+  - (fill-water r1 kettle sink)(move r2 pantry kitchen)
+  - (close r1 kettle)(open r2 cup)
+  - (power-on r1 kettle)(put-in r2 leaf cup)
+  - (heat-kettle r1 kettle 4)(idle r2)
+  - (pour r1 kettle cup)(idle r2)
+  - (steep-tea r1 leaf cup)(idle r2)
+  - (move r1 kitchen table)(move r2 kitchen table)
