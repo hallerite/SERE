@@ -11,6 +11,12 @@ types:
     parent: movable
   - name: appliance
     parent: object
+  - name: stove
+    parent: appliance
+  - name: cookware
+    parent: container
+  - name: food
+    parent: movable
   - name: number
 
 predicates:
@@ -70,6 +76,27 @@ predicates:
       - "{a} has power"
       - "{a} is turned on"
 
+  - name: burner-on
+    args: [{name: s, type: stove}]
+    nl:
+      - "{s}'s burner is on"
+      - "{s} is actively heating"
+      - "{s} is heating"
+
+  - name: on-stove
+    args: [{name: c, type: cookware}, {name: s, type: stove}]
+    nl:
+      - "{c} sits on {s}"
+      - "{c} is on the stove {s}"
+      - "{c} is placed on {s}"
+
+  - name: hot-surface
+    args: [{name: s, type: stove}]
+    nl:
+      - "{s} has a hot surface"
+      - "{s} is hot to the touch"
+      - "{s}'s surface is hot"
+
   - name: boiled
     args: [{name: a, type: appliance}]
     nl:
@@ -96,6 +123,13 @@ predicates:
       - "Tea is ready in {m}"
       - "{m} contains ready tea"
       - "Tea in {m} is ready"
+
+  - name: cooked
+    args: [{name: f, type: food}]
+    nl:
+      - "{f} is cooked"
+      - "{f} is fully cooked"
+      - "{f} is ready to eat"
 
   - name: spilled
     args: [{name: m, type: container}]
@@ -183,6 +217,15 @@ derived:
   - head: "(co-located ?x ?y)"
     when:
       - "(and (holding ?r ?y) (co-located ?x ?r))"
+  - head: "(boiled ?a)"
+    when:
+      - "(and (has-water ?a) (>= (water-temp ?a) 100))"
+  - head: "(hot-surface ?s)"
+    when:
+      - "(>= (surface-temp ?s) 120)"
+  - head: "(cooked ?f)"
+    when:
+      - "(>= (food-temp ?f) 70)"
 
 fluents:
   - name: energy
@@ -205,6 +248,20 @@ fluents:
       - "Water temperature in {v}"
       - "{v}'s water temperature"
       - "Temperature of water in {v}"
+
+  - name: surface-temp
+    args: [{name: s, type: stove}]
+    nl:
+      - "Surface temperature of {s}"
+      - "{s}'s surface temperature"
+      - "Heat level of {s}"
+
+  - name: food-temp
+    args: [{name: f, type: food}]
+    nl:
+      - "Temperature of {f}"
+      - "{f}'s temperature"
+      - "Heat of {f}"
 
 actions:
 
@@ -356,7 +413,7 @@ actions:
         p: 0.90
         when: []
         add: ["(holding ?r ?o)"]
-        delete: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
+        delete: ["(obj-at ?o ?l)", "(clear-hand ?r)", "(on-stove ?o ?s)"]
         num_eff: ["(decrease (energy ?r) 0.3)"]
         messages:
           - "Picked up {o}."
@@ -386,7 +443,7 @@ actions:
         p: 0.93
         when: []
         add: ["(obj-at ?o ?l)", "(clear-hand ?r)"]
-        delete: ["(holding ?r ?o)"]
+        delete: ["(holding ?r ?o)", "(on-stove ?o ?s)"]
         num_eff: ["(decrease (energy ?r) 0.3)"]
         messages:
           - "Placed {o} down."
@@ -419,7 +476,7 @@ actions:
         p: 0.90
         when: []
         add: ["(in ?o ?c)", "(clear-hand ?r)"]
-        delete: ["(holding ?r ?o)", "(obj-at ?o ?l)"]
+        delete: ["(holding ?r ?o)", "(obj-at ?o ?l)", "(on-stove ?o ?s)"]
         num_eff: ["(decrease (energy ?r) 0.3)"]
         messages:
           - "{o} is now in {c}."
@@ -488,13 +545,267 @@ actions:
         messages:
           - "{a} is now powered."
 
+  - name: power-off
+    params: [{r: robot}, {a: appliance}]
+    pre: ["(co-located ?r ?a)", "(powered ?a)"]
+    add: []
+    del: []
+    duration: 0.5
+    nl:
+      - "Power off {a}"
+      - "{r} turns off {a}"
+      - "Switch off {a}"
+    outcomes:
+      - name: power_fail
+        status: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "Power button on {a} didn’t respond."
+      - name: powered_off
+        status: success
+        p: 0.95
+        when: []
+        add: []
+        delete: ["(powered ?a)", "(burner-on ?a)"]
+        num_eff: ["(decrease (energy ?r) 0.15)"]
+        messages:
+          - "{a} is now powered off."
+
+  - name: place-on-stove
+    params: [{r: robot}, {c: cookware}, {s: stove}]
+    pre: ["(holding ?r ?c)", "(co-located ?r ?s)"]
+    add: []
+    del: []
+    duration: 0.5
+    nl:
+      - "Place {c} on {s}"
+      - "{r} sets {c} on {s}"
+      - "Put {c} onto {s}"
+    outcomes:
+      - name: slip
+        status: fail
+        p: 0.08
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "{c} slipped; still in hand."
+      - name: placed_on_stove
+        status: success
+        p: 0.92
+        when: []
+        add: ["(on-stove ?c ?s)", "(obj-at ?c ?l)", "(clear-hand ?r)"]
+        delete: ["(holding ?r ?c)"]
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{c} is now on {s}."
+
+  - name: ignite-stove
+    params: [{r: robot}, {s: stove}]
+    pre: ["(co-located ?r ?s)", "(powered ?s)", "(not (burner-on ?s))"]
+    add: []
+    del: []
+    duration: 0.5
+    nl:
+      - "Ignite {s}"
+      - "{r} ignites {s}"
+      - "Turn on the burner on {s}"
+    outcomes:
+      - name: no_ignite
+        status: fail
+        p: 0.06
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "{s} did not ignite."
+      - name: burner_on
+        status: success
+        p: 0.94
+        when: []
+        add: ["(burner-on ?s)"]
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.2)"]
+        messages:
+          - "{s} burner is now on."
+
+  - name: extinguish-stove
+    params: [{r: robot}, {s: stove}]
+    pre: ["(co-located ?r ?s)", "(burner-on ?s)"]
+    add: []
+    del: []
+    duration: 0.5
+    nl:
+      - "Extinguish {s}"
+      - "{r} turns off the burner on {s}"
+      - "Shut down {s}"
+    outcomes:
+      - name: fail_to_extinguish
+        status: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "{s} burner did not shut off."
+      - name: burner_off
+        status: success
+        p: 0.95
+        when: []
+        add: []
+        delete: ["(burner-on ?s)"]
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "{s} burner is now off."
+
+  - name: heat-stove
+    params: [{r: robot}, {s: stove}, {n: number}]
+    pre: ["(co-located ?r ?s)", "(burner-on ?s)"]
+    add: []
+    del: []
+    duration_var: "n"
+    duration_unit: 0.5
+    nl:
+      - "Heat {s} for {n} ticks (+40°C per tick)"
+      - "Run {s} for {n} ticks (+40°C per tick)"
+      - "Preheat {s} for {n} ticks"
+    outcomes:
+      - name: heat_fail
+        status: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "{s} did not heat as expected."
+      - name: heat_ok
+        status: success
+        p: 0.95
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(increase (surface-temp ?s) 40*?n)", "(decrease (energy ?r) 0.3)"]
+        messages:
+          - "{s} surface temperature is now (surface-temp ?s)°C."
+
+  - name: cool-stove
+    params: [{r: robot}, {s: stove}, {n: number}]
+    pre: ["(co-located ?r ?s)", "(not (burner-on ?s))"]
+    add: []
+    del: []
+    duration_var: "n"
+    duration_unit: 0.5
+    nl:
+      - "Cool {s} for {n} ticks (-30°C per tick)"
+      - "Let {s} cool for {n} ticks"
+      - "Cool down {s}"
+    outcomes:
+      - name: cool_fail
+        status: fail
+        p: 0.05
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.05)"]
+        messages:
+          - "{s} did not cool as expected."
+      - name: cool_ok
+        status: success
+        p: 0.95
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (surface-temp ?s) 30*?n)", "(decrease (energy ?r) 0.1)"]
+        messages:
+          - "{s} surface temperature is now (surface-temp ?s)°C."
+
+  - name: heat-on-stove
+    params: [{r: robot}, {c: container}, {s: stove}, {n: number}]
+    pre:
+      - "(co-located ?r ?s)"
+      - "(on-stove ?c ?s)"
+      - "(burner-on ?s)"
+      - "(hot-surface ?s)"
+      - "(has-water ?c)"
+    add: []
+    del: []
+    duration_var: "n"
+    duration_unit: 0.5
+    nl:
+      - "Heat {c} on {s} for {n} ticks (+20°C per tick)"
+      - "Warm {c} on {s} for {n} ticks"
+      - "Simmer {c} on {s}"
+    outcomes:
+      - name: heat_fail
+        status: fail
+        p: 0.06
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "Heating {c} on {s} failed to start."
+      - name: heat_ok
+        status: success
+        p: 0.94
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(increase (water-temp ?c) 20*?n)", "(decrease (energy ?r) 0.3)"]
+        messages:
+          - "Water temperature in {c} is now (water-temp ?c)°C."
+
+  - name: cook-on-stove
+    params: [{r: robot}, {f: food}, {c: cookware}, {s: stove}, {n: number}]
+    pre:
+      - "(co-located ?r ?s)"
+      - "(on-stove ?c ?s)"
+      - "(burner-on ?s)"
+      - "(hot-surface ?s)"
+      - "(in ?f ?c)"
+    add: []
+    del: []
+    duration_var: "n"
+    duration_unit: 0.5
+    nl:
+      - "Cook {f} in {c} on {s} for {n} ticks"
+      - "Heat {f} on {s} for {n} ticks"
+      - "Cook {f} on {s}"
+    outcomes:
+      - name: cook_fail
+        status: fail
+        p: 0.08
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(decrease (energy ?r) 0.1)"]
+        messages:
+          - "{f} did not cook evenly."
+      - name: cook_ok
+        status: success
+        p: 0.92
+        when: []
+        add: []
+        delete: []
+        num_eff: ["(increase (food-temp ?f) 25*?n)", "(decrease (energy ?r) 0.3)"]
+        messages:
+          - "{f} temperature is now (food-temp ?f)°C."
+
   - name: fill-water
     params: [{r: robot}, {k: container}, {s: container}]
     pre:
       - "(co-located ?r ?k)"
       - "(co-located ?r ?s)"
       - "(is-sink ?s)"
-      - "(open ?k)"
+      - "(or (not (openable ?k)) (open ?k))"
     add: []
     del: []
     duration: 1.0

@@ -1,0 +1,65 @@
+id: t13_stovetop_tea
+name: Stovetop tea
+description: |
+  Use the stove to heat water and make tea.
+
+meta:
+  domain: kitchen
+  enable_numeric: true
+  enable_stochastic: false
+  max_steps: 18
+  init_fluents:
+    - ["battery-cap", ["r1"], 10]
+    - ["energy", ["r1"], 10]
+    - ["surface-temp", ["stove"], 20]
+
+objects:
+  r1: robot
+  kitchen: location
+  pantry: location
+  table: location
+  stove: stove
+  pan: cookware
+  cup: container
+  sink: container
+  leaf: movable
+
+static_facts:
+  - (adjacent kitchen pantry)
+  - (adjacent pantry kitchen)
+  - (adjacent kitchen table)
+  - (adjacent table kitchen)
+  - (openable cup)
+  - (is-sink sink)
+  - (pour-in-needs-open cup)
+
+init:
+  - (at r1 kitchen)
+  - (obj-at stove kitchen)
+  - (obj-at pan kitchen)
+  - (obj-at cup kitchen)
+  - (obj-at sink kitchen)
+  - (obj-at leaf pantry)
+  - (clear-hand r1)
+
+termination:
+  - name: goal
+    when: "(tea-ready cup)"
+    outcome: success
+    reward: 1.0
+
+reference_plan:
+  - (pick-up r1 pan)
+  - (place-on-stove r1 pan stove)
+  - (fill-water r1 pan sink)
+  - (power-on r1 stove)
+  - (ignite-stove r1 stove)
+  - (heat-stove r1 stove 3)
+  - (heat-on-stove r1 pan stove 4)
+  - (open r1 cup)
+  - (move r1 kitchen pantry)
+  - (pick-up r1 leaf)
+  - (move r1 pantry kitchen)
+  - (put-in r1 leaf cup)
+  - (pour r1 pan cup)
+  - (steep-tea r1 leaf cup)

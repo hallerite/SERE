@@ -1,0 +1,45 @@
+id: t14_cook_egg_on_stove
+name: Cook an egg on the stove
+description: |
+  Heat the stove and cook the egg in a pan.
+
+meta:
+  domain: kitchen
+  enable_numeric: true
+  enable_stochastic: false
+  max_steps: 12
+  init_fluents:
+    - ["battery-cap", ["r1"], 10]
+    - ["energy", ["r1"], 10]
+    - ["surface-temp", ["stove"], 20]
+    - ["food-temp", ["egg"], 5]
+
+objects:
+  r1: robot
+  kitchen: location
+  stove: stove
+  pan: cookware
+  egg: food
+
+init:
+  - (at r1 kitchen)
+  - (obj-at stove kitchen)
+  - (obj-at pan kitchen)
+  - (obj-at egg kitchen)
+  - (clear-hand r1)
+
+termination:
+  - name: goal
+    when: "(cooked egg)"
+    outcome: success
+    reward: 1.0
+
+reference_plan:
+  - (pick-up r1 pan)
+  - (place-on-stove r1 pan stove)
+  - (power-on r1 stove)
+  - (ignite-stove r1 stove)
+  - (heat-stove r1 stove 3)
+  - (pick-up r1 egg)
+  - (put-in r1 egg pan)
+  - (cook-on-stove r1 egg pan stove 3)
