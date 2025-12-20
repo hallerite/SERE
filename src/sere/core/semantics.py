@@ -287,10 +287,8 @@ def trace_clause(world: WorldState, static_facts: Set[Predicate], s: str, bind: 
     if litp[0] == "co-located" and len(litp[1]) == 2:
         x, y = litp[1]
         # mimic the logic in WorldState.holds for transparency
-        lx = {a[1] for (pred, a) in world.facts if pred == "at" and len(a) == 2 and a[0] == x} \
-           | {a[1] for (pred, a) in world.facts if pred == "obj-at" and len(a) == 2 and a[0] == x}
-        ly = {a[1] for (pred, a) in world.facts if pred == "at" and len(a) == 2 and a[0] == y} \
-           | {a[1] for (pred, a) in world.facts if pred == "obj-at" and len(a) == 2 and a[0] == y}
+        lx = world.locations_of(x)
+        ly = world.locations_of(y)
         details["locs_x"] = sorted(lx)
         details["locs_y"] = sorted(ly)
 

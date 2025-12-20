@@ -213,26 +213,14 @@ class PromptFormatter:
         return locs[0] if len(locs) == 1 else None
 
     def _loc_of(self, world: WorldState, sym: str, cache: Optional[Dict[str, Optional[str]]] = None) -> Optional[str]:
-        """Resolve an object's room via (obj-at x L) or via container chains (in x c) → loc(c)."""
+        """Resolve an object's room using WorldState location resolution."""
         c = cache if cache is not None else {}
         if sym in c:
             return c[sym]
-        # direct object location
-        for (p, a) in world.facts:
-            if p == "obj-at" and len(a) == 2 and a[0] == sym:
-                c[sym] = a[1]; return a[1]
-        # nested containment
-        for (p, a) in world.facts:
-            if p == "in" and len(a) == 2 and a[0] == sym:
-                parent = a[1]
-                c[sym] = self._loc_of(world, parent, c)
-                return c[sym]
-        # treat tokens that are used as locations
-        for (p, a) in world.facts:
-            if p in ("at", "obj-at") and len(a) == 2 and a[1] == sym:
-                c[sym] = sym; return sym
-        c[sym] = None
-        return None
+        locs = world.locations_of(sym)
+        loc = next(iter(locs)) if len(locs) == 1 else None
+        c[sym] = loc
+        return loc
 
     def _fact_visible_in_room(self, world: WorldState, fact: Predicate, room: Optional[str]) -> bool:
         if room is None:

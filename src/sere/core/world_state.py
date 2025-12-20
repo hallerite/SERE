@@ -17,14 +17,61 @@ class WorldState:
         s = self.objects.setdefault(sym, set())
         s.add(typ)
 
+    def locations_of(
+        self,
+        sym: str,
+        *,
+        include_containment: bool = True,
+        include_holding: bool = True,
+        _seen: Optional[Set[str]] = None,
+    ) -> Set[str]:
+        """
+        Resolve all known locations for a symbol using facts:
+        - (at r l) and (obj-at o l)
+        - containment chains via (in o c)
+        - held objects via (holding r o)
+        - treat symbols used as location targets as locations themselves
+        """
+        seen = _seen if _seen is not None else set()
+        if sym in seen:
+            return set()
+        seen.add(sym)
+
+        locs: Set[str] = set()
+        loc_token = False
+
+        for (pred, args) in self.facts:
+            if pred == "at" and len(args) == 2:
+                if args[0] == sym:
+                    locs.add(args[1])
+                if args[1] == sym:
+                    loc_token = True
+            elif pred == "obj-at" and len(args) == 2:
+                if args[0] == sym:
+                    locs.add(args[1])
+                if args[1] == sym:
+                    loc_token = True
+            elif include_holding and pred == "holding" and len(args) == 2:
+                r, o = args
+                if o == sym:
+                    locs |= self.locations_of(r, include_containment=include_containment,
+                                              include_holding=include_holding, _seen=seen)
+            elif include_containment and pred == "in" and len(args) == 2:
+                o, c = args
+                if o == sym:
+                    locs |= self.locations_of(c, include_containment=include_containment,
+                                              include_holding=include_holding, _seen=seen)
+
+        if loc_token:
+            locs.add(sym)
+        return locs
+
     def holds(self, p: Predicate) -> bool:
         name, args = p
         if name == "co-located":
             x, y = args
-            lx = {a[1] for (pred, a) in self.facts if pred == "at" and len(a) == 2 and a[0] == x} \
-            | {a[1] for (pred, a) in self.facts if pred == "obj-at" and len(a) == 2 and a[0] == x}
-            ly = {a[1] for (pred, a) in self.facts if pred == "at" and len(a) == 2 and a[0] == y} \
-            | {a[1] for (pred, a) in self.facts if pred == "obj-at" and len(a) == 2 and a[0] == y}
+            lx = self.locations_of(x)
+            ly = self.locations_of(y)
             return bool(lx & ly)
         return p in self.facts
 
