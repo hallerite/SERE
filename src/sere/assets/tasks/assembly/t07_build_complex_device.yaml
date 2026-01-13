@@ -1,0 +1,268 @@
+id: t07_build_complex_device
+name: Build Complex Multi-Component Device
+description: |
+  Single robot must build a complex device from scratch:
+  1. Prepare workspace and gather materials
+  2. Assemble the base unit with multiple parts
+  3. Install electronics module
+  4. Assemble protective housing
+  5. Perform quality control inspection
+  6. Package completed device
+
+  This long-horizon task requires 50+ steps with careful sequencing,
+  quality management, and resource planning.
+
+meta:
+  domain: assembly
+  multi_agent: false
+  enable_numeric: true
+  enable_conditional: true
+  enable_stochastic: false
+  max_steps: 95
+  init_fluents:
+    - ["battery-cap", ["r1"], 50]
+    - ["energy", ["r1"], 50]
+    - ["torque", ["wrench1"], 5]
+    - ["quality", ["device"], 0]
+
+objects:
+  # Robot
+  r1: robot
+
+  # Locations
+  workbench: location
+  parts-bin: location
+  tool-storage: location
+  packaging: location
+  inspection: location
+
+  # Assembly components
+  device: assembly          # Main device being built
+
+  # Parts
+  chassis: part
+  motor: part
+  circuit-board: part
+  sensor: part
+  power-supply: part
+  housing-top: part
+  housing-bottom: part
+  mounting-bracket: part
+
+  # Tools
+  wrench1: tool
+  screwdriver1: tool
+
+  # Containers
+  parts-box: container
+  electronics-box: container
+  hardware-box: container
+  package-box: container
+
+static_facts:
+  # Adjacency
+  - (adjacent workbench parts-bin)
+  - (adjacent parts-bin workbench)
+  - (adjacent workbench tool-storage)
+  - (adjacent tool-storage workbench)
+  - (adjacent workbench inspection)
+  - (adjacent inspection workbench)
+  - (adjacent workbench packaging)
+  - (adjacent packaging workbench)
+  - (adjacent parts-bin tool-storage)
+  - (adjacent tool-storage parts-bin)
+
+  # Utilities
+  - (has-charger tool-storage)
+
+  # Tool specifications
+  - (tool-for wrench1 device)
+  - (tool-for wrench1 base-unit)
+  - (tool-for wrench1 electronics)
+  - (tool-for screwdriver1 device)
+  - (tool-for screwdriver1 base-unit)
+  - (tool-for screwdriver1 electronics)
+
+init:
+  # Robot starts at workbench
+  - (at r1 workbench)
+  - (clear-hand r1)
+
+  # Assembly at workbench (work area)
+  - (obj-at device workbench)
+
+  # Parts in parts-bin (need to be fetched)
+  - (obj-at chassis parts-bin)
+  - (obj-at motor parts-bin)
+  - (obj-at mounting-bracket parts-bin)
+  - (obj-at circuit-board parts-bin)
+  - (obj-at sensor parts-bin)
+  - (obj-at power-supply parts-bin)
+  - (obj-at housing-top parts-bin)
+  - (obj-at housing-bottom parts-bin)
+
+  # Tools in tool-storage
+  - (obj-at wrench1 tool-storage)
+  - (obj-at screwdriver1 tool-storage)
+
+  # Package box in packaging area
+  - (obj-at package-box packaging)
+
+termination:
+  - name: device_complete
+    all:
+      # All critical parts fastened to device
+      - "(fastened chassis device)"
+      - "(fastened motor device)"
+      - "(fastened circuit-board device)"
+      - "(fastened sensor device)"
+      - "(fastened power-supply device)"
+      - "(fastened mounting-bracket device)"
+      - "(fastened housing-top device)"
+      - "(fastened housing-bottom device)"
+      # Quality check passed
+      - "(>= (quality device) 0.9)"
+      - "(not (defective device))"
+      # Device remains at workbench
+      - "(obj-at device workbench)"
+      # Robot back at starting position
+      - "(at r1 workbench)"
+    outcome: success
+    reward: 1.0
+
+reward_shaping:
+  mode: instant
+  milestones:
+    # Phase 1: Setup
+    - expr: "(equipped r1 wrench1)"
+      reward: 0.05
+      once: true
+
+    # Phase 2: Base assembly
+    - expr: "(aligned chassis base-unit)"
+      reward: 0.08
+      once: true
+    - expr: "(fastened chassis base-unit)"
+      reward: 0.12
+      once: true
+    - expr: "(fastened motor base-unit)"
+      reward: 0.12
+      once: true
+
+    # Phase 3: Electronics assembly
+    - expr: "(fastened circuit-board electronics)"
+      reward: 0.12
+      once: true
+    - expr: "(fastened sensor electronics)"
+      reward: 0.1
+      once: true
+
+    # Phase 4: Main device assembly
+    - expr: "(installed base-unit device)"
+      reward: 0.15
+      once: true
+    - expr: "(installed electronics device)"
+      reward: 0.15
+      once: true
+
+    # Phase 5: Housing
+    - expr: "(fastened housing-top device)"
+      reward: 0.1
+      once: true
+
+    # Phase 6: QC & Packaging
+    - expr: "(>= (quality device) 0.9)"
+      reward: 0.15
+      once: true
+
+reference_plan:
+  # === PHASE 1: SETUP (48 steps) ===
+  # Get tools
+  - (move r1 workbench tool-storage)
+  - (pick-up r1 wrench1)
+  - (equip-tool r1 wrench1)
+  - (pick-up r1 screwdriver1)
+  - (put-down r1 screwdriver1)
+  - (recharge r1 tool-storage)
+  - (recharge r1 tool-storage)
+  - (recharge r1 tool-storage)
+  - (recharge r1 tool-storage)
+  - (recharge r1 tool-storage)
+  - (recharge r1 tool-storage)
+  - (recharge r1 tool-storage)
+  # Fetch base-unit parts
+  - (move r1 tool-storage parts-bin)
+  - (pick-up r1 chassis)
+  - (move r1 parts-bin workbench)
+  - (put-down r1 chassis)
+  - (move r1 workbench parts-bin)
+  - (pick-up r1 motor)
+  - (move r1 parts-bin workbench)
+  - (put-down r1 motor)
+  - (move r1 workbench parts-bin)
+  - (pick-up r1 mounting-bracket)
+  - (move r1 parts-bin workbench)
+  - (put-down r1 mounting-bracket)
+  # Fetch electronics parts
+  - (move r1 workbench parts-bin)
+  - (pick-up r1 circuit-board)
+  - (move r1 parts-bin workbench)
+  - (put-down r1 circuit-board)
+  - (move r1 workbench parts-bin)
+  - (pick-up r1 sensor)
+  - (move r1 parts-bin workbench)
+  - (put-down r1 sensor)
+  - (move r1 workbench parts-bin)
+  - (pick-up r1 power-supply)
+  - (move r1 parts-bin workbench)
+  - (put-down r1 power-supply)
+  # Fetch housing parts
+  - (move r1 workbench parts-bin)
+  - (pick-up r1 housing-bottom)
+  - (move r1 parts-bin workbench)
+  - (put-down r1 housing-bottom)
+  - (move r1 workbench parts-bin)
+  - (pick-up r1 housing-top)
+  - (move r1 parts-bin workbench)
+  - (put-down r1 housing-top)
+  # Bring screwdriver to workbench
+  - (move r1 workbench tool-storage)
+  - (pick-up r1 screwdriver1)
+  - (move r1 tool-storage workbench)
+  - (put-down r1 screwdriver1)
+
+  # === PHASE 2: ASSEMBLE ALL PARTS TO DEVICE (22 steps) ===
+  # Install mechanical base components with wrench
+  - (align r1 chassis device)
+  - (fasten r1 chassis device wrench1)
+  - (align r1 motor device)
+  - (fasten r1 motor device wrench1)
+  - (align r1 mounting-bracket device)
+  - (fasten r1 mounting-bracket device wrench1)
+  # Switch to screwdriver for electronics
+  - (unequip-tool r1 wrench1)
+  - (put-down r1 wrench1)
+  - (pick-up r1 screwdriver1)
+  - (equip-tool r1 screwdriver1)
+  # Install electronics components with screwdriver
+  - (align r1 circuit-board device)
+  - (fasten r1 circuit-board device screwdriver1)
+  - (align r1 sensor device)
+  - (fasten r1 sensor device screwdriver1)
+  - (align r1 power-supply device)
+  - (fasten r1 power-supply device screwdriver1)
+  # Switch back to wrench for housing
+  - (unequip-tool r1 screwdriver1)
+  - (put-down r1 screwdriver1)
+  - (pick-up r1 wrench1)
+  - (equip-tool r1 wrench1)
+  # Install housing
+  - (align r1 housing-bottom device)
+  - (fasten r1 housing-bottom device wrench1)
+  - (align r1 housing-top device)
+  - (fasten r1 housing-top device wrench1)
+
+  # === PHASE 3: QUALITY CONTROL (1 step) ===
+  - (qc-check r1 device)
+
+  # Total: 48 + 22 + 1 = 71 steps

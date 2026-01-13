@@ -1,0 +1,294 @@
+id: t15_restaurant_shift
+name: Full Restaurant Shift
+description: |
+  Two robots operate a kitchen during a busy shift. They must:
+  1. Setup: Prepare workstations and gather ingredients
+  2. Cook 3 different meals for customers
+  3. Cleanup: Wash dishes and sanitize kitchen
+
+  This is a long-horizon task requiring 50-60 steps with parallel coordination,
+  resource management, and multi-stage planning.
+
+meta:
+  domain: kitchen
+  multi_agent: true
+  enable_numeric: true
+  enable_conditional: true
+  enable_stochastic: false
+  max_steps: 70
+  init_fluents:
+    - ["battery-cap", ["r1"], 20]
+    - ["battery-cap", ["r2"], 20]
+    - ["energy", ["r1"], 20]
+    - ["energy", ["r2"], 20]
+    - ["water-temp", ["pot1"], 20]
+    - ["water-temp", ["pot2"], 20]
+    - ["water-temp", ["kettle"], 20]
+    - ["water-temp", ["sink"], 20]
+    - ["surface-temp", ["stove1"], 20]
+    - ["surface-temp", ["stove2"], 20]
+    - ["food-temp", ["pasta"], 20]
+    - ["food-temp", ["chicken"], 20]
+    - ["food-temp", ["vegetables"], 20]
+
+objects:
+  # Robots
+  r1: robot
+  r2: robot
+
+  # Locations
+  kitchen: location
+  pantry: location
+  storage: location
+  dining: location
+
+  # Appliances
+  stove1: {types: [stove, appliance]}
+  stove2: {types: [stove, appliance]}
+
+  # Cookware
+  pot1: {types: [cookware, container]}
+  pot2: {types: [cookware, container]}
+  pan1: {types: [cookware, container]}
+
+  # Containers
+  kettle: {types: [container, appliance]}
+  sink: {types: [container]}
+
+  # Serving containers
+  plate1: {types: [container]}
+  plate2: {types: [container]}
+  plate3: {types: [container]}
+  bowl1: {types: [container]}
+
+  # Food items
+  pasta: food
+  chicken: food
+  vegetables: food
+
+  # Ingredients (movable)
+  salt: movable
+  oil: movable
+  water-jug: movable
+
+static_facts:
+  # Adjacency graph
+  - (adjacent kitchen pantry)
+  - (adjacent pantry kitchen)
+  - (adjacent kitchen storage)
+  - (adjacent storage kitchen)
+  - (adjacent kitchen dining)
+  - (adjacent dining kitchen)
+  - (adjacent pantry storage)
+  - (adjacent storage pantry)
+
+  # Utilities
+  - (is-sink sink)
+  - (has-charger storage)
+
+  # Container properties
+  - (openable pot1)
+  - (openable pot2)
+  - (openable pan1)
+  - (openable kettle)
+  - (openable plate1)
+  - (openable plate2)
+  - (openable plate3)
+  - (openable bowl1)
+
+  # Pour constraints
+  - (pour-in-needs-open plate1)
+  - (pour-in-needs-open plate2)
+  - (pour-in-needs-open plate3)
+  - (pour-in-needs-open bowl1)
+  - (pour-out-needs-closed kettle)
+
+init:
+  # Robot positions
+  - (at r1 kitchen)
+  - (at r2 pantry)
+  - (clear-hand r1)
+  - (clear-hand r2)
+
+  # Objects in pantry (need to be fetched)
+  - (obj-at pasta pantry)
+  - (obj-at chicken pantry)
+  - (obj-at vegetables pantry)
+  - (obj-at salt pantry)
+  - (obj-at oil pantry)
+
+  # Equipment in storage (need to be fetched)
+  - (obj-at pot1 storage)
+  - (obj-at pot2 storage)
+  - (obj-at pan1 storage)
+  - (obj-at kettle storage)
+
+  # Serving plates in kitchen (ready to use)
+  - (obj-at plate1 kitchen)
+  - (obj-at plate2 kitchen)
+  - (obj-at plate3 kitchen)
+  - (obj-at bowl1 kitchen)
+
+  # Appliances in kitchen
+  - (obj-at stove1 kitchen)
+  - (obj-at stove2 kitchen)
+  - (obj-at sink kitchen)
+
+termination:
+  - name: all_meals_served
+    all:
+      # All three meals cooked and plated
+      - "(cooked pasta)"
+      - "(cooked chicken)"
+      - "(cooked vegetables)"
+      - "(in pasta plate1)"
+      - "(in chicken plate2)"
+      - "(in vegetables bowl1)"
+      # All serving dishes delivered to dining area
+      - "(obj-at plate1 dining)"
+      - "(obj-at plate2 dining)"
+      - "(obj-at bowl1 dining)"
+      # Kitchen cleanup complete
+      - "(obj-at pot1 storage)"
+      - "(obj-at pot2 storage)"
+      - "(obj-at pan1 storage)"
+      # Both robots back in kitchen
+      - "(at r1 kitchen)"
+      - "(at r2 kitchen)"
+    outcome: success
+    reward: 1.0
+
+reward_shaping:
+  mode: instant
+  milestones:
+    # Setup milestones
+    - expr: "(co-located r1 pot1)"
+      reward: 0.05
+      once: true
+    - expr: "(co-located r2 pot2)"
+      reward: 0.05
+      once: true
+    - expr: "(on-stove pot1 stove1)"
+      reward: 0.1
+      once: true
+    - expr: "(on-stove pot2 stove2)"
+      reward: 0.1
+      once: true
+
+    # Cooking milestones
+    - expr: "(in pasta pot1)"
+      reward: 0.1
+      once: true
+    - expr: "(in chicken pan1)"
+      reward: 0.1
+      once: true
+    - expr: "(cooked pasta)"
+      reward: 0.15
+      once: true
+    - expr: "(cooked chicken)"
+      reward: 0.15
+      once: true
+    - expr: "(cooked vegetables)"
+      reward: 0.15
+      once: true
+
+    # Plating milestones
+    - expr: "(in pasta plate1)"
+      reward: 0.1
+      once: true
+    - expr: "(in chicken plate2)"
+      reward: 0.1
+      once: true
+
+    # Cleanup milestones
+    - expr: "(obj-at pot1 storage)"
+      reward: 0.05
+      once: true
+    - expr: "(obj-at pot2 storage)"
+      reward: 0.05
+      once: true
+
+reference_plan:
+  # === PHASE 1: SETUP (22 steps) ===
+  # r2 fetches cookware, r1 organizes ingredients
+  - (move r2 pantry storage)(move r1 kitchen pantry)
+  - (pick-up r2 pot1)(pick-up r1 pasta)
+  - (move r2 storage kitchen)(move r1 pantry kitchen)
+  - (place-on-stove r2 pot1 stove1)(put-down r1 pasta)
+  - (move r2 kitchen storage)(move r1 kitchen pantry)
+  - (pick-up r2 pot2)(pick-up r1 chicken)
+  - (move r2 storage kitchen)(move r1 pantry kitchen)
+  - (place-on-stove r2 pot2 stove2)(put-down r1 chicken)
+  - (move r2 kitchen storage)(move r1 kitchen pantry)
+  - (pick-up r2 pan1)(pick-up r1 vegetables)
+  - (move r2 storage kitchen)(move r1 pantry kitchen)
+  - (place-on-stove r2 pan1 stove1)(put-down r1 vegetables)
+  # Power on stoves
+  - (power-on r2 stove1)(idle r1)
+  - (power-on r2 stove2)(idle r1)
+  - (ignite-stove r2 stove1)(idle r1)
+  - (ignite-stove r2 stove2)(idle r1)
+  # r1 puts ingredients in cookware
+  - (idle r2)(pick-up r1 pasta)
+  - (idle r2)(open r1 pot1)
+  - (idle r2)(put-in r1 pasta pot1)
+  - (idle r2)(pick-up r1 chicken)
+  - (idle r2)(open r1 pan1)
+  - (idle r2)(put-in r1 chicken pan1)
+  - (idle r2)(close r1 pan1)
+
+  # === PHASE 2: COOK MEAL 1 - Pasta (4 steps) ===
+  - (fill-water r2 pot1 sink)(idle r1)
+  - (heat-stove r2 stove1 3)(idle r1)
+  - (heat-on-stove r2 pot1 stove1 5)(idle r1)
+  - (cook-on-stove r2 pasta pot1 stove1 3)(idle r1)
+
+  # === PHASE 3: COOK MEAL 2 - Chicken (5 steps) ===
+  - (cook-on-stove r1 chicken pan1 stove1 4)(idle r2)
+  - (open r1 pan1)(idle r2)
+  - (take-out r1 chicken pan1)(idle r2)
+  - (open r1 plate2)(idle r2)
+  - (put-in r1 chicken plate2)(idle r2)
+
+  # === PHASE 4: COOK MEAL 3 - Vegetables (8 steps) ===
+  - (pick-up r2 vegetables)(idle r1)
+  - (open r2 pot2)(idle r1)
+  - (put-in r2 vegetables pot2)(idle r1)
+  - (fill-water r2 pot2 sink)(idle r1)
+  - (heat-stove r2 stove2 3)(idle r1)
+  - (heat-on-stove r2 pot2 stove2 4)(idle r1)
+  - (cook-on-stove r2 vegetables pot2 stove2 3)(idle r1)
+  - (take-out r2 vegetables pot2)(idle r1)
+
+  # === PHASE 5: PLATE & SERVE (13 steps) ===
+  # r1 prepares and delivers pasta
+  - (take-out r1 pasta pot1)(open r2 bowl1)
+  - (open r1 plate1)(put-in r2 vegetables bowl1)
+  - (put-in r1 pasta plate1)(pick-up r2 bowl1)
+  - (pick-up r1 plate1)(move r2 kitchen dining)
+  - (move r1 kitchen dining)(put-down r2 bowl1)
+  - (put-down r1 plate1)(move r2 dining kitchen)
+  # r1 returns and delivers chicken plate
+  - (move r1 dining kitchen)(idle r2)
+  - (pick-up r1 plate2)(idle r2)
+  - (move r1 kitchen dining)(idle r2)
+  - (put-down r1 plate2)(idle r2)
+  - (move r1 dining kitchen)(idle r2)
+
+  # === PHASE 6: CLEANUP (13 steps) ===
+  - (extinguish-stove r1 stove1)(extinguish-stove r2 stove2)
+  - (power-off r1 stove1)(power-off r2 stove2)
+  - (pick-up r1 pot1)(pick-up r2 pot2)
+  - (move r1 kitchen storage)(move r2 kitchen storage)
+  - (put-down r1 pot1)(put-down r2 pot2)
+  - (recharge r1 storage)(recharge r2 storage)
+  - (recharge r1 storage)(recharge r2 storage)
+  - (move r1 storage kitchen)(move r2 storage kitchen)
+  - (pick-up r1 pan1)(idle r2)
+  - (move r1 kitchen storage)(idle r2)
+  - (put-down r1 pan1)(idle r2)
+  - (recharge r1 storage)(idle r2)
+  - (move r1 storage kitchen)(idle r2)
+
+  # Total joint-action steps: 22 + 4 + 5 + 8 + 13 + 13 = 65 steps
+  # (Each joint action line counts as 1 step in multi-agent mode)
