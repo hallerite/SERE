@@ -9,7 +9,7 @@ from sere.core.pddl_env.env import PDDLEnv
 from sere.core.pddl_env.run_mode import RunMode
 from sere.core.pddl_env import planning
 from sere.io.task_loader import load_task
-from sere.integrations.ludic_parser import format_action
+from integrations.ludic.ludic_parser import format_action
 
 
 class SereLudicEnv(LudicEnv[str, str, str]):

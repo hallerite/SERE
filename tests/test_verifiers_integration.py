@@ -5,7 +5,7 @@ import pytest
 # Import will fail if verifiers not installed - that's expected
 try:
     import verifiers as vf
-    from sere.integrations.verifiers import (
+    from integrations.verifiers import (
         load_environment,
         SereGymWrapper,
         parse_pddl_actions,

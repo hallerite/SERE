@@ -14,12 +14,12 @@ except ImportError as e:
     ) from e
 
 from sere.core.pddl_env.run_mode import RunMode
-from sere.integrations.verifiers.wrapper import SereGymWrapper
-from sere.integrations.verifiers.parser import (
+from integrations.verifiers.wrapper import SereGymWrapper
+from integrations.verifiers.parser import (
     parse_pddl_actions,
     format_multi_agent_prompt,
 )
-from sere.integrations.verifiers.dataset import discover_tasks, get_available_domains
+from integrations.verifiers.dataset import discover_tasks, get_available_domains
 
 
 __all__ = [

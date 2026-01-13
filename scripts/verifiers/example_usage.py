@@ -8,7 +8,7 @@ This script demonstrates how to:
 3. Run basic evaluation (mock)
 """
 
-from sere.integrations.verifiers import (
+from integrations.verifiers import (
     load_environment,
     discover_tasks,
     get_available_domains,

@@ -29,11 +29,12 @@ verifiers = [
 sere-run = "sere.cli.run_task:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/sere"]
+packages = ["src/sere", "integrations"]
 
 [tool.hatch.build]
 include = [
   "src/sere/**",
+  "integrations/**",
   "README.md",
   "LICENSE",
 ]
@@ -42,7 +43,7 @@ include = [
 allow-direct-references = true
 
 [tool.pytest.ini_options]
-pythonpath = "."
+pythonpath = ["."]
 testpaths = ["tests"]
 
 [dependency-groups]
