@@ -21,6 +21,9 @@ dev = [
 ludic = [
     "ludic @ git+https://github.com/hallerite/ludic",
 ]
+verifiers = [
+    "verifiers @ git+https://github.com/PrimeIntellect-ai/verifiers",
+]
 
 [project.scripts]
 sere-run = "sere.cli.run_task:main"
@@ -45,4 +48,7 @@ testpaths = ["tests"]
 [dependency-groups]
 ludic = [
     "ludic @ git+https://github.com/hallerite/ludic",
+]
+verifiers = [
+    "verifiers @ git+https://github.com/PrimeIntellect-ai/verifiers",
 ]
