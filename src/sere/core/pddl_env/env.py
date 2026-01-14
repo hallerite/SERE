@@ -1,12 +1,16 @@
+import logging
 import random
 from typing import Any, Dict, List, Optional, Tuple
 from sere.pddl.domain_spec import DomainSpec
+from sere.pddl.grounding import SExprError
 from sere.core.semantics import eval_clause, EvalNode
 from sere.core.world_state import WorldState
 from sere.core.invariants import InvariantPlugin
 from . import planning, rendering
 from .run_mode import RunMode
 from .prompt_formatter import PromptFormatter, PromptFormatterConfig
+
+logger = logging.getLogger(__name__)
 
 
 def extract_tag(s: str, tag: str) -> Optional[str]:
@@ -274,8 +278,17 @@ class PDDLEnv:
                         self._dbg(f"[TERM] step={self.steps+1} rule={r.get('name')} "
                                 f"outcome={info['outcome']} term_reward={r.get('reward',0)}")
                         break
-                except Exception:
+                except (SExprError, ValueError, KeyError) as e:
+                    # Expected: malformed termination rule expressions
+                    rule_name = r.get("name", "unnamed")
+                    logger.warning(f"Failed to evaluate termination rule '{rule_name}': {e}")
                     continue
+                except Exception as e:
+                    # Unexpected error in termination rule - this is a bug in the task YAML
+                    rule_name = r.get("name", "unnamed")
+                    logger.error(f"Unexpected error in termination rule '{rule_name}': {e}", exc_info=True)
+                    # Don't silently skip - raise to surface the broken rule
+                    raise RuntimeError(f"Broken termination rule '{rule_name}': {e}") from e
 
             if not self.done and self._energy_depleted_unrecoverable():
                 self.done = True
@@ -338,8 +351,14 @@ class PDDLEnv:
                 enable_numeric=self.enable_numeric,
                 derived_cache=derived_cache,
             )
-        except Exception:
+        except (SExprError, ValueError, KeyError) as e:
+            # Expected: malformed expressions in task definitions
+            logger.debug(f"Failed to evaluate expression '{s}': {e}")
             return False
+        except Exception as e:
+            # Unexpected error - this indicates a bug in eval_clause
+            logger.error(f"Unexpected error evaluating expression '{s}': {e}", exc_info=True)
+            raise
 
     def _rs_phi(self, world: WorldState) -> float:
         derived_cache: dict = {}
@@ -373,7 +392,9 @@ class PDDLEnv:
                 name, gargs = parse_grounded(grounded)
                 if name in self.domain.predicates:
                     return nl.pred_to_text((name, gargs))
-            except Exception:
+            except (SExprError, ValueError, KeyError):
+                # Expected: malformed grounded predicate string
+                # Silent failure is OK here - we're just generating helpful NL descriptions
                 pass
             return None
 

@@ -1,9 +1,12 @@
 from typing import Any, Dict, Optional, Set, Tuple, List, Iterable
 from dataclasses import dataclass, field
+import logging
 import re
 from sere.pddl.grounding import ground_literal
 from sere.pddl.sexpr import parse_one, to_string, SExprError
 from .world_state import WorldState
+
+logger = logging.getLogger(__name__)
 
 Predicate = Tuple[str, Tuple[str, ...]]
 
@@ -300,8 +303,9 @@ def trace_clause(
     # plain literal (positive or negated via ground_literal)
     try:
         is_neg, litp = ground_literal(s, bind)
-    except Exception:
-        # unparsable; treat as false
+    except (SExprError, ValueError, KeyError) as e:
+        # Expected: malformed S-expression, unbound variable, or invalid binding
+        logger.debug(f"Failed to ground literal '{s}' with bindings {bind}: {e}")
         return EvalNode(expr=_bind_infix(s, bind), satisfied=False, kind="lit", grounded=None)
 
     truth = _holds_literal(
@@ -463,7 +467,8 @@ def _derived_rule_holds(
 def _vars_in_expr(expr: str) -> Set[str]:
     try:
         parsed = parse_one(expr)
-    except SExprError:
+    except SExprError as e:
+        logger.debug(f"Failed to parse expression '{expr}' for variable extraction: {e}")
         return set()
 
     return _vars_in_parsed(parsed)
@@ -561,15 +566,20 @@ def _rule_meta(rule, world: WorldState) -> Tuple[Set[str], Dict[str, Set[str]]]:
     for clause in (rule.when or []):
         try:
             parsed = parse_one(clause)
-        except SExprError:
+        except SExprError as e:
+            logger.debug(f"Failed to parse clause '{clause}' in derived rule: {e}")
             continue
         vars_all |= _vars_in_parsed(parsed)
         _collect_type_constraints(parsed, world, constraints)
 
-    try:
-        rule.vars_in_when = vars_all
-        rule.constraints = constraints
-    except Exception:
-        pass
+    # Cache on rule object if it's mutable (some rule objects may be frozen)
+    if hasattr(rule, '__dict__'):
+        try:
+            rule.vars_in_when = vars_all
+            rule.constraints = constraints
+        except AttributeError:
+            # Rule object is frozen/immutable, can't cache
+            # This is OK, we'll recompute next time
+            pass
 
     return vars_all, constraints

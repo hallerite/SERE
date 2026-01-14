@@ -1,6 +1,10 @@
 from dataclasses import dataclass, field
+import logging
 from typing import Dict, Set, Optional, AbstractSet, List, Tuple
 from sere.pddl.domain_spec import DomainSpec, Predicate
+from sere.pddl.grounding import SExprError
+
+logger = logging.getLogger(__name__)
 
 def lit(p: str, *args: str) -> Predicate:
     return (p, tuple(args))
@@ -80,8 +84,14 @@ class WorldState:
             try:
                 from sere.core.semantics import eval_clause
                 return bool(eval_clause(self, set(static_facts or set()), expr, {}, enable_numeric=True))
-            except Exception:
+            except (SExprError, ValueError, KeyError) as e:
+                # Expected: malformed expressions or unbound variables in derived predicates
+                logger.debug(f"Failed to evaluate derived predicate {expr}: {e}")
                 return False
+            except Exception as e:
+                # Unexpected error - this indicates a bug
+                logger.error(f"Unexpected error evaluating derived predicate {expr}: {e}", exc_info=True)
+                raise
         return False
 
 
