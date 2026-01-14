@@ -15,7 +15,7 @@ pip install -e ".[verifiers]"
 ## Quick Start
 
 ```python
-from sere.integrations.verifiers import load_environment
+from integrations.verifiers import load_environment
 
 # Load all SERE tasks from all domains
 env = load_environment()
@@ -117,26 +117,247 @@ env = load_environment(
 
 ### Episode Configuration
 
+Control how training episodes are distributed across tasks:
+
 ```python
 env = load_environment(
-    episodes_per_task=10,          # Training episodes per task
-    eval_episodes_per_task=2,      # Evaluation episodes per task
+    domains=["kitchen"],
+    num_tasks_per_domain=5,        # Load 5 kitchen tasks
+    episodes_per_task=3,           # Train 3 episodes per task
+    eval_episodes_per_task=2,      # Evaluate 2 episodes per task
     max_episode_steps=50,          # Override task max_steps
-    seed=42,                        # Random seed
+    seed=42,                       # Random seed
 )
+# Result: 15 training episodes (5 tasks × 3 episodes)
+# Episode 0: task 0 (1st time), Episode 1: task 1 (1st time), ...
+# Episode 5: task 0 (2nd time), Episode 6: task 1 (2nd time), ...
 ```
 
-### SERE Configuration
+**Multi-task training**: With multiple tasks, the agent cycles through them using `seed % num_tasks` to select which task to load. This provides curriculum learning across diverse scenarios rather than overfitting to a single task.
 
+### Environment Features
+
+Toggle PDDL features to control environment complexity:
+
+#### `enable_numeric` - Numeric fluents (default: True)
+
+When enabled, the environment includes numeric fluents like battery levels, temperatures, and quantities:
+```python
+env = load_environment(enable_numeric=True)
+# Observations include: (= (energy robot) 8.00), (= (water-temp tumbler) 100.00)
+# Actions can modify numeric values: (recharge robot charger) increases battery
+```
+
+When disabled, only boolean predicates are used (classical PDDL):
+```python
+env = load_environment(enable_numeric=False)
+# Only boolean facts: (at robot kitchen), (holding robot cup)
+```
+
+#### `enable_conditional` - Conditional effects (default: True)
+
+When enabled, actions can have conditional side effects:
+```python
+env = load_environment(enable_conditional=True)
+# Example: (heat stove pot) heats the pot AND heats any water inside it
+```
+
+When disabled, each action has only its direct effects.
+
+#### `enable_durations` - Time-based actions (default: True)
+
+When enabled, actions have durations and consume time:
+```python
+env = load_environment(enable_durations=True)
+# Each action advances time: (heat stove) takes 5.0 time units
+# Observations show: Time: 5.0/30.0
+```
+
+When disabled, all actions are instantaneous (classical PDDL).
+
+#### `enable_stochastic` - Probabilistic outcomes (default: False)
+
+When enabled, actions may fail or have probabilistic effects:
+```python
+env = load_environment(enable_stochastic=True)
+# Actions may fail: (pick-up robot cup) might drop the cup
+# Same action can produce different outcomes across episodes
+```
+
+When disabled, actions are deterministic.
+
+### Reward Configuration
+
+Control reward structure for training:
+
+#### `step_penalty` - Reward per action (default: -0.01)
+
+Each action incurs this reward (typically negative to encourage efficiency):
+```python
+env = load_environment(step_penalty=-0.01)
+# Each action costs -0.01 reward, so a 10-step solution gets -0.1 from steps
+
+env = load_environment(step_penalty=-0.05)
+# Higher penalty: agent is penalized more for longer solutions
+
+env = load_environment(step_penalty=-0.001)
+# Lower penalty: agent is less penalized for exploration
+```
+
+#### `invalid_penalty` - Penalty for invalid actions (default: -0.1)
+
+When the agent attempts an invalid action (e.g., picking up an object that's not present):
+```python
+env = load_environment(invalid_penalty=-0.1)
+# Invalid action costs -0.1 reward and episode continues
+
+env = load_environment(invalid_penalty=-0.5)
+# Higher penalty discourages invalid actions more strongly
+```
+
+#### `time_limit` - Maximum time in time units (default: None)
+
+When set with `enable_durations=True`, episode terminates if time exceeds limit:
 ```python
 env = load_environment(
-    env_kwargs={
-        "enable_stochastic": True,    # Stochastic action outcomes
-        "enable_numeric": True,       # Numeric fluents
-        "reward_shaping": {...},      # Custom reward shaping
+    enable_durations=True,
+    time_limit=30.0
+)
+# Episode fails if total action durations exceed 30.0 time units
+```
+
+#### `reward_shaping` - Intermediate rewards
+
+**Milestone-based**: Reward when specific conditions are achieved
+```python
+env = load_environment(
+    reward_shaping={
+        "mode": "milestone",
+        "milestones": [
+            {"expr": "(has-hot-water ?c)", "reward": 0.3, "once": True},
+            {"expr": "(in ?bag ?c)", "reward": 0.2, "once": True},
+        ]
     }
 )
+# Agent receives +0.3 when water is heated (once per episode)
+# Agent receives +0.2 when tea bag is added (once per episode)
+# Final success still gives +1.0, so total can be up to +1.5
 ```
+
+**Potential-based**: Reward based on progress toward goal
+```python
+env = load_environment(
+    reward_shaping={
+        "mode": "potential",
+        "gamma": 0.99,
+    }
+)
+# Reward at each step based on estimated distance to goal
+# Provides dense learning signal throughout episode
+```
+
+### Observation Control
+
+Control what information appears in observations shown to the LLM:
+
+#### `display_nl` - Natural language descriptions (default: True)
+
+When `display_nl=True`, each PDDL predicate includes an English explanation:
+```
+State:
+- (at robot kitchen) – robot is at kitchen
+- (has-hot-water tumbler) – tumbler contains hot water
+
+Valid moves:
+- (steep-tea robot sachet tumbler) – Steep tea from sachet in tumbler
+```
+
+When `display_nl=False`, only PDDL syntax is shown:
+```
+State:
+- (at robot kitchen)
+- (has-hot-water tumbler)
+```
+
+#### `show_affordances` - Available actions list (default: True)
+
+When `show_affordances=True`, observations include a "Valid moves" section listing all currently applicable actions:
+```
+Valid moves:
+- (pick-up robot tumbler) – Pick up tumbler
+- (pick-up robot kettle) – Pick up kettle
+- (steep-tea robot sachet tumbler) – Steep tea from sachet in tumbler
+```
+
+When `show_affordances=False`, this section is omitted. The agent must infer which actions are valid from the current state.
+
+#### Example: Full vs. Minimal Observations
+
+**With full observations (default):**
+```python
+env = load_environment(
+    domains=["kitchen"],
+    display_nl=True,         # Natural language explanations
+    show_affordances=True,   # List valid actions
+)
+```
+**Observation shown to LLM:**
+```
+Steps: 0/3 | Time: 0.00/4.00 | Energy: robot 8.00/8.00
+
+State:
+- (at robot kitchen) – robot is at kitchen
+- (clear-hand robot) – robot has a free hand
+- (has-hot-water tumbler) – tumbler contains hot water
+- (in sachet tumbler) – sachet is in tumbler
+- (obj-at kettle kitchen) – kettle is at kitchen
+- (obj-at tumbler kitchen) – tumbler is at kitchen
+
+Goal:
+- (tea-ready tumbler) – Tea is ready in tumbler
+
+Fluents:
+- (= (battery-cap robot) 8.00)
+- (= (energy robot) 8.00)
+- (= (water-temp tumbler) 100.00)
+
+Valid moves:
+- (pick-up robot tumbler) – Pick up tumbler
+- (steep-tea robot sachet tumbler) – Steep tea from sachet in tumbler
+```
+
+**With minimal observations:**
+```python
+env = load_environment(
+    domains=["kitchen"],
+    display_nl=False,        # PDDL only, no natural language
+    show_affordances=False,  # No valid actions list
+)
+```
+**Observation shown to LLM:**
+```
+Steps: 0/3 | Time: 0.00/4.00 | Energy: robot 8.00/8.00
+
+State:
+- (at robot kitchen)
+- (clear-hand robot)
+- (has-hot-water tumbler)
+- (in sachet tumbler)
+- (obj-at kettle kitchen)
+- (obj-at tumbler kitchen)
+
+Goal:
+- (tea-ready tumbler)
+
+Fluents:
+- (= (battery-cap robot) 8.00)
+- (= (energy robot) 8.00)
+- (= (water-temp tumbler) 100.00)
+
+What will be your next move?
+```
+
+Note: Goal, fluents (when `enable_numeric=True`), and action feedback messages are always shown.
 
 ### Custom System Prompt
 
@@ -182,7 +403,7 @@ The `GymEnv` automatically sums step rewards across the episode.
 ### Basic Evaluation
 
 ```python
-from sere.integrations.verifiers import load_environment
+from integrations.verifiers import load_environment
 from openai import AsyncOpenAI
 
 env = load_environment(domains=["kitchen"], num_tasks_per_domain=5)
@@ -202,7 +423,7 @@ print(f"Success rate: {sum(r > 0 for r in results['reward']) / len(results['rewa
 
 ```python
 import verifiers as vf
-from sere.integrations.verifiers import load_environment, SereGymWrapper, parse_pddl_actions
+from integrations.verifiers import load_environment, SereGymWrapper, parse_pddl_actions
 
 # Build custom rubric
 async def efficiency_bonus(state: vf.State) -> float:
@@ -236,7 +457,7 @@ env = vf.envs.experimental.gym_env.GymEnv(
 Discover available domains and tasks:
 
 ```python
-from sere.integrations.verifiers import get_available_domains, discover_tasks
+from integrations.verifiers import get_available_domains, discover_tasks
 
 # List all domains
 domains = get_available_domains()
@@ -286,7 +507,7 @@ ValueError: No tasks found. Domains: ['foo'], include_multi_agent: True
 
 **Solution**: Check available domains:
 ```python
-from sere.integrations.verifiers import get_available_domains
+from integrations.verifiers import get_available_domains
 print(get_available_domains())
 ```
 
