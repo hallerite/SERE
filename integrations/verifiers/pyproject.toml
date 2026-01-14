@@ -1,0 +1,33 @@
+[project]
+name = "vf-sere"
+version = "0.1.0"
+description = "SERE symbolic reasoning tasks for Verifiers RL training"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "sere[verifiers] @ git+https://github.com/hallerite/SERE",
+]
+authors = [
+    {name = "SERE Team"},
+]
+keywords = ["rl", "verifiers", "planning", "pddl", "reasoning", "embodied-ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/hallerite/SERE"
+Documentation = "https://github.com/hallerite/SERE/tree/master/integrations/verifiers"
+Repository = "https://github.com/hallerite/SERE"
+
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
