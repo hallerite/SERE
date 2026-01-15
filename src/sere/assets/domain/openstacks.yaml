@@ -1,0 +1,200 @@
+{
+  "domain": "openstacks",
+  "requirements": [
+    ":strips",
+    ":typing",
+    ":negative-preconditions",
+    ":conditional-effects",
+    ":fluents",
+    ":adl",
+    ":quantified-preconditions"
+  ],
+  "types": [
+    {
+      "name": "robot"
+    },
+    {
+      "name": "order"
+    },
+    {
+      "name": "product"
+    }
+  ],
+  "predicates": [
+    {
+      "name": "open",
+      "args": [
+        {
+          "name": "o",
+          "type": "order"
+        }
+      ],
+      "nl": "{o} is open"
+    },
+    {
+      "name": "shipped",
+      "args": [
+        {
+          "name": "o",
+          "type": "order"
+        }
+      ],
+      "nl": "{o} is shipped"
+    },
+    {
+      "name": "requires",
+      "args": [
+        {
+          "name": "o",
+          "type": "order"
+        },
+        {
+          "name": "p",
+          "type": "product"
+        }
+      ],
+      "static": true,
+      "nl": "{o} requires {p}"
+    },
+    {
+      "name": "made",
+      "args": [
+        {
+          "name": "p",
+          "type": "product"
+        }
+      ],
+      "nl": "{p} is made"
+    }
+  ],
+  "fluents": [
+    {
+      "name": "open-count",
+      "args": [],
+      "nl": "Number of open orders"
+    },
+    {
+      "name": "stack-limit",
+      "args": [],
+      "nl": "Maximum allowed open orders"
+    },
+    {
+      "name": "remaining",
+      "args": [
+        {
+          "name": "o",
+          "type": "order"
+        }
+      ],
+      "nl": "Remaining products for {o}"
+    }
+  ],
+  "actions": [
+    {
+      "name": "open-order",
+      "params": [
+        {
+          "r": "robot"
+        },
+        {
+          "o": "order"
+        }
+      ],
+      "pre": [
+        "(not (open ?o))",
+        "(not (shipped ?o))",
+        "(< (open-count) (stack-limit))",
+        "(forall (?p - product) (or (not (requires ?o ?p)) (not (made ?p))))"
+      ],
+      "add": [
+        "(open ?o)"
+      ],
+      "num_eff": [
+        "(increase (open-count) 1)"
+      ],
+      "nl": "Open order {o}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0
+        }
+      ]
+    },
+    {
+      "name": "make-product",
+      "params": [
+        {
+          "r": "robot"
+        },
+        {
+          "p": "product"
+        }
+      ],
+      "pre": [
+        "(not (made ?p))",
+        "(forall (?o - order) (or (not (requires ?o ?p)) (open ?o) (shipped ?o)))"
+      ],
+      "add": [
+        "(made ?p)"
+      ],
+      "nl": "Make product {p}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0
+        }
+      ],
+      "cond": [
+        {
+          "forall": [
+            {
+              "o": "order"
+            }
+          ],
+          "when": [
+            "(requires ?o ?p)",
+            "(open ?o)",
+            "(= (remaining ?o) 1)"
+          ],
+          "add": [
+            "(shipped ?o)"
+          ],
+          "del": [
+            "(open ?o)"
+          ],
+          "num_eff": [
+            "(decrease (open-count) 1)",
+            "(decrease (remaining ?o) 1)"
+          ]
+        },
+        {
+          "forall": [
+            {
+              "o": "order"
+            }
+          ],
+          "when": [
+            "(requires ?o ?p)",
+            "(open ?o)",
+            "(> (remaining ?o) 1)"
+          ],
+          "num_eff": [
+            "(decrease (remaining ?o) 1)"
+          ]
+        }
+      ]
+    }
+  ]
+}

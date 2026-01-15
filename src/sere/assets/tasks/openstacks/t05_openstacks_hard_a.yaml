@@ -1,0 +1,140 @@
+{
+  "id": "t05_openstacks_hard_a",
+  "name": "Openstacks Hard A",
+  "description": "Open orders and sequence product production without exceeding the stack limit. Settings: orders=7, products=7, stack-limit=5, density=60%, corr=banded, band-width=0.3, size-range=3-4, product-skew=0.9. Rationale: High overlap and hub products with a tight stack limit demand careful sequencing.",
+  "meta": {
+    "domain": "openstacks",
+    "enable_numeric": true,
+    "enable_conditional": true,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 19,
+    "init_fluents": [
+      [
+        "open-count",
+        [],
+        0.0
+      ],
+      [
+        "stack-limit",
+        [],
+        5.0
+      ],
+      [
+        "remaining",
+        [
+          "o1"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o2"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o3"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o4"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o5"
+        ],
+        4.0
+      ],
+      [
+        "remaining",
+        [
+          "o6"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o7"
+        ],
+        3.0
+      ]
+    ]
+  },
+  "objects": {
+    "r1": "robot",
+    "o1": "order",
+    "o2": "order",
+    "o3": "order",
+    "o4": "order",
+    "o5": "order",
+    "o6": "order",
+    "o7": "order",
+    "p1": "product",
+    "p2": "product",
+    "p3": "product",
+    "p4": "product",
+    "p5": "product",
+    "p6": "product",
+    "p7": "product"
+  },
+  "static_facts": [
+    "(requires o1 p1)",
+    "(requires o1 p2)",
+    "(requires o1 p4)",
+    "(requires o2 p1)",
+    "(requires o2 p2)",
+    "(requires o2 p4)",
+    "(requires o3 p1)",
+    "(requires o3 p4)",
+    "(requires o3 p7)",
+    "(requires o4 p2)",
+    "(requires o4 p3)",
+    "(requires o4 p5)",
+    "(requires o5 p1)",
+    "(requires o5 p4)",
+    "(requires o5 p5)",
+    "(requires o5 p7)",
+    "(requires o6 p3)",
+    "(requires o6 p5)",
+    "(requires o6 p7)",
+    "(requires o7 p5)",
+    "(requires o7 p6)",
+    "(requires o7 p7)"
+  ],
+  "init": [],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(forall (?o - order) (shipped ?o))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(open-order r1 o1)",
+    "(open-order r1 o2)",
+    "(open-order r1 o3)",
+    "(open-order r1 o4)",
+    "(open-order r1 o5)",
+    "(make-product r1 p1)",
+    "(make-product r1 p2)",
+    "(make-product r1 p4)",
+    "(open-order r1 o6)",
+    "(open-order r1 o7)",
+    "(make-product r1 p3)",
+    "(make-product r1 p5)",
+    "(make-product r1 p6)",
+    "(make-product r1 p7)"
+  ]
+}

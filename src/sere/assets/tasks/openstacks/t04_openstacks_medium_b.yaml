@@ -1,0 +1,124 @@
+{
+  "id": "t04_openstacks_medium_b",
+  "name": "Openstacks Medium B",
+  "description": "Open orders and sequence product production without exceeding the stack limit. Settings: orders=6, products=7, stack-limit=4, density=55%, corr=banded, band-width=0.35, size-range=2-4, product-skew=0.7. Rationale: Higher density and skew increase coupling; slightly higher stack limit preserves solvability.",
+  "meta": {
+    "domain": "openstacks",
+    "enable_numeric": true,
+    "enable_conditional": true,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 18,
+    "init_fluents": [
+      [
+        "open-count",
+        [],
+        0.0
+      ],
+      [
+        "stack-limit",
+        [],
+        4.0
+      ],
+      [
+        "remaining",
+        [
+          "o1"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o2"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o3"
+        ],
+        2.0
+      ],
+      [
+        "remaining",
+        [
+          "o4"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o5"
+        ],
+        2.0
+      ],
+      [
+        "remaining",
+        [
+          "o6"
+        ],
+        2.0
+      ]
+    ]
+  },
+  "objects": {
+    "r1": "robot",
+    "o1": "order",
+    "o2": "order",
+    "o3": "order",
+    "o4": "order",
+    "o5": "order",
+    "o6": "order",
+    "p1": "product",
+    "p2": "product",
+    "p3": "product",
+    "p4": "product",
+    "p5": "product",
+    "p6": "product",
+    "p7": "product"
+  },
+  "static_facts": [
+    "(requires o1 p1)",
+    "(requires o1 p2)",
+    "(requires o1 p5)",
+    "(requires o2 p1)",
+    "(requires o2 p2)",
+    "(requires o2 p3)",
+    "(requires o3 p3)",
+    "(requires o3 p7)",
+    "(requires o4 p4)",
+    "(requires o4 p6)",
+    "(requires o4 p7)",
+    "(requires o5 p1)",
+    "(requires o5 p2)",
+    "(requires o6 p1)",
+    "(requires o6 p4)"
+  ],
+  "init": [],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(forall (?o - order) (shipped ?o))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(open-order r1 o1)",
+    "(open-order r1 o2)",
+    "(open-order r1 o3)",
+    "(open-order r1 o4)",
+    "(make-product r1 p3)",
+    "(make-product r1 p5)",
+    "(make-product r1 p6)",
+    "(make-product r1 p7)",
+    "(open-order r1 o6)",
+    "(make-product r1 p4)",
+    "(open-order r1 o5)",
+    "(make-product r1 p1)",
+    "(make-product r1 p2)"
+  ]
+}

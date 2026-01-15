@@ -1,0 +1,90 @@
+{
+  "id": "t01_openstacks_easy_a",
+  "name": "Openstacks Easy A",
+  "description": "Open orders and sequence product production without exceeding the stack limit. Settings: orders=4, products=4, stack-limit=3, density=35%, corr=banded, band-width=0.6, size-range=1-2, product-skew=0.2. Rationale: Small counts, low overlap, and a generous stack limit make this a warm-up instance.",
+  "meta": {
+    "domain": "openstacks",
+    "enable_numeric": true,
+    "enable_conditional": true,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 13,
+    "init_fluents": [
+      [
+        "open-count",
+        [],
+        0.0
+      ],
+      [
+        "stack-limit",
+        [],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o1"
+        ],
+        2.0
+      ],
+      [
+        "remaining",
+        [
+          "o2"
+        ],
+        1.0
+      ],
+      [
+        "remaining",
+        [
+          "o3"
+        ],
+        1.0
+      ],
+      [
+        "remaining",
+        [
+          "o4"
+        ],
+        1.0
+      ]
+    ]
+  },
+  "objects": {
+    "r1": "robot",
+    "o1": "order",
+    "o2": "order",
+    "o3": "order",
+    "o4": "order",
+    "p1": "product",
+    "p2": "product",
+    "p3": "product",
+    "p4": "product"
+  },
+  "static_facts": [
+    "(requires o1 p2)",
+    "(requires o1 p4)",
+    "(requires o2 p3)",
+    "(requires o3 p1)",
+    "(requires o4 p4)"
+  ],
+  "init": [],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(forall (?o - order) (shipped ?o))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(open-order r1 o1)",
+    "(open-order r1 o2)",
+    "(open-order r1 o3)",
+    "(make-product r1 p1)",
+    "(open-order r1 o4)",
+    "(make-product r1 p2)",
+    "(make-product r1 p3)",
+    "(make-product r1 p4)"
+  ]
+}

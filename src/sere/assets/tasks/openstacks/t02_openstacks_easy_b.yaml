@@ -1,0 +1,96 @@
+{
+  "id": "t02_openstacks_easy_b",
+  "name": "Openstacks Easy B",
+  "description": "Open orders and sequence product production without exceeding the stack limit. Settings: orders=4, products=5, stack-limit=3, density=40%, corr=uniform, band-width=0.6, size-range=1-3, product-skew=0.0. Rationale: More products but uniform correlation keeps overlap low; still forgiving on stack usage.",
+  "meta": {
+    "domain": "openstacks",
+    "enable_numeric": true,
+    "enable_conditional": true,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 14,
+    "init_fluents": [
+      [
+        "open-count",
+        [],
+        0.0
+      ],
+      [
+        "stack-limit",
+        [],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o1"
+        ],
+        3.0
+      ],
+      [
+        "remaining",
+        [
+          "o2"
+        ],
+        2.0
+      ],
+      [
+        "remaining",
+        [
+          "o3"
+        ],
+        2.0
+      ],
+      [
+        "remaining",
+        [
+          "o4"
+        ],
+        2.0
+      ]
+    ]
+  },
+  "objects": {
+    "r1": "robot",
+    "o1": "order",
+    "o2": "order",
+    "o3": "order",
+    "o4": "order",
+    "p1": "product",
+    "p2": "product",
+    "p3": "product",
+    "p4": "product",
+    "p5": "product"
+  },
+  "static_facts": [
+    "(requires o1 p2)",
+    "(requires o1 p4)",
+    "(requires o1 p5)",
+    "(requires o2 p1)",
+    "(requires o2 p2)",
+    "(requires o3 p3)",
+    "(requires o3 p4)",
+    "(requires o4 p3)",
+    "(requires o4 p4)"
+  ],
+  "init": [],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(forall (?o - order) (shipped ?o))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(open-order r1 o1)",
+    "(open-order r1 o2)",
+    "(open-order r1 o3)",
+    "(make-product r1 p1)",
+    "(make-product r1 p2)",
+    "(open-order r1 o4)",
+    "(make-product r1 p3)",
+    "(make-product r1 p4)",
+    "(make-product r1 p5)"
+  ]
+}
