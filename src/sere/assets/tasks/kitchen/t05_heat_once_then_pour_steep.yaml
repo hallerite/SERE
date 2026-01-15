@@ -1,8 +1,9 @@
 id: t05_heat_once_then_pour_steep
-name: Five steps; power on, heat once, pour, steep
+name: Five steps; move, power on, heat, pour, steep
 description: |
-  Heater is CLOSED and warm (60°C) but NOT powered. Power it on, heat once to reach ≥80°C,
-  then pour & steep. (Teabag already in cup. Cup is always open to receive.)
+  Robot starts in the pantry. Move to the kitchen, then power on and heat the
+  heater to ≥80°C, pour into the cup, and steep.
+  (Heater starts closed and unpowered; teabag is already in the cup.)
 
 meta:
   domain: kitchen
@@ -10,7 +11,7 @@ meta:
   enable_conditional: true
   enable_durations: true
   max_steps: 10
-  time_limit: 7.5
+  time_limit: 8.0
   init_fluents:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 8]
@@ -18,6 +19,7 @@ meta:
   reward_shaping:
     mode: instant
     milestones:
+      - {expr: "(at r1 kitchen)", reward: 0.05, once: true}
       - {expr: "(powered heater)", reward: 0.05, once: true}
       - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
       - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
@@ -37,6 +39,7 @@ meta:
 objects:
   r1: robot
   kitchen: location
+  pantry: location
   cup:
     types: [container]
     variants: [mug1, cup, beaker, tumbler]
@@ -50,12 +53,14 @@ objects:
 static_facts:
   - (openable heater)
   - (pour-out-needs-closed heater)
+  - (adjacent pantry kitchen)
+  - (adjacent kitchen pantry)
 
 init:
-  - (at r1 kitchen)
+  - (at r1 pantry)
   - (obj-at cup kitchen)
   - (obj-at heater kitchen)
-  # note: NOT powered at start → must power-on before heating
+  # heater starts closed and unpowered
   - (in leaf cup)
   - (clear-hand r1)
   - (has-water heater)
@@ -71,6 +76,7 @@ termination:
     reward: -1.0
 
 reference_plan:
+  - (move r1 pantry kitchen)
   - (power-on r1 heater)
   - (heat-kettle r1 heater 2) # 60 -> 90
   - (pour r1 heater cup)

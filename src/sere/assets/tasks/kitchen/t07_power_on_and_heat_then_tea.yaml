@@ -1,15 +1,16 @@
 id: t07_power_on_and_heat_then_tea
 name: Power-on kettle, heat to hot, then brew
 description: |
-  Heater is off and lukewarm (40°C). Power it on, heat to ≥80, fetch teabag, pour, steep.
+  Heater is off and lukewarm (40°C). Power it on, heat to ≥80, fetch the teabag,
+  pour, and steep.
 
 meta:
   domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
-  max_steps: 23
-  time_limit: 16.5
+  max_steps: 20
+  time_limit: 14.0
   init_fluents:
     - ["battery-cap", ["r1"], 8]
     - ["energy", ["r1"], 8]
@@ -22,7 +23,7 @@ meta:
       - {expr: "(in leaf cup)", reward: 0.05, once: true}
       - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
   clutter:
-    budget: {min: 2, max: 6}
+    budget: {min: 2, max: 5}
     items:
       - name: spoon
         types: [movable]
@@ -32,8 +33,8 @@ meta:
       - name: box
         types: [movable]
         variants: [box1, box2]
-        at: [pantry, hallway]
-        count: {min: 0, max: 2}
+        at: [pantry]
+        count: {min: 0, max: 1}
       - name: rag
         types: [movable]
         at: [kitchen]
@@ -41,7 +42,6 @@ meta:
 
 objects:
   r1: robot
-  hallway: location
   kitchen: location
   pantry: location
   cup:
@@ -55,15 +55,13 @@ objects:
     variants: [teabag1, sachet]
 
 static_facts:
-  - (adjacent hallway kitchen)
-  - (adjacent kitchen hallway)
   - (adjacent kitchen pantry)
   - (adjacent pantry kitchen)
   - (openable heater)
   - (pour-out-needs-closed heater)
 
 init:
-  - (at r1 hallway)
+  - (at r1 kitchen)
   - (obj-at heater kitchen)
   - (obj-at cup kitchen)
   - (obj-at leaf pantry)
@@ -81,7 +79,6 @@ termination:
     reward: -1.0
 
 reference_plan:
-  - (move r1 hallway kitchen)
   - (power-on r1 heater)
   - (heat-kettle r1 heater 3)
   - (move r1 kitchen pantry)

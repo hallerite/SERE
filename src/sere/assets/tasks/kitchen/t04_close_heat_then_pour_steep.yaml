@@ -1,8 +1,8 @@
 id: t04_close_heat_then_pour_steep
-name: Four steps; close, heat, pour, steep
+name: Four steps; power on, heat, pour, steep
 description: |
-  Heater starts OPEN and only warm. You must close it (heater pours only when CLOSED),
-  then heat to ≥80°C, then pour and steep. Teabag is already in the cup.
+  Heater starts CLOSED and only warm. Power it on, heat to ≥80°C,
+  then pour and steep. Teabag is already in the cup.
 
 meta:
   domain: kitchen
@@ -18,7 +18,7 @@ meta:
   reward_shaping:
     mode: instant
     milestones:
-      - {expr: "(not (open heater))", reward: 0.10, once: true}
+      - {expr: "(powered heater)", reward: 0.05, once: true}
       - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
       - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
   clutter:
@@ -59,8 +59,7 @@ init:
   - (at r1 kitchen)
   - (obj-at cup kitchen)
   - (obj-at heater kitchen)
-  - (open heater)         # starts open → must close to pour and to heat
-  - (powered heater)      # already powered so the focus is state + heat
+  # heater starts closed and unpowered
   - (in leaf cup)
   - (clear-hand r1)
   - (has-water heater)
@@ -76,7 +75,7 @@ termination:
     reward: -1.0
 
 reference_plan:
-  - (close r1 heater)
+  - (power-on r1 heater)
   - (heat-kettle r1 heater 2)   # 60 → 90
   - (pour r1 heater cup)
   - (steep-tea r1 leaf cup)

@@ -1,8 +1,9 @@
 id: t05_replace_installed_part
-name: Disassemble wrong part and install correct one
+name: Repair with recharge and tool retrieval
 description: |
-  A wrong part is already installed on the assembly. Remove it, place it on the bench,
-  then align and fasten the correct part.
+  The robot starts at the dock with an empty battery. Recharge, retrieve the tool
+  from a bin in the cell, move to the bench, remove the wrong part, place it on
+  the bench, then align and fasten the correct part.
 
 meta:
   domain: assembly
@@ -10,22 +11,27 @@ meta:
   enable_conditional: true
   enable_durations: true
   enable_stochastic: false
-  max_steps: 25
+  max_steps: 30
   init_fluents:
     - ["battery-cap", ["robot"], 8]
-    - ["energy", ["robot"], 8]
+    - ["energy", ["robot"], 0]
   reward_shaping:
     mode: instant
     milestones:
-      - {expr: "(not (fastened bad asm))", reward: 0.25, once: true}
-      - {expr: "(obj-at bad bench)",        reward: 0.20, once: true}
-      - {expr: "(equipped robot tool)",     reward: 0.10, once: true}
-      - {expr: "(aligned good asm)",        reward: 0.25, once: true}
-
+      - {expr: "(>= (energy robot) 5)", reward: 0.15, once: true}
+      - {expr: "(open bin)",            reward: 0.10, once: true}
+      - {expr: "(holding robot tool)",  reward: 0.10, once: true}
+      - {expr: "(equipped robot tool)", reward: 0.10, once: true}
+      - {expr: "(not (fastened bad asm))", reward: 0.20, once: true}
+      - {expr: "(holding robot bad)",   reward: 0.15, once: true}
+      - {expr: "(aligned good asm)",    reward: 0.20, once: true}
 
 objects:
   robot: {types: [robot],    variants: [r1, bot, assembler]}
+  dock:  {types: [location], variants: [dock, charger, bay]}
+  cell:  {types: [location], variants: [cell, workstation, cellA]}
   bench: {types: [location], variants: [bench, workbench, table]}
+  bin:   {types: [container], variants: [bin1, tote, crate, box]}
   tool:  {types: [tool],     variants: [drv, screwdriver, driver, wrench]}
   bad:   {types: [part],     variants: [p_bad, bad_part, defective, scrap]}
   good:  {types: [part],     variants: [p_good, spare, good_part, p_ok]}
@@ -33,13 +39,19 @@ objects:
 
 static_facts:
   - (tool-for tool asm)
+  - (adjacent dock cell)
+  - (adjacent cell dock)
+  - (adjacent cell bench)
+  - (adjacent bench cell)
+  - (has-charger dock)
 
 init:
-  - (at robot bench)
+  - (at robot dock)
+  - (obj-at bin cell)
+  - (in tool bin)
   - (obj-at good bench)
   - (obj-at asm bench)
   - (obj-at bad bench)
-  - (obj-at tool bench)
   - (fastened bad asm)
   - (installed bad asm)
   - (clear-hand robot)
@@ -50,12 +62,18 @@ termination:
       - "(installed good asm)"
       - "(fastened good asm)"
       - "(obj-at bad bench)"
+      - "(not (installed bad asm))"
+      - "(not (fastened bad asm))"
     outcome: success
     reward: 1.0
 
 reference_plan:
-  - (pick-up robot tool)
+  - (recharge robot dock)
+  - (move robot dock cell)
+  - (open robot bin)
+  - (take-out robot tool bin)
   - (equip-tool robot tool)
+  - (move robot cell bench)
   - (unfasten robot bad asm tool)
   - (place-on-bench robot bad)
   - (align robot good asm)

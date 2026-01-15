@@ -1,26 +1,26 @@
 id: t09_energy_gate_recharge_once
 name: Energy gate; recharge once (mid-run)
 description: |
-  Start with enough energy to heat and fetch the teabag, but not enough to finish.
-  You’ll need to recharge in the KITCHEN before the final steps (pour/steep/move).
+  Start with enough energy to fetch the teabag and heat the water, but not enough
+  to finish. Recharge in the KITCHEN before the final steps (pour/steep/move).
 
 meta:
   domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
-  max_steps: 25
-  time_limit: 22
+  max_steps: 24
+  time_limit: 18
   init_fluents:
     - ["battery-cap", ["r1"], 8]
-    - ["energy", ["r1"], 4]          # allows some progress, but not the finish
+    - ["energy", ["r1"], 3]
     - ["water-temp", ["heater"], 60.0]
   reward_shaping:
     mode: instant
     milestones:
       - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
       - {expr: "(in leaf cup)", reward: 0.05, once: true}
-      - {expr: "(>= (energy r1) 5)", reward: 0.05, once: true}      # indicates recharge happened
+      - {expr: "(>= (energy r1) 5)", reward: 0.05, once: true}
       - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
       - {expr: "(at r1 table)", reward: 0.05, once: true}
   clutter:
@@ -44,7 +44,6 @@ meta:
 
 objects:
   r1: robot
-  hallway: location
   kitchen: location
   pantry: location
   table: location
@@ -59,9 +58,7 @@ objects:
     variants: [teabag1, sachet]
 
 static_facts:
-  - (has-charger kitchen)            # recharge mid-run at the worksite
-  - (adjacent hallway kitchen)
-  - (adjacent kitchen hallway)
+  - (has-charger kitchen)
   - (adjacent kitchen pantry)
   - (adjacent pantry kitchen)
   - (adjacent kitchen table)
@@ -70,7 +67,7 @@ static_facts:
   - (pour-out-needs-closed heater)
 
 init:
-  - (at r1 hallway)
+  - (at r1 kitchen)
   - (obj-at heater kitchen)
   - (powered heater)
   - (obj-at cup kitchen)
@@ -91,12 +88,11 @@ termination:
     reward: -1.0
 
 reference_plan:
-  - (move r1 hallway kitchen)        # energy 3 → 2
-  - (heat-kettle r1 heater 2)        # 60 → 90 (no energy cost)
-  - (move r1 kitchen pantry)         # 2 → 1
-  - (pick-up r1 leaf)                # 1 → 0.7
-  - (move r1 pantry kitchen)         # back to kitchen to recharge
-  - (recharge r1 kitchen)            # +5 → enough to finish
+  - (heat-kettle r1 heater 2)
+  - (move r1 kitchen pantry)
+  - (pick-up r1 leaf)
+  - (move r1 pantry kitchen)
+  - (recharge r1 kitchen)
   - (put-in r1 leaf cup)
   - (pour r1 heater cup)
   - (steep-tea r1 leaf cup)

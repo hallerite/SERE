@@ -1,19 +1,20 @@
 id: t10_full_constraints_time_energy_power
-name: Full constraints; time + energy + power + sink fill (mid-run recharge)
+name: Full constraints; fill + power + heat + recharge + deliver
 description: |
-  Do a full brew: open to fill at the sink (20°C), close to pour, power on, heat from cold,
-  fetch the teabag, brew, move to the table — with a recharge in the kitchen after early steps.
+  Full brew with all constraints: open to fill at the sink (20°C), close to pour,
+  power on, heat from cold, fetch the teabag, brew, move to the table — with a
+  recharge in the kitchen mid-run.
 
 meta:
   domain: kitchen
   enable_numeric: true
   enable_conditional: true
   enable_durations: true
-  max_steps: 28
-  time_limit: 23
+  max_steps: 26
+  time_limit: 20
   init_fluents:
-    - ["battery-cap", ["robot"], 8]
-    - ["energy", ["robot"], 3]         # enough to prep + heat, not enough to finish without recharge
+    - ["battery-cap", ["r1"], 8]
+    - ["energy", ["r1"], 4]
     - ["water-temp", ["heater"], 0.0]
   reward_shaping:
     mode: instant
@@ -21,10 +22,10 @@ meta:
       - {expr: "(has-water heater)", reward: 0.05, once: true}
       - {expr: "(powered heater)", reward: 0.05, once: true}
       - {expr: "(>= (water-temp heater) 80)", reward: 0.10, once: true}
-      - {expr: "(>= (energy robot) 5)", reward: 0.05, once: true}   # recharge happened
+      - {expr: "(>= (energy r1) 5)", reward: 0.05, once: true}
       - {expr: "(in leaf cup)", reward: 0.05, once: true}
       - {expr: "(has-hot-water cup)", reward: 0.10, once: true}
-      - {expr: "(at robot table)", reward: 0.05, once: true}
+      - {expr: "(at r1 table)", reward: 0.05, once: true}
   clutter:
     budget: {min: 3, max: 7}
     items:
@@ -44,10 +45,7 @@ meta:
         count: {min: 0, max: 2}
 
 objects:
-  robot:
-    types: [robot]
-    variants: [r1, bot]
-  hallway: location
+  r1: robot
   kitchen: location
   pantry: location
   table: location
@@ -65,32 +63,29 @@ objects:
     variants: [teabag, sachet]
 
 static_facts:
-  - (has-charger kitchen)             # recharge mid-run at the worksite
-  - (adjacent hallway kitchen)
-  - (adjacent kitchen hallway)
+  - (has-charger kitchen)
   - (adjacent kitchen pantry)
   - (adjacent pantry kitchen)
   - (adjacent kitchen table)
   - (adjacent table kitchen)
   - (openable heater)
   - (is-sink sink1)
-  - (pour-in-needs-open heater)       # must be open to fill
-  - (pour-out-needs-closed heater)    # must be closed to pour out
+  - (pour-in-needs-open heater)
+  - (pour-out-needs-closed heater)
 
 init:
-  - (at robot hallway)
+  - (at r1 kitchen)
   - (obj-at heater kitchen)
   - (obj-at cup kitchen)
   - (obj-at leaf pantry)
   - (obj-at sink1 kitchen)
-  - (clear-hand robot)
-  - (has-water heater)
+  - (clear-hand r1)
 
 termination:
   - name: goal
     all:
       - "(tea-ready cup)"
-      - "(at robot table)"
+      - "(at r1 table)"
     outcome: success
     reward: 1.0
   - name: spill_fail
@@ -99,17 +94,16 @@ termination:
     reward: -1.0
 
 reference_plan:
-  - (move robot hallway kitchen)      # do some work first…
-  - (open robot heater)
-  - (fill-water robot heater sink1)
-  - (close robot heater)
-  - (power-on robot heater)
-  - (heat-kettle robot heater 4)      # 0 → 60 → 120 (well over 80)
-  - (recharge robot kitchen)          # mid-run top up
-  - (move robot kitchen pantry)
-  - (pick-up robot leaf)
-  - (move robot pantry kitchen)
-  - (put-in robot leaf cup)
-  - (pour robot heater cup)
-  - (steep-tea robot leaf cup)
-  - (move robot kitchen table)
+  - (open r1 heater)
+  - (fill-water r1 heater sink1)
+  - (close r1 heater)
+  - (power-on r1 heater)
+  - (heat-kettle r1 heater 4)
+  - (move r1 kitchen pantry)
+  - (pick-up r1 leaf)
+  - (move r1 pantry kitchen)
+  - (recharge r1 kitchen)
+  - (put-in r1 leaf cup)
+  - (pour r1 heater cup)
+  - (steep-tea r1 leaf cup)
+  - (move r1 kitchen table)

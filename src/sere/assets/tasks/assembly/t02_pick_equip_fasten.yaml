@@ -1,7 +1,7 @@
 id: t02_pick_equip_fasten
-name: Pick tool, equip, then fasten
+name: Pick tool, equip, align, then fasten
 description: |
-  The tool is on the bench. Pick it up, equip it, and fasten the pre-aligned part.
+  The tool is on the bench. Pick it up, equip it, align the part, and fasten.
 
 meta:
   domain: assembly
@@ -35,7 +35,6 @@ init:
   - (obj-at tool bench)
   - (obj-at part bench)
   - (obj-at asm bench)
-  - (aligned part asm)
   - (clear-hand robot)
 
 termination:
@@ -49,4 +48,5 @@ termination:
 reference_plan:
   - (pick-up robot tool)
   - (equip-tool robot tool)
+  - (align robot part asm)
   - (fasten robot part asm tool)
