@@ -690,15 +690,58 @@ def _load_invariants_plugin(domain_name: str) -> List[Any]:
 
 # Symbols we treat as non-object heads/ops across expressions
 _BUILTIN_HEADS = {
-    "and", "or", "not", "distinct", "<", ">", "<=", ">=", "=",
+    "and", "or", "not", "distinct", "forall", "exists", "<", ">", "<=", ">=", "=",
 }
+
+
+def _collect_quantified_vars(expr: str) -> tuple[Set[str], Set[str]]:
+    vars_seen: Set[str] = set()
+    types_seen: Set[str] = set()
+    try:
+        parsed = parse_one(expr)
+    except SExprError:
+        return vars_seen, types_seen
+
+    def _parse_varlist(vl):
+        if not isinstance(vl, list):
+            return
+        i = 0
+        while i < len(vl):
+            tok = vl[i]
+            if not isinstance(tok, str) or not tok.startswith("?"):
+                return
+            v = tok[1:]
+            t = None
+            if i + 2 < len(vl) and vl[i + 1] == "-" and isinstance(vl[i + 2], str):
+                t = str(vl[i + 2]).lower()
+                i += 3
+            else:
+                i += 1
+            vars_seen.add(v)
+            if t:
+                types_seen.add(t)
+
+    def _walk(node):
+        if not isinstance(node, list) or not node:
+            return
+        head = node[0]
+        if isinstance(head, str) and head.lower() in {"forall", "exists"} and len(node) >= 3:
+            _parse_varlist(node[1])
+            for child in node[2:]:
+                _walk(child)
+        else:
+            for child in node:
+                _walk(child)
+
+    _walk(parsed)
+    return vars_seen, types_seen
 
 
 def _symbols_in_sexpr(s: str) -> Set[str]:
     """Collect atom-like tokens; does not parse, best-effort for validation."""
     toks = set(re.findall(r"[A-Za-z0-9_-]+", s or ""))
     # Keep words that aren't obviously numeric
-    return {t for t in toks if not t[0].isdigit()}
+    return {t for t in toks if not t[0].isdigit() and t != "-"}
 
 
 def _validate_expr_symbols_exist(
@@ -717,12 +760,16 @@ def _validate_expr_symbols_exist(
     toks = _symbols_in_sexpr(expr)
     known_preds = set(domain.predicates.keys())
     known_fl = set(domain.fluents.keys())
+    domain_types = set(domain.types.keys())
+    bound_vars, bound_types = _collect_quantified_vars(expr)
     unknown: Set[str] = set()
     for tok in toks:
         if tok in declared_objects:
             continue
         tl = tok.lower()
         if tl in known_preds or tl in known_fl or tl in _BUILTIN_HEADS:
+            continue
+        if tl in domain_types or tl in bound_types or tok in bound_vars:
             continue
         unknown.add(tok)
     if unknown:
@@ -739,6 +786,9 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
 
     # ---- Domain hint BEFORE rename is fine
     meta = y.get("meta", {}) or {}
+    meta_domain_path = meta.get("domain_path")
+    if domain_path is None and meta_domain_path:
+        domain_path = str(meta_domain_path)
     overrides = dict(env_kwargs or {})
     seed_override = overrides.pop("seed", None)
     meta_seed = meta.get("seed", None)

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 Predicate = Tuple[str, Tuple[str, ...]]
 
 NUM_CMP = re.compile(
-    r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+([+-]?\d+(?:\.\d+)?)\s*\)$"
+    r"^\(\s*(<=|>=|<|>|=)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+(.+)\s*\)$"
 )
 NUM_EFF = re.compile(
     r"^\(\s*(increase|decrease|assign)\s*\(\s*([^\s()]+)(?:\s+([^)]+))?\)\s+(.+)\s*\)$",
@@ -35,7 +35,10 @@ def eval_num_pre(world: WorldState, expr: str, bind: Dict[str, str]) -> bool:
     fname = fname.lower()
     args = _bind_args(argstr, bind)
     val = world.get_fluent(fname, args)
-    rhsf = float(rhs)
+    try:
+        rhsf = _eval_rhs_token(rhs.strip(), bind, world)
+    except Exception:
+        rhsf = float(rhs)
     if op == "<":  return val < rhsf
     if op == "<=": return val <= rhsf
     if op == ">":  return val > rhsf
@@ -153,6 +156,53 @@ def _bind_infix(expr: str, bind: Dict[str, str]) -> str:
         return bind.get(v, v)
     return re.sub(r"\?([A-Za-z0-9_\-]+)", _sub, expr)
 
+
+def _parse_quantifier_vars(varlist: list) -> List[Tuple[str, Optional[str]]]:
+    out: List[Tuple[str, Optional[str]]] = []
+    if not isinstance(varlist, list):
+        return out
+    i = 0
+    while i < len(varlist):
+        tok = varlist[i]
+        if not isinstance(tok, str) or not tok.startswith("?"):
+            return []
+        var = tok[1:]
+        typ: Optional[str] = None
+        if i + 2 < len(varlist) and varlist[i + 1] == "-" and isinstance(varlist[i + 2], str):
+            typ = str(varlist[i + 2]).lower()
+            i += 3
+        else:
+            i += 1
+        out.append((var, typ))
+    return out
+
+
+def _iter_quantifier_bindings(
+    world: WorldState,
+    varspecs: List[Tuple[str, Optional[str]]],
+) -> Iterable[Dict[str, str]]:
+    if not varspecs:
+        yield {}
+        return
+
+    def _candidates(typ: Optional[str]) -> List[str]:
+        if not typ:
+            return list(world.objects.keys())
+        t = typ.lower()
+        return [sym for sym, tys in world.objects.items() if t in {str(x).lower() for x in tys}]
+
+    def _rec(i: int, bind: Dict[str, str]):
+        if i >= len(varspecs):
+            yield dict(bind)
+            return
+        var, typ = varspecs[i]
+        for sym in _candidates(typ):
+            bind[var] = sym
+            yield from _rec(i + 1, bind)
+        bind.pop(var, None)
+
+    yield from _rec(0, {})
+
 def trace_clause(
     world: WorldState,
     static_facts: Set[Predicate],
@@ -176,7 +226,10 @@ def trace_clause(
         fname = fname.lower()
         args = _bind_args(argstr, bind)
         current = world.get_fluent(fname, args)
-        rhsf = float(rhs)
+        try:
+            rhsf = _eval_rhs_token(rhs.strip(), bind, world)
+        except Exception:
+            rhsf = float(rhs)
         sat = False
         if op == "<":   sat = current < rhsf
         elif op == "<=": sat = current <= rhsf
@@ -187,7 +240,7 @@ def trace_clause(
             expr=_bind_infix(s, bind),
             satisfied=sat,
             kind="num",
-            grounded=f"({op} ({fname}{'' if not args else ' ' + ' '.join(args)}) {rhs})",
+            grounded=f"({op} ({fname}{'' if not args else ' ' + ' '.join(args)}) {rhs.strip()})",
             details={"op": op, "fluent": fname, "args": args, "current": current, "rhs": rhsf},
         )
 
@@ -227,6 +280,98 @@ def trace_clause(
 
     if isinstance(parsed, list) and parsed:
         head = str(parsed[0]).lower()
+
+        # quantifiers
+        if head in {"forall", "exists"}:
+            if len(parsed) < 3:
+                return EvalNode(
+                    expr=_bind_infix(s, bind),
+                    satisfied=False,
+                    kind=head,
+                    grounded=None,
+                    children=[],
+                )
+            varspecs = _parse_quantifier_vars(parsed[1]) if isinstance(parsed[1], list) else []
+            if not varspecs:
+                return EvalNode(
+                    expr=_bind_infix(s, bind),
+                    satisfied=False,
+                    kind=head,
+                    grounded=None,
+                    children=[],
+                )
+            body_parts = parsed[2:]
+            if len(body_parts) == 1:
+                body_expr = to_string(body_parts[0]) if isinstance(body_parts[0], list) else str(body_parts[0])
+            else:
+                body_expr = to_string(["and"] + body_parts)
+
+            children: List[EvalNode] = []
+            details: Dict[str, Any] = {}
+
+            if head == "forall":
+                satisfied = True
+                for b in _iter_quantifier_bindings(world, varspecs):
+                    new_bind = dict(bind)
+                    new_bind.update(b)
+                    child = trace_clause(
+                        world,
+                        static_facts,
+                        body_expr,
+                        new_bind,
+                        enable_numeric=enable_numeric,
+                        _derived_cache=_derived_cache,
+                        _derived_stack=_derived_stack,
+                    )
+                    if not child.satisfied:
+                        satisfied = False
+                        children = [child]
+                        details = {"binding": b}
+                        break
+                return EvalNode(
+                    expr=_bind_infix(s, bind),
+                    satisfied=satisfied,
+                    kind=head,
+                    grounded=None,
+                    children=children,
+                    details=details,
+                )
+
+            # exists
+            satisfied = False
+            first_child: Optional[EvalNode] = None
+            first_bind: Optional[Dict[str, str]] = None
+            for b in _iter_quantifier_bindings(world, varspecs):
+                new_bind = dict(bind)
+                new_bind.update(b)
+                child = trace_clause(
+                    world,
+                    static_facts,
+                    body_expr,
+                    new_bind,
+                    enable_numeric=enable_numeric,
+                    _derived_cache=_derived_cache,
+                    _derived_stack=_derived_stack,
+                )
+                if child.satisfied:
+                    satisfied = True
+                    children = [child]
+                    details = {"binding": b}
+                    break
+                if first_child is None:
+                    first_child = child
+                    first_bind = b
+            if not satisfied and first_child is not None:
+                children = [first_child]
+                details = {"binding": first_bind}
+            return EvalNode(
+                expr=_bind_infix(s, bind),
+                satisfied=satisfied,
+                kind=head,
+                grounded=None,
+                children=children,
+                details=details,
+            )
 
         # negation
         if head == "not":

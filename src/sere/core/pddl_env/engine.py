@@ -1,7 +1,7 @@
 from typing import Any, Dict, Tuple, List, Optional
 from sere.pddl.domain_spec import ActionSpec, Predicate
 from sere.pddl.grounding import ground_literal
-from sere.core.semantics import apply_num_eff, eval_clause, trace_clause, EvalNode
+from sere.core.semantics import apply_num_eff, eval_clause, trace_clause, EvalNode, _iter_quantifier_bindings
 from sere.core.world_state import WorldState
 from . import rendering
 
@@ -73,30 +73,31 @@ def step_one(env, name: str, args: Tuple[str, ...]):
         derived_cache = {}
         cond_world = pre_world or env.world
         for cb in act.cond:
-            ok = True
-            for w in cb.when:
-                if not eval_clause(
-                    cond_world,
-                    env.static_facts,
-                    w,
-                    bind,
-                    enable_numeric=env.enable_numeric,
-                    derived_cache=derived_cache,
-                ):
-                    ok = False
-                    break
-            if ok:
-                for a in cb.add:
-                    _, litp = ground_literal(a, bind)
-                    env.world.facts.add(litp)
-                for d in cb.delete:
-                    _, litp = ground_literal(d, bind)
-                    env.world.facts.discard(litp)
-                if env.enable_numeric:
-                    for ne in cb.num_eff:
-                        apply_num_eff(env.world, ne, bind, info)
-                for m in cb.messages:
-                    rendering.push_msg(env, format_msg(env, m, bind))
+            for b2 in _iter_conditional_binds(cond_world, cb, bind):
+                ok = True
+                for w in cb.when:
+                    if not eval_clause(
+                        cond_world,
+                        env.static_facts,
+                        w,
+                        b2,
+                        enable_numeric=env.enable_numeric,
+                        derived_cache=derived_cache,
+                    ):
+                        ok = False
+                        break
+                if ok:
+                    for a in cb.add:
+                        _, litp = ground_literal(a, b2)
+                        env.world.facts.add(litp)
+                    for d in cb.delete:
+                        _, litp = ground_literal(d, b2)
+                        env.world.facts.discard(litp)
+                    if env.enable_numeric:
+                        for ne in cb.num_eff:
+                            apply_num_eff(env.world, ne, b2, info)
+                    for m in cb.messages:
+                        rendering.push_msg(env, format_msg(env, m, b2))
 
     if env.enable_numeric and act.num_eff:
         for ne in act.num_eff:
@@ -382,30 +383,31 @@ def step_joint(env, plan: List[Tuple[str, Tuple[str, ...]]]):
         if env.enable_conditional and act.cond:
             derived_cache = {}
             for cb in act.cond:
-                ok = True
-                for w in cb.when:
-                    if not eval_clause(
-                        pre_world,
-                        env.static_facts,
-                        w,
-                        bind,
-                        enable_numeric=env.enable_numeric,
-                        derived_cache=derived_cache,
-                    ):
-                        ok = False
-                        break
-                if ok:
-                    for a in cb.add:
-                        _, litp = ground_literal(a, bind)
-                        add_all.append(litp)
-                    for d in cb.delete:
-                        _, litp = ground_literal(d, bind)
-                        del_all.append(litp)
-                    if env.enable_numeric:
-                        for ne in cb.num_eff:
-                            num_eff_all.append((ne, bind))
-                    for m in cb.messages:
-                        messages.append(format_msg(env, m, bind))
+                for b2 in _iter_conditional_binds(pre_world, cb, bind):
+                    ok = True
+                    for w in cb.when:
+                        if not eval_clause(
+                            pre_world,
+                            env.static_facts,
+                            w,
+                            b2,
+                            enable_numeric=env.enable_numeric,
+                            derived_cache=derived_cache,
+                        ):
+                            ok = False
+                            break
+                    if ok:
+                        for a in cb.add:
+                            _, litp = ground_literal(a, b2)
+                            add_all.append(litp)
+                        for d in cb.delete:
+                            _, litp = ground_literal(d, b2)
+                            del_all.append(litp)
+                        if env.enable_numeric:
+                            for ne in cb.num_eff:
+                                num_eff_all.append((ne, b2))
+                        for m in cb.messages:
+                            messages.append(format_msg(env, m, b2))
 
         if env.enable_numeric and act.num_eff:
             for ne in act.num_eff:
@@ -717,6 +719,16 @@ def _expand_delete_patterns(deletes: List[Predicate], facts: set) -> List[Predic
         else:
             expanded.append((pred, argtup))
     return expanded
+
+
+def _iter_conditional_binds(cond_world: WorldState, cb, base_bind: Dict[str, str]):
+    if getattr(cb, "forall", None):
+        for qb in _iter_quantifier_bindings(cond_world, cb.forall):
+            merged = dict(base_bind)
+            merged.update(qb)
+            yield merged
+    else:
+        yield base_bind
 
 def _robot_sym_from_params(act: ActionSpec, arg_tuple: tuple) -> Optional[str]:
     for i, (_, ty) in enumerate(act.params):

@@ -37,10 +37,11 @@ class FluentSpec:
 
 @dataclass
 class ConditionalBlock:
-    when: List[str]
-    add: List[str]
-    delete: List[str]
-    num_eff: List[str]
+    forall: List[Tuple[str, str]] = field(default_factory=list)
+    when: List[str] = field(default_factory=list)
+    add: List[str] = field(default_factory=list)
+    delete: List[str] = field(default_factory=list)
+    num_eff: List[str] = field(default_factory=list)
     messages: List[str] = field(default_factory=list)
 
 @dataclass
@@ -146,10 +147,29 @@ class DomainSpec:
                 ((var, typ),) = d.items()
                 params.append((var, str(typ).lower()))
 
+            def _parse_varspecs(raw) -> List[Tuple[str, str]]:
+                out: List[Tuple[str, str]] = []
+                for entry in raw or []:
+                    if isinstance(entry, dict):
+                        if "name" in entry and "type" in entry:
+                            var = str(entry["name"]).lstrip("?")
+                            typ = str(entry["type"]).lower()
+                        else:
+                            if len(entry) != 1:
+                                raise ValueError(f"Bad quantifier var spec: {entry!r}")
+                            ((var, typ),) = entry.items()
+                            var = str(var).lstrip("?")
+                            typ = str(typ).lower()
+                    else:
+                        raise ValueError(f"Bad quantifier var spec: {entry!r}")
+                    out.append((var, typ))
+                return out
+
             # cond blocks
             cond_blocks: List[ConditionalBlock] = []
             for cb in a.get("cond", []) or []:
                 cond_blocks.append(ConditionalBlock(
+                    forall=_parse_varspecs(cb.get("forall") or []),
                     when=cb.get("when", []) or [],
                     add=cb.get("add", []) or [],
                     delete=cb.get("del", cb.get("delete", [])) or [],
