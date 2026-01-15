@@ -2,13 +2,25 @@ from pathlib import Path
 import sys
 
 
-LUDIC_SRC = Path(__file__).resolve().parents[1] / "ludic" / "src"
-if LUDIC_SRC.exists() and str(LUDIC_SRC) not in sys.path:
-    sys.path.insert(0, str(LUDIC_SRC))
+_ROOT = Path(__file__).resolve().parents[1]
+_CANDIDATES = [
+    _ROOT / "ludic" / "src",
+    _ROOT.parent / "ludic" / "src",
+]
+for _cand in _CANDIDATES:
+    if _cand.exists() and str(_cand) not in sys.path:
+        sys.path.insert(0, str(_cand))
+        break
+
+try:
+    import ludic  # noqa: F401
+except Exception:  # pragma: no cover - optional dependency
+    import pytest
+
+    pytest.skip("ludic dependency not available", allow_module_level=True)
 
 from sere.core.pddl_env.run_mode import RunMode
-from sere.integrations.ludic_env import SereLudicEnv
-from sere.integrations.ludic_parser import pddl_action_parser
+from integrations.ludic import SereLudicEnv, pddl_action_parser
 from sere.io.task_loader import load_task
 
 

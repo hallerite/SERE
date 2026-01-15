@@ -222,7 +222,7 @@ SERE provides a **Ludic-compatible wrapper** (`SereLudicEnv`) that exposes each 
 
 ### Key Components
 
-#### 1. SereLudicEnv (`src/sere/integrations/ludic_env.py`)
+#### 1. SereLudicEnv (`integrations/ludic/ludic_env.py`)
 
 The Ludic wrapper that:
 - Maps each robot to a Ludic agent ID (sorted alphabetically)
@@ -231,7 +231,7 @@ The Ludic wrapper that:
 - Handles episode lifecycle (reset, step, done)
 
 ```python
-from sere.integrations.ludic_env import SereLudicEnv, make_ludic_env
+from integrations.ludic import SereLudicEnv, make_ludic_env
 
 # Create environment
 env, meta = make_ludic_env(
@@ -245,12 +245,12 @@ env, meta = make_ludic_env(
 print(env.agent_ids)  # ['r1', 'r2']
 ```
 
-#### 2. Action Parsers (`src/sere/integrations/ludic_parser.py`)
+#### 2. Action Parsers (`integrations/ludic/ludic_parser.py`)
 
 Parsers convert LLM outputs to SERE actions:
 
 ```python
-from sere.integrations.ludic_parser import pddl_action_parser, pddl_action_tag_parser
+from integrations.ludic import pddl_action_parser, pddl_action_tag_parser
 
 # Raw PDDL parser
 parser = pddl_action_parser()
@@ -396,8 +396,7 @@ obs, reward, done, info = env.step(actions)
 #### Ludic Integration
 
 ```python
-from sere.integrations.ludic_env import make_ludic_env
-from sere.integrations.ludic_parser import pddl_action_parser
+from integrations.ludic import make_ludic_env, pddl_action_parser
 from ludic.agent import Agent
 from ludic.interaction import MultiAgentProtocol
 
@@ -521,8 +520,7 @@ for actions in steps:
 See `scripts/ludic/eval.py` for a complete example:
 
 ```python
-from sere.integrations.ludic_env import make_ludic_env
-from sere.integrations.ludic_parser import pddl_action_parser
+from integrations.ludic import make_ludic_env, pddl_action_parser
 from ludic.agent import Agent
 from ludic.interaction import MultiAgentProtocol
 from ludic.eval.core import run_eval_sync

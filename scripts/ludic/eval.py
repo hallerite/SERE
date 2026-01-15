@@ -30,8 +30,7 @@ except ImportError as exc:
         "Install with: uv sync --extra ludic"
     ) from exc
 
-from sere.integrations.ludic_env import SereLudicEnv
-from sere.integrations.ludic_parser import pddl_action_parser, pddl_action_tag_parser
+from integrations.ludic import SereLudicEnv, pddl_action_parser, pddl_action_tag_parser
 from sere.io.task_loader import load_task
 
 

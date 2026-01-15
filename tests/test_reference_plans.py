@@ -19,10 +19,23 @@ def _iter_task_ids():
 
 ALL_TASKS = _iter_task_ids()
 
+FAST_FORMATTER = {
+    "show_affordances": False,
+    "show_footer": False,
+    "show_messages": False,
+    "display_nl": False,
+}
+
+
+def _load_task_fast(task_id: str, **kwargs):
+    formatter_config = dict(FAST_FORMATTER)
+    formatter_config.update(kwargs.pop("formatter_config", {}) or {})
+    return load_task(None, task_id, formatter_config=formatter_config, **kwargs)
+
 
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_has_single_success_goal_rule_under_termination(task_id: str):
-    env, meta = load_task(None, task_id)
+    env, meta = _load_task_fast(task_id)
 
     term_meta = meta.get("termination")
     assert isinstance(term_meta, list), f"{task_id}: `termination:` key missing or not a list"
@@ -37,7 +50,7 @@ def test_has_single_success_goal_rule_under_termination(task_id: str):
 
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_reference_plan_succeeds_and_reward_matches(task_id: str):
-    env, meta = load_task(None, task_id, enable_stochastic=False, seed=0)
+    env, meta = _load_task_fast(task_id, enable_stochastic=False, seed=0)
     env.reset()
 
     plan = meta.get("reference_plan") or []
@@ -62,7 +75,7 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
     expected_baseline = env.step_penalty * n_steps + success_reward
 
     # Non-atomic recompute of shaping on a fresh env with the same plan
-    env2, _ = load_task(None, task_id, enable_stochastic=False, seed=0)
+    env2, _ = _load_task_fast(task_id, enable_stochastic=False, seed=0)
     env2.reset()
     if env2.multi_agent:
         _, _, _, info2 = execute_joint(env2, plan_seq)
@@ -81,7 +94,7 @@ def test_reference_plan_succeeds_and_reward_matches(task_id: str):
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_reset_has_no_invariant_violations(task_id: str):
     """Reset should not violate world invariants or produce empty obs."""
-    env, _ = load_task(None, task_id)
+    env, _ = _load_task_fast(task_id)
     obs, _ = env.reset()
     assert isinstance(obs, str) and obs.strip(), "Empty observation after reset"
     errs = env.world.validate_invariants()
@@ -91,7 +104,7 @@ def test_reset_has_no_invariant_violations(task_id: str):
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_initial_energy_not_exceeding_cap(task_id: str):
     """If a battery-cap exists, initial energy must be within [0, cap]."""
-    env, _ = load_task(None, task_id)
+    env, _ = _load_task_fast(task_id)
     env.reset()
     robots = [sym for sym, types in env.world.objects.items() if "robot" in (types or set())]
     if not robots:
@@ -113,7 +126,7 @@ def test_initial_energy_not_exceeding_cap(task_id: str):
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_energy_is_clamped_after_first_step_if_above_cap(task_id: str):
     """Deliberately set energy > cap, take a step, ensure clamp occurred."""
-    env, _ = load_task(None, task_id)
+    env, _ = _load_task_fast(task_id)
     env.reset()
     robots = [sym for sym, types in env.world.objects.items() if "robot" in (types or set())]
     if not robots:
@@ -135,7 +148,7 @@ def test_energy_is_clamped_after_first_step_if_above_cap(task_id: str):
 @pytest.mark.parametrize("task_id", ALL_TASKS, ids=lambda p: p.split("/")[-1])
 def test_recharge_does_not_exceed_cap_when_possible(task_id: str):
     """One recharge should not overflow battery-cap (clamp applies)."""
-    env, _ = load_task(None, task_id)
+    env, _ = _load_task_fast(task_id)
     env.reset()
     robots = [sym for sym, types in env.world.objects.items() if "robot" in (types or set())]
     if not robots:

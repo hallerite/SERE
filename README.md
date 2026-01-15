@@ -106,9 +106,8 @@ Make sure `ludic` is importable (e.g. `export PYTHONPATH="$PWD/ludic/src"` when
 using this monorepo).
 
 ```python
+from integrations.ludic import SereLudicEnv, pddl_action_parser
 from sere.core.pddl_env.run_mode import RunMode
-from sere.integrations.ludic_env import SereLudicEnv
-from sere.integrations.ludic_parser import pddl_action_parser
 from sere.io.task_loader import load_task
 
 env, meta = load_task(
