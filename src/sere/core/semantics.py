@@ -116,6 +116,187 @@ def apply_num_eff(world: WorldState, expr: str, bind: Dict[str,str], info: Dict[
 
 # --- Clause evaluator with support for (or ...) and (not ...) ---
 
+def eval_fast(
+    world: WorldState,
+    static_facts: Set[Predicate],
+    s: str,
+    bind: Dict[str, str],
+    *,
+    enable_numeric: bool = True,
+    derived_cache: Optional[Dict[Tuple[str, Tuple[str, ...]], bool]] = None,
+    derived_stack: Optional[Set[Tuple[str, Tuple[str, ...]]]] = None,
+) -> bool:
+    s = s.strip()
+    if derived_cache is None:
+        derived_cache = {}
+    if derived_stack is None:
+        derived_stack = set()
+
+    if enable_numeric and NUM_CMP.match(s):
+        m = NUM_CMP.match(s)
+        assert m
+        op, fname, argstr, rhs = m.groups()
+        fname = fname.lower()
+        args = _bind_args(argstr, bind)
+        current = world.get_fluent(fname, args)
+        try:
+            rhsf = _eval_rhs_token(rhs.strip(), bind, world)
+        except Exception:
+            rhsf = float(rhs)
+        if op == "<":
+            return current < rhsf
+        if op == "<=":
+            return current <= rhsf
+        if op == ">":
+            return current > rhsf
+        if op == ">=":
+            return current >= rhsf
+        return abs(current - rhsf) < 1e-9
+
+    if s.lstrip().lower().startswith("(distinct"):
+        try:
+            parsed = parse_one(s)
+            if not (isinstance(parsed, list) and parsed and str(parsed[0]).lower() == "distinct"):
+                return False
+            terms = [str(x) for x in parsed[1:]]
+            if len(terms) < 2:
+                return False
+        except SExprError:
+            return False
+        bound = [bind.get(t[1:], t) if t.startswith("?") else t for t in terms]
+        return len(bound) == len(set(bound))
+
+    try:
+        parsed = parse_one(s)
+    except SExprError:
+        parsed = None
+
+    if isinstance(parsed, list) and parsed:
+        head = str(parsed[0]).lower()
+
+        if head in {"forall", "exists"}:
+            if len(parsed) < 3:
+                return False
+            varspecs = _parse_quantifier_vars(parsed[1]) if isinstance(parsed[1], list) else []
+            if not varspecs:
+                return False
+            body_parts = parsed[2:]
+            if len(body_parts) == 1:
+                body_expr = to_string(body_parts[0]) if isinstance(body_parts[0], list) else str(body_parts[0])
+            else:
+                body_expr = to_string(["and"] + body_parts)
+
+            if head == "forall":
+                for b in _iter_quantifier_bindings(world, varspecs):
+                    new_bind = dict(bind)
+                    new_bind.update(b)
+                    if not eval_fast(
+                        world,
+                        static_facts,
+                        body_expr,
+                        new_bind,
+                        enable_numeric=enable_numeric,
+                        derived_cache=derived_cache,
+                        derived_stack=derived_stack,
+                    ):
+                        return False
+                return True
+
+            for b in _iter_quantifier_bindings(world, varspecs):
+                new_bind = dict(bind)
+                new_bind.update(b)
+                if eval_fast(
+                    world,
+                    static_facts,
+                    body_expr,
+                    new_bind,
+                    enable_numeric=enable_numeric,
+                    derived_cache=derived_cache,
+                    derived_stack=derived_stack,
+                ):
+                    return True
+            return False
+
+        if head == "not":
+            if len(parsed) != 2:
+                return False
+            child_expr = to_string(parsed[1]) if isinstance(parsed[1], list) else str(parsed[1])
+            return not eval_fast(
+                world,
+                static_facts,
+                child_expr,
+                bind,
+                enable_numeric=enable_numeric,
+                derived_cache=derived_cache,
+                derived_stack=derived_stack,
+            )
+
+        if head == "and":
+            for c in parsed[1:]:
+                expr = to_string(c) if isinstance(c, list) else str(c)
+                if not eval_fast(
+                    world,
+                    static_facts,
+                    expr,
+                    bind,
+                    enable_numeric=enable_numeric,
+                    derived_cache=derived_cache,
+                    derived_stack=derived_stack,
+                ):
+                    return False
+            return True
+
+        if head == "or":
+            for c in parsed[1:]:
+                expr = to_string(c) if isinstance(c, list) else str(c)
+                if eval_fast(
+                    world,
+                    static_facts,
+                    expr,
+                    bind,
+                    enable_numeric=enable_numeric,
+                    derived_cache=derived_cache,
+                    derived_stack=derived_stack,
+                ):
+                    return True
+            return False
+
+    try:
+        is_neg, litp = ground_literal(s, bind)
+    except (SExprError, ValueError, KeyError):
+        return False
+
+    truth = _holds_literal_fast(
+        world,
+        static_facts,
+        litp,
+        bind=bind,
+        enable_numeric=enable_numeric,
+        derived_cache=derived_cache,
+        derived_stack=derived_stack,
+    )
+    return (not truth) if is_neg else truth
+
+
+def eval_trace(
+    world: WorldState,
+    static_facts: Set[Predicate],
+    s: str,
+    bind: Dict[str, str],
+    *,
+    enable_numeric: bool = True,
+    derived_cache: Optional[Dict[Tuple[str, Tuple[str, ...]], bool]] = None,
+) -> "EvalNode":
+    return trace_clause(
+        world,
+        static_facts,
+        s,
+        bind,
+        enable_numeric=enable_numeric,
+        _derived_cache=derived_cache,
+    )
+
+
 def eval_clause(
     world: WorldState,
     static_facts: Set[Predicate],
@@ -125,14 +306,14 @@ def eval_clause(
     enable_numeric: bool = True,
     derived_cache: Optional[Dict[Tuple[str, Tuple[str, ...]], bool]] = None,
 ) -> bool:
-    return trace_clause(
+    return eval_fast(
         world,
         static_facts,
         s,
         bind,
         enable_numeric=enable_numeric,
-        _derived_cache=derived_cache,
-    ).satisfied
+        derived_cache=derived_cache,
+    )
 
 
 # =========================
@@ -483,6 +664,51 @@ def trace_clause(
     )
 
 
+def _holds_literal_fast(
+    world: WorldState,
+    static_facts: Set[Predicate],
+    litp: Predicate,
+    *,
+    bind: Dict[str, str],
+    enable_numeric: bool,
+    derived_cache: Dict[Tuple[str, Tuple[str, ...]], bool],
+    derived_stack: Set[Tuple[str, Tuple[str, ...]]],
+) -> bool:
+    if litp in world.facts or litp in static_facts:
+        return True
+    name, args = litp
+    rules = getattr(world.domain, "derived", {}).get(name, [])
+    if not rules:
+        return False
+    key = (name, args)
+    if key in derived_cache:
+        return derived_cache[key]
+    if key in derived_stack:
+        return False
+
+    derived_stack.add(key)
+    try:
+        for rule in rules:
+            bind_rule = _bind_derived_head(rule.head_terms, args)
+            if bind_rule is None:
+                continue
+            if _derived_rule_holds_fast(
+                world,
+                static_facts,
+                rule,
+                bind_rule,
+                enable_numeric=enable_numeric,
+                derived_cache=derived_cache,
+                derived_stack=derived_stack,
+            ):
+                derived_cache[key] = True
+                return True
+        derived_cache[key] = False
+        return False
+    finally:
+        derived_stack.discard(key)
+
+
 def _holds_literal(
     world: WorldState,
     static_facts: Set[Predicate],
@@ -603,6 +829,70 @@ def _derived_rule_holds(
                 _derived_cache=derived_cache,
                 _derived_stack=derived_stack,
             ).satisfied
+            for c in (rule.when or [])
+        ):
+            return True
+    return False
+
+
+def _derived_rule_holds_fast(
+    world: WorldState,
+    static_facts: Set[Predicate],
+    rule,
+    bind: Dict[str, str],
+    *,
+    enable_numeric: bool,
+    derived_cache: Dict[Tuple[str, Tuple[str, ...]], bool],
+    derived_stack: Set[Tuple[str, Tuple[str, ...]]],
+) -> bool:
+    vars_all = set(bind.keys())
+    rule_vars, rule_constraints = _rule_meta(rule, world)
+    vars_all |= rule_vars
+    extra_vars = sorted(vars_all - set(bind.keys()))
+    if not extra_vars:
+        return all(
+            eval_fast(
+                world,
+                static_facts,
+                c,
+                bind,
+                enable_numeric=enable_numeric,
+                derived_cache=derived_cache,
+                derived_stack=derived_stack,
+            )
+            for c in (rule.when or [])
+        )
+
+    candidates = _candidate_map(world, extra_vars, rule_constraints)
+    if any(not v for v in candidates.values()):
+        return False
+
+    def _iter_assignments(
+        vars_list: List[str],
+        base: Dict[str, str],
+    ) -> Iterable[Dict[str, str]]:
+        if not vars_list:
+            yield dict(base)
+            return
+        v = vars_list[0]
+        for cand in candidates.get(v, []):
+            base[v] = cand
+            yield from _iter_assignments(vars_list[1:], base)
+        base.pop(v, None)
+
+    ordered = sorted(extra_vars, key=lambda v: len(candidates.get(v, [])))
+
+    for assignment in _iter_assignments(ordered, dict(bind)):
+        if all(
+            eval_fast(
+                world,
+                static_facts,
+                c,
+                assignment,
+                enable_numeric=enable_numeric,
+                derived_cache=derived_cache,
+                derived_stack=derived_stack,
+            )
             for c in (rule.when or [])
         ):
             return True
