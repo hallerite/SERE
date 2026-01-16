@@ -106,50 +106,13 @@ def step_one(env, name: str, args: Tuple[str, ...]):
     env._enforce_energy_bounds()
 
     if getattr(act, "outcomes", None):
-        derived_cache = {}
-        valid = []
-        for oc in act.outcomes:
-            ok = True
-            for w in (oc.when or []):
-                if not eval_clause(
-                    env.world,
-                    env.static_facts,
-                    w,
-                    bind,
-                    enable_numeric=env.enable_numeric,
-                    derived_cache=derived_cache,
-                ):
-                    ok = False
-                    break
-            if ok:
-                valid.append(oc)
-
-        choice = None
-        roll = None
-        totp = None
-
-        if env.enable_stochastic:
-            totp = sum(max(0.0, float(getattr(oc, "p", 0.0))) for oc in valid)
-            if valid and (totp is None or totp <= 0.0):
-                info["stochastic_warning"] = "nonpositive_total_probability"
-            acc = 0.0
-            roll = env.rng.random() * totp if (totp and totp > 0.0) else None
-            for oc in valid:
-                acc += max(0.0, float(getattr(oc, "p", 0.0)))
-                if roll is not None and roll <= acc:
-                    choice = oc
-                    break
-            if choice is None and valid:
-                choice = valid[-1]
-        else:
-            if valid:
-                def _getp(o):
-                    try:
-                        return float(getattr(o, "p", 1.0))
-                    except Exception:
-                        return 1.0
-                choice = max(valid, key=_getp)
-
+        choice, roll, totp = _select_outcome(
+            env,
+            act,
+            bind,
+            warn_nonpositive_total_prob=True,
+            info=info,
+        )
         if choice:
             add2 = []
             del2 = []
@@ -441,47 +404,7 @@ def step_joint(env, plan: List[Tuple[str, Tuple[str, ...]]]):
         if act is None or not getattr(act, "outcomes", None):
             continue
         bind = {var: val for (var, _), val in zip(act.params, args)}
-        valid = []
-        derived_cache = {}
-        for oc in act.outcomes:
-            ok = True
-            for w in (oc.when or []):
-                if not eval_clause(
-                    env.world,
-                    env.static_facts,
-                    w,
-                    bind,
-                    enable_numeric=env.enable_numeric,
-                    derived_cache=derived_cache,
-                ):
-                    ok = False
-                    break
-            if ok:
-                valid.append(oc)
-
-        choice = None
-        roll = None
-        totp = None
-        if valid:
-            if env.enable_stochastic:
-                totp = sum(max(0.0, float(getattr(oc, "p", 0.0))) for oc in valid)
-                acc = 0.0
-                roll = env.rng.random() * totp if (totp and totp > 0.0) else None
-                for oc in valid:
-                    acc += max(0.0, float(getattr(oc, "p", 0.0)))
-                    if roll is not None and roll <= acc:
-                        choice = oc
-                        break
-                if choice is None:
-                    choice = valid[-1]
-            else:
-                def _getp(o):
-                    try:
-                        return float(getattr(o, "p", 1.0))
-                    except Exception:
-                        return 1.0
-                choice = max(valid, key=_getp)
-
+        choice, roll, totp = _select_outcome(env, act, bind)
         if choice:
             add2: List[Predicate] = []
             del2: List[Predicate] = []
@@ -621,6 +544,57 @@ def format_msg(env, template: str, bind: Dict[str, str]) -> str:
         except Exception:
             pass
     return s
+
+def _select_outcome(env, act: ActionSpec, bind: Dict[str, str], *,
+                    warn_nonpositive_total_prob: bool = False,
+                    info: Optional[Dict[str, Any]] = None):
+    if not getattr(act, "outcomes", None):
+        return None, None, None
+    derived_cache = {}
+    valid = []
+    for oc in act.outcomes:
+        ok = True
+        for w in (oc.when or []):
+            if not eval_clause(
+                env.world,
+                env.static_facts,
+                w,
+                bind,
+                enable_numeric=env.enable_numeric,
+                derived_cache=derived_cache,
+            ):
+                ok = False
+                break
+        if ok:
+            valid.append(oc)
+    if not valid:
+        return None, None, None
+
+    choice = None
+    roll = None
+    totp = None
+    if env.enable_stochastic:
+        totp = sum(max(0.0, float(getattr(oc, "p", 0.0))) for oc in valid)
+        if warn_nonpositive_total_prob and info is not None and totp <= 0.0:
+            info["stochastic_warning"] = "nonpositive_total_probability"
+        acc = 0.0
+        roll = env.rng.random() * totp if (totp and totp > 0.0) else None
+        for oc in valid:
+            acc += max(0.0, float(getattr(oc, "p", 0.0)))
+            if roll is not None and roll <= acc:
+                choice = oc
+                break
+        if choice is None:
+            choice = valid[-1]
+    else:
+        def _getp(o):
+            try:
+                return float(getattr(o, "p", 1.0))
+            except Exception:
+                return 1.0
+        choice = max(valid, key=_getp)
+
+    return choice, roll, totp
 
 def _is_number_token(tok: str) -> bool:
     try:
