@@ -1,0 +1,82 @@
+{
+  "id": "t05_satellite_hard_a",
+  "name": "Satellite Hard A",
+  "description": "Turn, calibrate, and capture images. Settings: satellites=2, directions=7, instruments=3, modes=3, images=5. Rationale: Two satellites and three instruments expand the action space, with five images spread over seven directions.",
+  "meta": {
+    "domain": "satellite",
+    "enable_numeric": false,
+    "enable_conditional": false,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 24
+  },
+  "objects": {
+    "s1": "satellite",
+    "s2": "satellite",
+    "d1": "direction",
+    "d2": "direction",
+    "d3": "direction",
+    "d4": "direction",
+    "d5": "direction",
+    "d6": "direction",
+    "d7": "direction",
+    "i1": "instrument",
+    "i2": "instrument",
+    "i3": "instrument",
+    "m1": "mode",
+    "m2": "mode",
+    "m3": "mode"
+  },
+  "static_facts": [
+    "(on_board i1 s1)",
+    "(calibration_target i1 d6)",
+    "(supports i1 m2)",
+    "(supports i1 m1)",
+    "(supports i1 m3)",
+    "(on_board i2 s2)",
+    "(calibration_target i2 d5)",
+    "(supports i2 m1)",
+    "(supports i2 m2)",
+    "(supports i2 m3)",
+    "(on_board i3 s1)",
+    "(calibration_target i3 d1)",
+    "(supports i3 m3)",
+    "(supports i3 m1)",
+    "(supports i3 m2)"
+  ],
+  "init": [
+    "(pointing s1 d3)",
+    "(power_avail s1)",
+    "(pointing s2 d4)",
+    "(power_avail s2)"
+  ],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(and (have_image d6 m1) (have_image d4 m2) (have_image d4 m3) (have_image d2 m2) (have_image d1 m2))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(switch_on i1 s1)",
+    "(turn_to s1 d6 d3)",
+    "(calibrate s1 i1 d6)",
+    "(turn_to s1 d4 d6)",
+    "(take_image s1 d4 i1 m2)",
+    "(turn_to s1 d2 d4)",
+    "(take_image s1 d2 i1 m2)",
+    "(turn_to s1 d1 d2)",
+    "(take_image s1 d1 i1 m2)",
+    "(switch_off i1 s1)",
+    "(switch_on i3 s1)",
+    "(calibrate s1 i3 d1)",
+    "(turn_to s1 d4 d1)",
+    "(take_image s1 d4 i3 m3)",
+    "(switch_on i2 s2)",
+    "(turn_to s2 d5 d4)",
+    "(calibrate s2 i2 d5)",
+    "(turn_to s2 d6 d5)",
+    "(take_image s2 d6 i2 m1)"
+  ]
+}

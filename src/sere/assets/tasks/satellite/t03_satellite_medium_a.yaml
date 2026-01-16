@@ -1,0 +1,61 @@
+{
+  "id": "t03_satellite_medium_a",
+  "name": "Satellite Medium A",
+  "description": "Turn, calibrate, and capture images. Settings: satellites=1, directions=5, instruments=2, modes=2, images=3. Rationale: Two instruments with separate calibration directions require extra turns across a larger direction set.",
+  "meta": {
+    "domain": "satellite",
+    "enable_numeric": false,
+    "enable_conditional": false,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 18
+  },
+  "objects": {
+    "s1": "satellite",
+    "d1": "direction",
+    "d2": "direction",
+    "d3": "direction",
+    "d4": "direction",
+    "d5": "direction",
+    "i1": "instrument",
+    "i2": "instrument",
+    "m1": "mode",
+    "m2": "mode"
+  },
+  "static_facts": [
+    "(on_board i1 s1)",
+    "(calibration_target i1 d3)",
+    "(supports i1 m2)",
+    "(on_board i2 s1)",
+    "(calibration_target i2 d1)",
+    "(supports i2 m1)",
+    "(supports i2 m2)"
+  ],
+  "init": [
+    "(pointing s1 d5)",
+    "(power_avail s1)"
+  ],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(and (have_image d3 m1) (have_image d2 m2) (have_image d4 m2))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(switch_on i1 s1)",
+    "(turn_to s1 d3 d5)",
+    "(calibrate s1 i1 d3)",
+    "(turn_to s1 d2 d3)",
+    "(take_image s1 d2 i1 m2)",
+    "(turn_to s1 d4 d2)",
+    "(take_image s1 d4 i1 m2)",
+    "(switch_off i1 s1)",
+    "(switch_on i2 s1)",
+    "(turn_to s1 d1 d4)",
+    "(calibrate s1 i2 d1)",
+    "(turn_to s1 d3 d1)",
+    "(take_image s1 d3 i2 m1)"
+  ]
+}

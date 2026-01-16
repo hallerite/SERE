@@ -1,0 +1,331 @@
+{
+  "domain": "satellite",
+  "requirements": [
+    ":strips",
+    ":typing"
+  ],
+  "types": [
+    {
+      "name": "satellite"
+    },
+    {
+      "name": "direction"
+    },
+    {
+      "name": "instrument"
+    },
+    {
+      "name": "mode"
+    }
+  ],
+  "predicates": [
+    {
+      "name": "on_board",
+      "args": [
+        {
+          "name": "i",
+          "type": "instrument"
+        },
+        {
+          "name": "s",
+          "type": "satellite"
+        }
+      ],
+      "static": true,
+      "nl": "{i} is on board {s}"
+    },
+    {
+      "name": "supports",
+      "args": [
+        {
+          "name": "i",
+          "type": "instrument"
+        },
+        {
+          "name": "m",
+          "type": "mode"
+        }
+      ],
+      "static": true,
+      "nl": "{i} supports {m}"
+    },
+    {
+      "name": "pointing",
+      "args": [
+        {
+          "name": "s",
+          "type": "satellite"
+        },
+        {
+          "name": "d",
+          "type": "direction"
+        }
+      ],
+      "nl": "{s} is pointing at {d}"
+    },
+    {
+      "name": "power_avail",
+      "args": [
+        {
+          "name": "s",
+          "type": "satellite"
+        }
+      ],
+      "nl": "{s} has power available"
+    },
+    {
+      "name": "power_on",
+      "args": [
+        {
+          "name": "i",
+          "type": "instrument"
+        }
+      ],
+      "nl": "{i} is powered on"
+    },
+    {
+      "name": "calibrated",
+      "args": [
+        {
+          "name": "i",
+          "type": "instrument"
+        }
+      ],
+      "nl": "{i} is calibrated"
+    },
+    {
+      "name": "have_image",
+      "args": [
+        {
+          "name": "d",
+          "type": "direction"
+        },
+        {
+          "name": "m",
+          "type": "mode"
+        }
+      ],
+      "nl": "{d} has an image in {m}"
+    },
+    {
+      "name": "calibration_target",
+      "args": [
+        {
+          "name": "i",
+          "type": "instrument"
+        },
+        {
+          "name": "d",
+          "type": "direction"
+        }
+      ],
+      "static": true,
+      "nl": "{i} calibrates on {d}"
+    }
+  ],
+  "actions": [
+    {
+      "name": "turn_to",
+      "params": [
+        {
+          "s": "satellite"
+        },
+        {
+          "d_new": "direction"
+        },
+        {
+          "d_prev": "direction"
+        }
+      ],
+      "pre": [
+        "(pointing ?s ?d_prev)"
+      ],
+      "add": [
+        "(pointing ?s ?d_new)"
+      ],
+      "del": [
+        "(pointing ?s ?d_prev)"
+      ],
+      "nl": "Turn {s} from {d_prev} to {d_new}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "switch_on",
+      "params": [
+        {
+          "i": "instrument"
+        },
+        {
+          "s": "satellite"
+        }
+      ],
+      "pre": [
+        "(on_board ?i ?s)",
+        "(power_avail ?s)"
+      ],
+      "add": [
+        "(power_on ?i)"
+      ],
+      "del": [
+        "(calibrated ?i)",
+        "(power_avail ?s)"
+      ],
+      "nl": "Switch on {i} on {s}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "switch_off",
+      "params": [
+        {
+          "i": "instrument"
+        },
+        {
+          "s": "satellite"
+        }
+      ],
+      "pre": [
+        "(on_board ?i ?s)",
+        "(power_on ?i)"
+      ],
+      "add": [
+        "(power_avail ?s)"
+      ],
+      "del": [
+        "(power_on ?i)"
+      ],
+      "nl": "Switch off {i} on {s}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "calibrate",
+      "params": [
+        {
+          "s": "satellite"
+        },
+        {
+          "i": "instrument"
+        },
+        {
+          "d": "direction"
+        }
+      ],
+      "pre": [
+        "(on_board ?i ?s)",
+        "(calibration_target ?i ?d)",
+        "(pointing ?s ?d)",
+        "(power_on ?i)"
+      ],
+      "add": [
+        "(calibrated ?i)"
+      ],
+      "del": [],
+      "nl": "Calibrate {i} on {s} at {d}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "take_image",
+      "params": [
+        {
+          "s": "satellite"
+        },
+        {
+          "d": "direction"
+        },
+        {
+          "i": "instrument"
+        },
+        {
+          "m": "mode"
+        }
+      ],
+      "pre": [
+        "(calibrated ?i)",
+        "(on_board ?i ?s)",
+        "(supports ?i ?m)",
+        "(power_on ?i)",
+        "(pointing ?s ?d)"
+      ],
+      "add": [
+        "(have_image ?d ?m)"
+      ],
+      "del": [],
+      "nl": "Take {m} image of {d} using {i}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    }
+  ]
+}

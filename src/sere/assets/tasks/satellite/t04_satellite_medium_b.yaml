@@ -1,0 +1,66 @@
+{
+  "id": "t04_satellite_medium_b",
+  "name": "Satellite Medium B",
+  "description": "Turn, calibrate, and capture images. Settings: satellites=1, directions=6, instruments=2, modes=3, images=4. Rationale: Three imaging modes and more directions increase calibration choices and turning depth.",
+  "meta": {
+    "domain": "satellite",
+    "enable_numeric": false,
+    "enable_conditional": false,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 19
+  },
+  "objects": {
+    "s1": "satellite",
+    "d1": "direction",
+    "d2": "direction",
+    "d3": "direction",
+    "d4": "direction",
+    "d5": "direction",
+    "d6": "direction",
+    "i1": "instrument",
+    "i2": "instrument",
+    "m1": "mode",
+    "m2": "mode",
+    "m3": "mode"
+  },
+  "static_facts": [
+    "(on_board i1 s1)",
+    "(calibration_target i1 d5)",
+    "(supports i1 m1)",
+    "(supports i1 m3)",
+    "(supports i1 m2)",
+    "(on_board i2 s1)",
+    "(calibration_target i2 d1)",
+    "(supports i2 m2)",
+    "(supports i2 m3)"
+  ],
+  "init": [
+    "(pointing s1 d3)",
+    "(power_avail s1)"
+  ],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(and (have_image d4 m1) (have_image d4 m2) (have_image d1 m1) (have_image d1 m2))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(switch_on i1 s1)",
+    "(turn_to s1 d5 d3)",
+    "(calibrate s1 i1 d5)",
+    "(turn_to s1 d4 d5)",
+    "(take_image s1 d4 i1 m1)",
+    "(turn_to s1 d1 d4)",
+    "(take_image s1 d1 i1 m1)",
+    "(switch_off i1 s1)",
+    "(switch_on i2 s1)",
+    "(calibrate s1 i2 d1)",
+    "(turn_to s1 d4 d1)",
+    "(take_image s1 d4 i2 m2)",
+    "(turn_to s1 d1 d4)",
+    "(take_image s1 d1 i2 m2)"
+  ]
+}

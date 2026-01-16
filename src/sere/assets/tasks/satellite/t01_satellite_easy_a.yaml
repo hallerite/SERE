@@ -1,0 +1,46 @@
+{
+  "id": "t01_satellite_easy_a",
+  "name": "Satellite Easy A",
+  "description": "Turn, calibrate, and capture images. Settings: satellites=1, directions=3, instruments=1, modes=1, images=2. Rationale: Single satellite, one instrument, and two images across three directions keep calibration and turning minimal.",
+  "meta": {
+    "domain": "satellite",
+    "enable_numeric": false,
+    "enable_conditional": false,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 11
+  },
+  "objects": {
+    "s1": "satellite",
+    "d1": "direction",
+    "d2": "direction",
+    "d3": "direction",
+    "i1": "instrument",
+    "m1": "mode"
+  },
+  "static_facts": [
+    "(on_board i1 s1)",
+    "(calibration_target i1 d2)",
+    "(supports i1 m1)"
+  ],
+  "init": [
+    "(pointing s1 d3)",
+    "(power_avail s1)"
+  ],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(and (have_image d2 m1) (have_image d3 m1))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(switch_on i1 s1)",
+    "(turn_to s1 d2 d3)",
+    "(calibrate s1 i1 d2)",
+    "(take_image s1 d2 i1 m1)",
+    "(turn_to s1 d3 d2)",
+    "(take_image s1 d3 i1 m1)"
+  ]
+}
