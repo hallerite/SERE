@@ -1,0 +1,214 @@
+domain: floortile
+requirements: [":strips", ":typing", ":action-costs"]
+
+types:
+  - name: robot
+  - name: tile
+  - name: color
+
+predicates:
+  - name: robot-at
+    args: [{name: r, type: robot}, {name: t, type: tile}]
+    nl: "{r} is at {t}"
+
+  - name: up
+    args: [{name: y, type: tile}, {name: x, type: tile}]
+    static: true
+    nl: "{y} is above {x}"
+
+  - name: down
+    args: [{name: y, type: tile}, {name: x, type: tile}]
+    static: true
+    nl: "{y} is below {x}"
+
+  - name: right
+    args: [{name: y, type: tile}, {name: x, type: tile}]
+    static: true
+    nl: "{y} is right of {x}"
+
+  - name: left
+    args: [{name: y, type: tile}, {name: x, type: tile}]
+    static: true
+    nl: "{y} is left of {x}"
+
+  - name: clear
+    args: [{name: t, type: tile}]
+    nl: "{t} is clear"
+
+  - name: painted
+    args: [{name: t, type: tile}, {name: c, type: color}]
+    nl: "{t} is painted {c}"
+
+  - name: robot-has
+    args: [{name: r, type: robot}, {name: c, type: color}]
+    nl: "{r} has color {c}"
+
+  - name: available-color
+    args: [{name: c, type: color}]
+    static: true
+    nl: "{c} is available"
+
+  - name: free-color
+    args: [{name: r, type: robot}]
+    nl: "{r} has free color"
+
+fluents:
+  - name: total-cost
+    args: []
+    nl: "Total cost"
+
+actions:
+  - name: change-color
+    params: [{r: robot}, {c: color}, {c2: color}]
+    pre:
+      - "(robot-has ?r ?c)"
+      - "(available-color ?c2)"
+    add: ["(robot-has ?r ?c2)"]
+    del: ["(robot-has ?r ?c)"]
+    num_eff: ["(increase (total-cost) 5)"]
+    nl: "Change {r} from {c} to {c2}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: paint-up
+    params: [{r: robot}, {y: tile}, {x: tile}, {c: color}]
+    pre:
+      - "(robot-has ?r ?c)"
+      - "(robot-at ?r ?x)"
+      - "(up ?y ?x)"
+      - "(clear ?y)"
+    add: ["(painted ?y ?c)"]
+    del: ["(clear ?y)"]
+    num_eff: ["(increase (total-cost) 2)"]
+    nl: "Paint {y} from {x} with {c}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: paint-down
+    params: [{r: robot}, {y: tile}, {x: tile}, {c: color}]
+    pre:
+      - "(robot-has ?r ?c)"
+      - "(robot-at ?r ?x)"
+      - "(down ?y ?x)"
+      - "(clear ?y)"
+    add: ["(painted ?y ?c)"]
+    del: ["(clear ?y)"]
+    num_eff: ["(increase (total-cost) 2)"]
+    nl: "Paint {y} from {x} with {c}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: up
+    params: [{r: robot}, {x: tile}, {y: tile}]
+    pre:
+      - "(robot-at ?r ?x)"
+      - "(up ?y ?x)"
+      - "(clear ?y)"
+    add: ["(robot-at ?r ?y)", "(clear ?x)"]
+    del: ["(robot-at ?r ?x)", "(clear ?y)"]
+    num_eff: ["(increase (total-cost) 3)"]
+    nl: "Move {r} up from {x} to {y}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: down
+    params: [{r: robot}, {x: tile}, {y: tile}]
+    pre:
+      - "(robot-at ?r ?x)"
+      - "(down ?y ?x)"
+      - "(clear ?y)"
+    add: ["(robot-at ?r ?y)", "(clear ?x)"]
+    del: ["(robot-at ?r ?x)", "(clear ?y)"]
+    num_eff: ["(increase (total-cost) 1)"]
+    nl: "Move {r} down from {x} to {y}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: right
+    params: [{r: robot}, {x: tile}, {y: tile}]
+    pre:
+      - "(robot-at ?r ?x)"
+      - "(right ?y ?x)"
+      - "(clear ?y)"
+    add: ["(robot-at ?r ?y)", "(clear ?x)"]
+    del: ["(robot-at ?r ?x)", "(clear ?y)"]
+    num_eff: ["(increase (total-cost) 1)"]
+    nl: "Move {r} right from {x} to {y}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: left
+    params: [{r: robot}, {x: tile}, {y: tile}]
+    pre:
+      - "(robot-at ?r ?x)"
+      - "(left ?y ?x)"
+      - "(clear ?y)"
+    add: ["(robot-at ?r ?y)", "(clear ?x)"]
+    del: ["(robot-at ?r ?x)", "(clear ?y)"]
+    num_eff: ["(increase (total-cost) 1)"]
+    nl: "Move {r} left from {x} to {y}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
