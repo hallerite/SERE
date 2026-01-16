@@ -1,0 +1,387 @@
+{
+  "domain": "goldminer",
+  "requirements": [
+    ":typing"
+  ],
+  "types": [
+    {
+      "name": "loc"
+    }
+  ],
+  "predicates": [
+    {
+      "name": "robot-at",
+      "args": [
+        {
+          "name": "x",
+          "type": "loc"
+        }
+      ],
+      "nl": "Robot is at {x}"
+    },
+    {
+      "name": "bomb-at",
+      "args": [
+        {
+          "name": "x",
+          "type": "loc"
+        }
+      ],
+      "nl": "Bomb supply is at {x}"
+    },
+    {
+      "name": "laser-at",
+      "args": [
+        {
+          "name": "x",
+          "type": "loc"
+        }
+      ],
+      "nl": "Laser is at {x}"
+    },
+    {
+      "name": "soft-rock-at",
+      "args": [
+        {
+          "name": "x",
+          "type": "loc"
+        }
+      ],
+      "nl": "Soft rock is at {x}"
+    },
+    {
+      "name": "hard-rock-at",
+      "args": [
+        {
+          "name": "x",
+          "type": "loc"
+        }
+      ],
+      "nl": "Hard rock is at {x}"
+    },
+    {
+      "name": "gold-at",
+      "args": [
+        {
+          "name": "x",
+          "type": "loc"
+        }
+      ],
+      "nl": "Gold is at {x}"
+    },
+    {
+      "name": "arm-empty",
+      "args": [],
+      "nl": "Robot's arm is empty"
+    },
+    {
+      "name": "holds-bomb",
+      "args": [],
+      "nl": "Robot holds a bomb"
+    },
+    {
+      "name": "holds-laser",
+      "args": [],
+      "nl": "Robot holds the laser"
+    },
+    {
+      "name": "holds-gold",
+      "args": [],
+      "nl": "Robot holds gold"
+    },
+    {
+      "name": "clear",
+      "args": [
+        {
+          "name": "x",
+          "type": "loc"
+        }
+      ],
+      "nl": "{x} is clear"
+    },
+    {
+      "name": "connected",
+      "args": [
+        {
+          "name": "x",
+          "type": "loc"
+        },
+        {
+          "name": "y",
+          "type": "loc"
+        }
+      ],
+      "static": true,
+      "nl": "{x} is connected to {y}"
+    }
+  ],
+  "actions": [
+    {
+      "name": "move",
+      "params": [
+        {
+          "x": "loc"
+        },
+        {
+          "y": "loc"
+        }
+      ],
+      "pre": [
+        "(robot-at ?x)",
+        "(connected ?x ?y)",
+        "(clear ?y)"
+      ],
+      "add": [
+        "(robot-at ?y)"
+      ],
+      "del": [
+        "(robot-at ?x)"
+      ],
+      "nl": "Move from {x} to {y}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "pickup-laser",
+      "params": [
+        {
+          "x": "loc"
+        }
+      ],
+      "pre": [
+        "(robot-at ?x)",
+        "(laser-at ?x)",
+        "(arm-empty)"
+      ],
+      "add": [
+        "(holds-laser)"
+      ],
+      "del": [
+        "(arm-empty)",
+        "(laser-at ?x)"
+      ],
+      "nl": "Pick up the laser at {x}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "pickup-bomb",
+      "params": [
+        {
+          "x": "loc"
+        }
+      ],
+      "pre": [
+        "(robot-at ?x)",
+        "(bomb-at ?x)",
+        "(arm-empty)"
+      ],
+      "add": [
+        "(holds-bomb)"
+      ],
+      "del": [
+        "(arm-empty)"
+      ],
+      "nl": "Pick up a bomb at {x}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "putdown-laser",
+      "params": [
+        {
+          "x": "loc"
+        }
+      ],
+      "pre": [
+        "(robot-at ?x)",
+        "(holds-laser)"
+      ],
+      "add": [
+        "(arm-empty)",
+        "(laser-at ?x)"
+      ],
+      "del": [
+        "(holds-laser)"
+      ],
+      "nl": "Put down the laser at {x}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "detonate-bomb",
+      "params": [
+        {
+          "x": "loc"
+        },
+        {
+          "y": "loc"
+        }
+      ],
+      "pre": [
+        "(robot-at ?x)",
+        "(holds-bomb)",
+        "(connected ?x ?y)",
+        "(soft-rock-at ?y)"
+      ],
+      "add": [
+        "(arm-empty)",
+        "(clear ?y)"
+      ],
+      "del": [
+        "(holds-bomb)",
+        "(soft-rock-at ?y)"
+      ],
+      "nl": "Detonate a bomb from {x} to clear {y}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "fire-laser",
+      "params": [
+        {
+          "x": "loc"
+        },
+        {
+          "y": "loc"
+        }
+      ],
+      "pre": [
+        "(robot-at ?x)",
+        "(holds-laser)",
+        "(connected ?x ?y)"
+      ],
+      "add": [
+        "(clear ?y)"
+      ],
+      "del": [
+        "(soft-rock-at ?y)",
+        "(gold-at ?y)",
+        "(hard-rock-at ?y)"
+      ],
+      "nl": "Fire the laser from {x} to clear {y}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    },
+    {
+      "name": "pick-gold",
+      "params": [
+        {
+          "x": "loc"
+        }
+      ],
+      "pre": [
+        "(robot-at ?x)",
+        "(arm-empty)",
+        "(gold-at ?x)"
+      ],
+      "add": [
+        "(holds-gold)"
+      ],
+      "del": [
+        "(arm-empty)"
+      ],
+      "nl": "Pick up gold at {x}",
+      "outcomes": [
+        {
+          "name": "success",
+          "status": "success",
+          "p": 1.0,
+          "add": [],
+          "delete": []
+        },
+        {
+          "name": "fail",
+          "status": "fail",
+          "p": 0.0,
+          "add": [],
+          "delete": []
+        }
+      ]
+    }
+  ]
+}

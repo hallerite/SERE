@@ -1,0 +1,89 @@
+{
+  "id": "t02_goldminer_easy_b",
+  "name": "Goldminer Easy B",
+  "description": "Clear a slightly wider grid to retrieve the gold. Settings: rows=2, cols=4, seed=2. Rationale: Adds one column for longer navigation.",
+  "meta": {
+    "domain": "goldminer",
+    "enable_numeric": false,
+    "enable_conditional": false,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 24
+  },
+  "objects": {
+    "f0-0": "loc",
+    "f0-1": "loc",
+    "f0-2": "loc",
+    "f0-3": "loc",
+    "f1-0": "loc",
+    "f1-1": "loc",
+    "f1-2": "loc",
+    "f1-3": "loc"
+  },
+  "static_facts": [
+    "(connected f0-0 f0-1)",
+    "(connected f0-1 f0-0)",
+    "(connected f0-0 f1-0)",
+    "(connected f1-0 f0-0)",
+    "(connected f0-1 f0-2)",
+    "(connected f0-2 f0-1)",
+    "(connected f0-1 f1-1)",
+    "(connected f1-1 f0-1)",
+    "(connected f0-2 f0-3)",
+    "(connected f0-3 f0-2)",
+    "(connected f0-2 f1-2)",
+    "(connected f1-2 f0-2)",
+    "(connected f0-3 f1-3)",
+    "(connected f1-3 f0-3)",
+    "(connected f1-0 f1-1)",
+    "(connected f1-1 f1-0)",
+    "(connected f1-1 f1-2)",
+    "(connected f1-2 f1-1)",
+    "(connected f1-2 f1-3)",
+    "(connected f1-3 f1-2)"
+  ],
+  "init": [
+    "(arm-empty)",
+    "(robot-at f0-0)",
+    "(bomb-at f1-0)",
+    "(laser-at f1-0)",
+    "(clear f0-0)",
+    "(hard-rock-at f0-1)",
+    "(soft-rock-at f0-2)",
+    "(gold-at f0-3)",
+    "(soft-rock-at f0-3)",
+    "(clear f1-0)",
+    "(soft-rock-at f1-1)",
+    "(soft-rock-at f1-2)",
+    "(hard-rock-at f1-3)"
+  ],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(holds-gold)",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(move f0-0 f1-0)",
+    "(pickup-laser f1-0)",
+    "(fire-laser f1-0 f1-1)",
+    "(move f1-0 f1-1)",
+    "(fire-laser f1-1 f1-2)",
+    "(move f1-1 f1-2)",
+    "(fire-laser f1-2 f0-2)",
+    "(move f1-2 f0-2)",
+    "(move f0-2 f1-2)",
+    "(move f1-2 f1-1)",
+    "(move f1-1 f1-0)",
+    "(putdown-laser f1-0)",
+    "(pickup-bomb f1-0)",
+    "(move f1-0 f1-1)",
+    "(move f1-1 f1-2)",
+    "(move f1-2 f0-2)",
+    "(detonate-bomb f0-2 f0-3)",
+    "(move f0-2 f0-3)",
+    "(pick-gold f0-3)"
+  ]
+}
