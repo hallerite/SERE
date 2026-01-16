@@ -1,0 +1,71 @@
+{
+  "id": "t01_rovers_easy_a",
+  "name": "Rovers Easy A",
+  "description": "Collect a soil sample and transmit one image on a short line. Settings: waypoints=3, samples=1, images=1, cameras=1. Rationale: Single rover, one camera, and one objective with local calibration.",
+  "meta": {
+    "domain": "rovers",
+    "enable_numeric": false,
+    "enable_conditional": false,
+    "enable_durations": false,
+    "enable_stochastic": false,
+    "max_steps": 13
+  },
+  "objects": {
+    "r1": "rover",
+    "w1": "waypoint",
+    "w2": "waypoint",
+    "w3": "waypoint",
+    "s1": "store",
+    "c1": "camera",
+    "m1": "mode",
+    "o1": "objective",
+    "l1": "lander"
+  },
+  "static_facts": [
+    "(at_lander l1 w1)",
+    "(equipped_for_soil_analysis r1)",
+    "(equipped_for_rock_analysis r1)",
+    "(equipped_for_imaging r1)",
+    "(can_traverse r1 w1 w2)",
+    "(can_traverse r1 w2 w1)",
+    "(can_traverse r1 w2 w3)",
+    "(can_traverse r1 w3 w2)",
+    "(visible w1 w1)",
+    "(visible w1 w2)",
+    "(visible w1 w3)",
+    "(visible w2 w1)",
+    "(visible w2 w3)",
+    "(visible w3 w1)",
+    "(visible w3 w2)",
+    "(store_of s1 r1)",
+    "(on_board c1 r1)",
+    "(supports c1 m1)",
+    "(calibration_target c1 o1)",
+    "(visible_from o1 w3)"
+  ],
+  "init": [
+    "(at r1 w1)",
+    "(empty s1)",
+    "(available r1)",
+    "(channel_free l1)",
+    "(at_soil_sample w2)"
+  ],
+  "termination": [
+    {
+      "name": "goal",
+      "when": "(and (communicated_soil_data w2) (communicated_image_data o1 m1))",
+      "outcome": "success",
+      "reward": 1.0
+    }
+  ],
+  "reference_plan": [
+    "(navigate r1 w1 w2)",
+    "(sample_soil r1 s1 w2)",
+    "(communicate_soil_data r1 l1 w2 w2 w1)",
+    "(drop r1 s1)",
+    "(navigate r1 w2 w3)",
+    "(calibrate r1 c1 o1 w3)",
+    "(take_image r1 w3 o1 c1 m1)",
+    "(communicate_image_data r1 l1 o1 m1 w3 w1)"
+  ]
+}

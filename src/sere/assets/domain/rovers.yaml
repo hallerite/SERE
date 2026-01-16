@@ -1,0 +1,331 @@
+domain: rovers
+requirements: [":strips", ":typing"]
+
+types:
+  - name: rover
+  - name: waypoint
+  - name: store
+  - name: camera
+  - name: mode
+  - name: lander
+  - name: objective
+
+predicates:
+  - name: at
+    args: [{name: r, type: rover}, {name: w, type: waypoint}]
+    nl: "{r} is at {w}"
+
+  - name: at_lander
+    args: [{name: l, type: lander}, {name: w, type: waypoint}]
+    static: true
+    nl: "{l} is at {w}"
+
+  - name: can_traverse
+    args: [{name: r, type: rover}, {name: from, type: waypoint}, {name: to, type: waypoint}]
+    static: true
+    nl: "{r} can traverse from {from} to {to}"
+
+  - name: equipped_for_soil_analysis
+    args: [{name: r, type: rover}]
+    static: true
+    nl: "{r} can analyze soil"
+
+  - name: equipped_for_rock_analysis
+    args: [{name: r, type: rover}]
+    static: true
+    nl: "{r} can analyze rock"
+
+  - name: equipped_for_imaging
+    args: [{name: r, type: rover}]
+    static: true
+    nl: "{r} can take images"
+
+  - name: empty
+    args: [{name: s, type: store}]
+    nl: "{s} is empty"
+
+  - name: full
+    args: [{name: s, type: store}]
+    nl: "{s} is full"
+
+  - name: have_rock_analysis
+    args: [{name: r, type: rover}, {name: w, type: waypoint}]
+    nl: "{r} has rock analysis from {w}"
+
+  - name: have_soil_analysis
+    args: [{name: r, type: rover}, {name: w, type: waypoint}]
+    nl: "{r} has soil analysis from {w}"
+
+  - name: calibrated
+    args: [{name: c, type: camera}, {name: r, type: rover}]
+    nl: "{c} is calibrated on {r}"
+
+  - name: supports
+    args: [{name: c, type: camera}, {name: m, type: mode}]
+    static: true
+    nl: "{c} supports {m}"
+
+  - name: available
+    args: [{name: r, type: rover}]
+    nl: "{r} is available"
+
+  - name: visible
+    args: [{name: from, type: waypoint}, {name: to, type: waypoint}]
+    static: true
+    nl: "{from} can see {to}"
+
+  - name: have_image
+    args: [{name: r, type: rover}, {name: o, type: objective}, {name: m, type: mode}]
+    nl: "{r} has an image of {o} in {m}"
+
+  - name: communicated_soil_data
+    args: [{name: w, type: waypoint}]
+    nl: "soil data from {w} was communicated"
+
+  - name: communicated_rock_data
+    args: [{name: w, type: waypoint}]
+    nl: "rock data from {w} was communicated"
+
+  - name: communicated_image_data
+    args: [{name: o, type: objective}, {name: m, type: mode}]
+    nl: "image of {o} in {m} was communicated"
+
+  - name: at_soil_sample
+    args: [{name: w, type: waypoint}]
+    nl: "soil sample is at {w}"
+
+  - name: at_rock_sample
+    args: [{name: w, type: waypoint}]
+    nl: "rock sample is at {w}"
+
+  - name: visible_from
+    args: [{name: o, type: objective}, {name: w, type: waypoint}]
+    static: true
+    nl: "{o} is visible from {w}"
+
+  - name: store_of
+    args: [{name: s, type: store}, {name: r, type: rover}]
+    static: true
+    nl: "{s} belongs to {r}"
+
+  - name: calibration_target
+    args: [{name: c, type: camera}, {name: o, type: objective}]
+    static: true
+    nl: "{c} calibrates on {o}"
+
+  - name: on_board
+    args: [{name: c, type: camera}, {name: r, type: rover}]
+    static: true
+    nl: "{c} is onboard {r}"
+
+  - name: channel_free
+    args: [{name: l, type: lander}]
+    nl: "channel to {l} is free"
+
+actions:
+  - name: navigate
+    params: [{r: rover}, {from: waypoint}, {to: waypoint}]
+    pre:
+      - "(can_traverse ?r ?from ?to)"
+      - "(available ?r)"
+      - "(at ?r ?from)"
+      - "(visible ?from ?to)"
+    add: ["(at ?r ?to)"]
+    del: ["(at ?r ?from)"]
+    nl: "Navigate {r} from {from} to {to}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: sample_soil
+    params: [{r: rover}, {s: store}, {w: waypoint}]
+    pre:
+      - "(at ?r ?w)"
+      - "(at_soil_sample ?w)"
+      - "(equipped_for_soil_analysis ?r)"
+      - "(store_of ?s ?r)"
+      - "(empty ?s)"
+    add: ["(full ?s)", "(have_soil_analysis ?r ?w)"]
+    del: ["(empty ?s)", "(at_soil_sample ?w)"]
+    nl: "Collect soil sample at {w}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: sample_rock
+    params: [{r: rover}, {s: store}, {w: waypoint}]
+    pre:
+      - "(at ?r ?w)"
+      - "(at_rock_sample ?w)"
+      - "(equipped_for_rock_analysis ?r)"
+      - "(store_of ?s ?r)"
+      - "(empty ?s)"
+    add: ["(full ?s)", "(have_rock_analysis ?r ?w)"]
+    del: ["(empty ?s)", "(at_rock_sample ?w)"]
+    nl: "Collect rock sample at {w}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: drop
+    params: [{r: rover}, {s: store}]
+    pre:
+      - "(store_of ?s ?r)"
+      - "(full ?s)"
+    add: ["(empty ?s)"]
+    del: ["(full ?s)"]
+    nl: "Drop samples from {s}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: calibrate
+    params: [{r: rover}, {c: camera}, {o: objective}, {w: waypoint}]
+    pre:
+      - "(equipped_for_imaging ?r)"
+      - "(calibration_target ?c ?o)"
+      - "(at ?r ?w)"
+      - "(visible_from ?o ?w)"
+      - "(on_board ?c ?r)"
+    add: ["(calibrated ?c ?r)"]
+    del: []
+    nl: "Calibrate {c} at {w}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: take_image
+    params: [{r: rover}, {w: waypoint}, {o: objective}, {c: camera}, {m: mode}]
+    pre:
+      - "(calibrated ?c ?r)"
+      - "(on_board ?c ?r)"
+      - "(equipped_for_imaging ?r)"
+      - "(supports ?c ?m)"
+      - "(visible_from ?o ?w)"
+      - "(at ?r ?w)"
+    add: ["(have_image ?r ?o ?m)"]
+    del: ["(calibrated ?c ?r)"]
+    nl: "Take {m} image of {o}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: communicate_soil_data
+    params: [{r: rover}, {l: lander}, {p: waypoint}, {x: waypoint}, {y: waypoint}]
+    pre:
+      - "(at ?r ?x)"
+      - "(at_lander ?l ?y)"
+      - "(have_soil_analysis ?r ?p)"
+      - "(visible ?x ?y)"
+      - "(available ?r)"
+      - "(channel_free ?l)"
+    add: ["(channel_free ?l)", "(communicated_soil_data ?p)", "(available ?r)"]
+    del: ["(available ?r)", "(channel_free ?l)"]
+    nl: "Communicate soil data from {p}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: communicate_rock_data
+    params: [{r: rover}, {l: lander}, {p: waypoint}, {x: waypoint}, {y: waypoint}]
+    pre:
+      - "(at ?r ?x)"
+      - "(at_lander ?l ?y)"
+      - "(have_rock_analysis ?r ?p)"
+      - "(visible ?x ?y)"
+      - "(available ?r)"
+      - "(channel_free ?l)"
+    add: ["(channel_free ?l)", "(communicated_rock_data ?p)", "(available ?r)"]
+    del: ["(available ?r)", "(channel_free ?l)"]
+    nl: "Communicate rock data from {p}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
+
+  - name: communicate_image_data
+    params: [{r: rover}, {l: lander}, {o: objective}, {m: mode}, {x: waypoint}, {y: waypoint}]
+    pre:
+      - "(at ?r ?x)"
+      - "(at_lander ?l ?y)"
+      - "(have_image ?r ?o ?m)"
+      - "(visible ?x ?y)"
+      - "(available ?r)"
+      - "(channel_free ?l)"
+    add: ["(channel_free ?l)", "(communicated_image_data ?o ?m)", "(available ?r)"]
+    del: ["(available ?r)", "(channel_free ?l)"]
+    nl: "Communicate image data of {o}"
+    outcomes:
+      - name: success
+        status: success
+        p: 1.0
+        add: []
+        delete: []
+      - name: fail
+        status: fail
+        p: 0.0
+        add: []
+        delete: []
