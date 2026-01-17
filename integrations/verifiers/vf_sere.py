@@ -7,7 +7,11 @@ from datasets import Dataset
 
 try:
     import verifiers as vf
-    from verifiers.envs.experimental.gym_env import GymEnv, normalize_reset
+    from verifiers.envs.experimental.gym_env import (
+        GymEnv,
+        normalize_reset,
+        EpisodicSumRubric,
+    )
 except ImportError as e:
     raise ImportError(
         "Verifiers integration requires verifiers. "
@@ -75,6 +79,20 @@ class SereGymEnv(GymEnv):
         return dataset, eval_dataset
 
 
+def _extract_outcome(state: dict) -> str | None:
+    for step in reversed(state.get("trajectory", [])):
+        extras = step.get("extras") or {}
+        info = extras.get("gym_info")
+        if isinstance(info, dict) and info.get("outcome") is not None:
+            return str(info.get("outcome"))
+    return None
+
+
+def task_success(state: dict, **kwargs) -> float:
+    outcome = _extract_outcome(state)
+    return 1.0 if outcome and outcome.lower() == "success" else 0.0
+
+
 def load_environment(
     # Task selection
     task_paths: List[str] | None = None,
@@ -94,6 +112,7 @@ def load_environment(
     step_penalty: float = -0.01,
     invalid_penalty: float = -0.1,
     time_limit: float | None = None,
+    enable_reward_shaping: bool = False,
     reward_shaping: Dict[str, Any] | None = None,
     # Observation formatting
     display_nl: bool = True,
@@ -131,6 +150,9 @@ def load_environment(
         step_penalty: Reward penalty per action (default: -0.01).
         invalid_penalty: Penalty for invalid actions (default: -0.1).
         time_limit: Optional time limit for episodes (in time units).
+        enable_reward_shaping: If True, allow task-defined reward shaping milestones.
+                               If False (default), task milestones are ignored unless
+                               reward_shaping is explicitly provided.
         reward_shaping: Dict with shaping config: {"mode": "milestone"|"potential",
                         "milestones": [...], "gamma": 1.0}.
 
@@ -213,7 +235,9 @@ def load_environment(
         sere_env_kwargs.setdefault("time_limit", time_limit)
 
     if reward_shaping is not None:
-        sere_env_kwargs.setdefault("reward_shaping", reward_shaping)
+        sere_env_kwargs["reward_shaping"] = reward_shaping
+    elif "reward_shaping" not in sere_env_kwargs and not enable_reward_shaping:
+        sere_env_kwargs["reward_shaping"] = None
 
     # Build observation formatter configuration
     formatter_config = sere_env_kwargs.get("formatter_config", {})
@@ -224,6 +248,12 @@ def load_environment(
     formatter_config.setdefault("show_fluents", True)
     formatter_config.setdefault("show_messages", True)
     sere_env_kwargs["formatter_config"] = formatter_config
+
+    rubric = kwargs.pop("rubric", None)
+    if rubric is None:
+        rubric = EpisodicSumRubric()
+    if hasattr(rubric, "add_metric"):
+        rubric.add_metric(task_success)
 
     # Create GymEnv with SERE wrapper
     env = SereGymEnv(
@@ -242,6 +272,7 @@ def load_environment(
         max_episode_steps=max_episode_steps,
         seed=seed,
         # Verifiers configuration
+        rubric=rubric,
         system_prompt=system_prompt,
         message_type="chat",
         **kwargs,

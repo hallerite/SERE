@@ -47,7 +47,8 @@ Use these to shape difficulty, horizon, and feedback:
 - `enable_durations`: actions consume time; enables time-based horizons.
 - `enable_numeric`: numeric fluents (energy, temperature, etc.).
 - `enable_stochastic`: stochastic outcomes for robustness testing.
-- `reward_shaping`: milestone or potential-based shaping (task-level control).
+- `enable_reward_shaping`: apply task-defined reward shaping milestones (default: False).
+- `reward_shaping`: milestone or potential-based shaping override (task-level control).
 - `step_penalty` / `invalid_penalty`: trade off exploration vs. efficiency.
 
 Observation control (partial observability):
