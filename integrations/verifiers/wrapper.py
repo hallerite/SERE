@@ -87,7 +87,7 @@ class SereGymWrapper:
 
         return obs, info
 
-    def step(self, action: str) -> Tuple[str, float, bool, Dict[str, Any]]:
+    def step(self, action: str | List[str]) -> Tuple[str, float, bool, Dict[str, Any]]:
         """
         Execute action in current SERE environment.
 
@@ -101,8 +101,18 @@ class SereGymWrapper:
         if self.current_env is None:
             raise RuntimeError("Must call reset() before step()")
 
+        if isinstance(action, list):
+            if not action:
+                action_text = ""
+            elif len(action) == 1:
+                action_text = str(action[0])
+            else:
+                action_text = "".join(str(a) for a in action)
+        else:
+            action_text = str(action)
+
         # SERE's step returns (obs, reward, done, info)
-        obs, reward, done, info = self.current_env.step(action)
+        obs, reward, done, info = self.current_env.step(action_text)
 
         # Add task metadata to info
         info = {**info, **self.current_task_info}

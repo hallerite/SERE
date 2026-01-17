@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any
+from datasets import Dataset
 
 try:
     import verifiers as vf
-    from verifiers.envs.experimental.gym_env import GymEnv
+    from verifiers.envs.experimental.gym_env import GymEnv, normalize_reset
 except ImportError as e:
     raise ImportError(
         "Verifiers integration requires verifiers. "
@@ -30,6 +31,48 @@ __all__ = [
     "discover_tasks",
     "get_available_domains",
 ]
+
+
+class SereGymEnv(GymEnv):
+    """GymEnv with per-episode system prompts sourced from SERE task info."""
+
+    def __init__(self, *args, system_prompt: str | None = None, **kwargs):
+        self._system_prompt_override = system_prompt
+        super().__init__(*args, system_prompt=system_prompt, **kwargs)
+
+    def gym_to_hf(self) -> tuple[Dataset, Dataset | None]:
+        train_rows = []
+        eval_rows = []
+        total = self.num_train_episodes + self.num_eval_episodes
+        env = self.env_cls(**self.env_kwargs)
+
+        try:
+            for i in range(total):
+                obs, info = normalize_reset(env.reset(seed=self.seed + i))
+                question = self.obs_to_text(obs)
+                sys_prompt = self._system_prompt_override or info.get("system_prompt")
+
+                if self.message_type == "completion":
+                    row = {"prompt": question, "answer": str(self.seed + i)}
+                else:
+                    prompt = []
+                    if sys_prompt:
+                        prompt.append({"role": "system", "content": sys_prompt})
+                    prompt.append({"role": "user", "content": question})
+                    row = {"prompt": prompt, "answer": str(self.seed + i)}
+
+                if i < self.num_train_episodes:
+                    train_rows.append(row)
+                else:
+                    eval_rows.append(row)
+        finally:
+            close_fn = getattr(env, "close", None)
+            if close_fn is not None:
+                close_fn()
+
+        dataset = Dataset.from_list(train_rows)
+        eval_dataset = Dataset.from_list(eval_rows) if eval_rows else None
+        return dataset, eval_dataset
 
 
 def load_environment(
@@ -94,7 +137,7 @@ def load_environment(
         display_nl: Show natural language descriptions alongside PDDL (default: True).
         show_affordances: Show available actions in observations (default: True).
 
-        system_prompt: Custom system prompt. If None, uses default.
+        system_prompt: Custom system prompt. If None, uses per-task SERE system prompt.
         run_mode: SERE run mode (default: INTERACTIVE).
         env_kwargs: Additional arguments passed to SERE's load_task().
                     Advanced options not covered by other parameters.
@@ -155,10 +198,6 @@ def load_environment(
         eval_episodes_per_task = episodes_per_task
     num_eval_episodes = num_tasks * eval_episodes_per_task
 
-    # Build default system prompt
-    if system_prompt is None:
-        system_prompt = _build_default_system_prompt()
-
     # Build SERE environment configuration
     sere_env_kwargs = env_kwargs or {}
 
@@ -187,7 +226,7 @@ def load_environment(
     sere_env_kwargs["formatter_config"] = formatter_config
 
     # Create GymEnv with SERE wrapper
-    env = GymEnv(
+    env = SereGymEnv(
         # SERE-specific
         env_cls=SereGymWrapper,
         env_kwargs={
@@ -209,23 +248,3 @@ def load_environment(
     )
 
     return env
-
-
-def _build_default_system_prompt() -> str:
-    """Build default system prompt for SERE tasks."""
-    return """You are solving symbolic reasoning tasks in a PDDL-style environment.
-
-Each task presents you with:
-- Current state of the world
-- Goal to achieve
-- Available actions
-
-Respond with valid PDDL actions in S-expression format.
-
-Examples:
-- Single action: (move r1 kitchen pantry)
-- Multiple actions (multi-agent): (move r1 kitchen pantry)
-                                    (pick-up r2 leaf)
-
-For multi-agent tasks, provide one action per robot. Use (idle <robot>) if a robot should not act.
-"""
