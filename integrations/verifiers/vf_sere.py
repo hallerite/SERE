@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any
+from pathlib import Path
 from datasets import Dataset
 
 try:
@@ -54,7 +55,14 @@ class SereGymEnv(GymEnv):
             for i in range(total):
                 obs, info = normalize_reset(env.reset(seed=self.seed + i))
                 question = self.obs_to_text(obs)
+                info = info or {}
                 sys_prompt = self._system_prompt_override or info.get("system_prompt")
+                task_id = info.get("task_id")
+                task_path = info.get("task_path")
+                task_stem = ""
+                if isinstance(task_path, str) and task_path:
+                    task_stem = Path(task_path).stem
+                domain = info.get("domain")
 
                 if self.message_type == "completion":
                     row = {"prompt": question, "answer": str(self.seed + i)}
@@ -64,6 +72,12 @@ class SereGymEnv(GymEnv):
                         prompt.append({"role": "system", "content": sys_prompt})
                     prompt.append({"role": "user", "content": question})
                     row = {"prompt": prompt, "answer": str(self.seed + i)}
+                if domain:
+                    row["task"] = str(domain)
+                if task_id:
+                    row["task_name"] = str(task_id)
+                elif task_stem:
+                    row["task_name"] = task_stem
 
                 if i < self.num_train_episodes:
                     train_rows.append(row)
@@ -79,6 +93,7 @@ class SereGymEnv(GymEnv):
         return dataset, eval_dataset
 
 
+
 def _extract_outcome(state: dict) -> str | None:
     for step in reversed(state.get("trajectory", [])):
         extras = step.get("extras") or {}
@@ -91,6 +106,29 @@ def _extract_outcome(state: dict) -> str | None:
 def task_success(state: dict, **kwargs) -> float:
     outcome = _extract_outcome(state)
     return 1.0 if outcome and outcome.lower() == "success" else 0.0
+
+
+def _outcome_is(state: dict, label: str) -> float:
+    outcome = _extract_outcome(state)
+    if not outcome:
+        return 0.0
+    return 1.0 if outcome.lower() == label.lower() else 0.0
+
+
+def outcome_invalid_move(state: dict, **kwargs) -> float:
+    return _outcome_is(state, "invalid_move")
+
+
+def outcome_timeout(state: dict, **kwargs) -> float:
+    return _outcome_is(state, "timeout")
+
+
+def outcome_out_of_energy(state: dict, **kwargs) -> float:
+    return _outcome_is(state, "out_of_energy")
+
+
+def outcome_failed(state: dict, **kwargs) -> float:
+    return _outcome_is(state, "failed")
 
 
 def load_environment(
@@ -254,6 +292,10 @@ def load_environment(
         rubric = EpisodicSumRubric()
     if hasattr(rubric, "add_metric"):
         rubric.add_metric(task_success)
+        rubric.add_metric(outcome_invalid_move)
+        rubric.add_metric(outcome_timeout)
+        rubric.add_metric(outcome_out_of_energy)
+        rubric.add_metric(outcome_failed)
 
     # Create GymEnv with SERE wrapper
     env = SereGymEnv(
