@@ -12,6 +12,7 @@ def discover_tasks(
     num_tasks_per_domain: int | None = None,
     include_multi_agent: bool = True,
     include_pddl: bool = True,
+    include_yaml: bool = True,
 ) -> List[str]:
     """
     Discover SERE task files (YAML and/or PDDL problems).
@@ -23,11 +24,15 @@ def discover_tasks(
                                If None, includes all tasks.
         include_multi_agent: Whether to include multi-agent tasks
         include_pddl: Whether to include PDDL problem files from assets/pddl/
+        include_yaml: Whether to include YAML task files from assets/tasks/
 
     Returns:
         List of task paths (e.g., ["kitchen/t01_task.yaml", "pddl:blocksworld/problems/instance-1.pddl", ...])
     """
-    all_tasks = _discover_yaml_tasks(domains, num_tasks_per_domain, include_multi_agent)
+    all_tasks = []
+
+    if include_yaml:
+        all_tasks.extend(_discover_yaml_tasks(domains, num_tasks_per_domain, include_multi_agent))
 
     if include_pddl:
         all_tasks.extend(_discover_pddl_tasks(domains, num_tasks_per_domain))

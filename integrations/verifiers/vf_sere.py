@@ -16,6 +16,7 @@ except ImportError as e:
     ) from e
 
 from sere.io.task_loader import load_task
+from sere.io.pddl_loader import load_agentic_task
 from sere.core.pddl_env.run_mode import RunMode
 from integrations.verifiers.parser import (
     parse_pddl_actions,
@@ -27,6 +28,7 @@ from integrations.verifiers.dataset import discover_tasks, get_available_domains
 __all__ = [
     "load_environment",
     "SereEnv",
+    "AgenticSereEnv",
     "parse_pddl_actions",
     "format_multi_agent_prompt",
     "discover_tasks",
@@ -178,6 +180,129 @@ class SereEnv(vf.MultiTurnEnv):
     @vf.cleanup
     async def cleanup_env(self, state: State) -> None:
         state.pop("sere_env", None)
+
+
+# ---------------------------------------------------------------------------
+# Agentic environment (tool-based plan validation)
+# ---------------------------------------------------------------------------
+
+class AgenticSereEnv(vf.MultiTurnEnv):
+    """
+    Agentic PDDL environment: LLM writes plans, calls validate_plan tool.
+
+    Each plan attempt is validated from scratch against the initial state.
+    The goal and init state are immutable — guards prevent modification.
+    """
+
+    def __init__(
+        self,
+        agentic_kwargs: Dict[str, Any],
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.agentic_kwargs = agentic_kwargs
+
+    async def setup_state(self, state: State) -> State:
+        """Load task and build system prompt with domain + problem PDDL."""
+        task_path = state["info"]["task_path"]
+        domain_dir = state["info"]["domain_dir"]
+
+        agentic_env, meta = load_agentic_task(
+            domain_dir,
+            task_path,
+            **self.agentic_kwargs,
+        )
+
+        state["agentic_env"] = agentic_env
+        state["sere_done"] = False
+
+        prompt: list[dict[str, str]] = [
+            {"role": "system", "content": agentic_env.system_prompt()},
+            {"role": "user", "content": "Write a plan that achieves the goal."},
+        ]
+        state["prompt"] = prompt
+        state["tools"] = [agentic_env.tool_schema()]
+
+        return state
+
+    async def env_response(
+        self, messages: Messages, state: State, **kwargs
+    ) -> Messages:
+        """Process tool call: validate the plan, return feedback."""
+        agentic_env = state["agentic_env"]
+
+        # Extract tool call from the model's last message
+        plan_text = _extract_tool_call_arg(messages, "validate_plan", "plan")
+
+        if plan_text is None:
+            # Model didn't call the tool — prompt it to use the tool
+            return [{"role": "user", "content": (
+                "Please use the validate_plan tool to submit your plan. "
+                "Format your plan as a sequence of grounded PDDL actions."
+            )}]
+
+        feedback, done = agentic_env.validate(plan_text)
+
+        # Record outcome on trajectory
+        if state["trajectory"]:
+            outcome = "success" if agentic_env.solved else "failed"
+            state["trajectory"][-1]["reward"] = 1.0 if agentic_env.solved else 0.0
+            state["trajectory"][-1]["extras"]["sere_info"] = {
+                "outcome": outcome if done else None,
+                "attempts": agentic_env.attempts,
+                "solved": agentic_env.solved,
+            }
+
+        state["sere_done"] = done
+
+        # Return tool result as a message
+        response: Messages = [
+            {"role": "tool", "content": feedback, "tool_call_id": "validate_plan"},
+        ]
+
+        if done:
+            state["final_env_response"] = response
+
+        return response
+
+    @vf.stop
+    async def episode_done(self, state: State) -> bool:
+        return state.get("sere_done", False)
+
+    @vf.cleanup
+    async def cleanup_env(self, state: State) -> None:
+        state.pop("agentic_env", None)
+
+
+def _extract_tool_call_arg(
+    messages: Messages, tool_name: str, arg_name: str
+) -> str | None:
+    """Extract a tool call argument from the model's messages."""
+    import json
+
+    if not isinstance(messages, list):
+        return None
+
+    for msg in reversed(messages):
+        if not isinstance(msg, dict):
+            continue
+        # Check for tool_calls in assistant message
+        tool_calls = msg.get("tool_calls") or []
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            if fn.get("name") == tool_name:
+                try:
+                    args = json.loads(fn.get("arguments", "{}"))
+                    return args.get(arg_name)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        # Also check content for raw plan text as fallback
+        if msg.get("role") == "assistant" and not tool_calls:
+            content = msg.get("content", "")
+            if content and "(" in content:
+                return content
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -384,3 +509,116 @@ def _infer_domain(task_path: str) -> str:
         return p.parent.name
     # YAML: kitchen/t01.yaml → kitchen
     return p.parts[0] if p.parts else "unknown"
+
+
+def _infer_domain_dir(task_path: str) -> str:
+    """Infer domain directory from a PDDL problem path."""
+    p = Path(task_path)
+    # .../pddl/blocksworld/problems/instance-1.pddl → .../pddl/blocksworld
+    if p.parent.name == "problems":
+        return str(p.parent.parent)
+    return str(p.parent)
+
+
+# ---------------------------------------------------------------------------
+# load_agentic_environment
+# ---------------------------------------------------------------------------
+
+def load_agentic_environment(
+    # Task selection
+    domains: List[str] | None = None,
+    num_tasks_per_domain: int | None = None,
+    # Episode configuration
+    episodes_per_task: int = 1,
+    eval_episodes_per_task: int | None = None,
+    seed: int = 0,
+    # Agentic options
+    max_attempts: int = 8,
+    enable_numeric: bool = False,
+    enable_conditional: bool = False,
+    # Advanced
+    **kwargs,
+) -> AgenticSereEnv:
+    """
+    Load an agentic PDDL planning environment.
+
+    The LLM receives domain.pddl + problem.pddl and uses a validate_plan
+    tool to submit complete plans. Returns an AgenticSereEnv.
+    """
+    # Discover PDDL tasks only
+    task_paths = discover_tasks(
+        domains=domains,
+        num_tasks_per_domain=num_tasks_per_domain,
+        include_multi_agent=False,
+        include_pddl=True,
+        include_yaml=False,
+    )
+
+    if not task_paths:
+        raise ValueError(f"No PDDL tasks found for domains: {domains}")
+
+    # Build dataset
+    train_rows = []
+    eval_rows = []
+    if eval_episodes_per_task is None:
+        eval_episodes_per_task = episodes_per_task
+    num_tasks = len(task_paths)
+
+    for ep in range(episodes_per_task):
+        for i, task_path in enumerate(task_paths):
+            domain = _infer_domain(task_path)
+            domain_dir = _infer_domain_dir(task_path)
+            row = {
+                "prompt": [{"role": "user", "content": "Loading task..."}],
+                "answer": task_path,
+                "task": domain,
+                "info": {
+                    "task_path": task_path,
+                    "domain_dir": domain_dir,
+                    "domain": domain,
+                    "seed": seed + ep * num_tasks + i,
+                },
+            }
+            train_rows.append(row)
+
+    for ep in range(eval_episodes_per_task):
+        for i, task_path in enumerate(task_paths):
+            domain = _infer_domain(task_path)
+            domain_dir = _infer_domain_dir(task_path)
+            row = {
+                "prompt": [{"role": "user", "content": "Loading task..."}],
+                "answer": task_path,
+                "task": domain,
+                "info": {
+                    "task_path": task_path,
+                    "domain_dir": domain_dir,
+                    "domain": domain,
+                    "seed": seed + (episodes_per_task + ep) * num_tasks + i,
+                },
+            }
+            eval_rows.append(row)
+
+    dataset = Dataset.from_list(train_rows)
+    eval_dataset = Dataset.from_list(eval_rows) if eval_rows else None
+
+    # Agentic env kwargs
+    agentic_kwargs = {
+        "max_attempts": max_attempts,
+        "enable_numeric": enable_numeric,
+        "enable_conditional": enable_conditional,
+    }
+
+    # Rubric: binary task success
+    rubric = kwargs.pop("rubric", None)
+    if rubric is None:
+        rubric = vf.Rubric(funcs=[task_success], weights=[1.0])
+
+    return AgenticSereEnv(
+        agentic_kwargs=agentic_kwargs,
+        dataset=dataset,
+        eval_dataset=eval_dataset,
+        max_turns=max_attempts,
+        rubric=rubric,
+        message_type="chat",
+        **kwargs,
+    )

@@ -28,6 +28,7 @@ from sere.pddl.pddl_parser import (
 )
 from sere.core.world_state import WorldState
 from sere.core.pddl_env import PDDLEnv
+from sere.core.agentic_env import AgenticPDDLEnv
 from .task_loader import EnvConfig, _apply_init_fluents, _load_invariants_plugin, _parse_termination
 
 
@@ -238,3 +239,73 @@ def load_pddl_task(
     }
 
     return env, task_meta
+
+
+# ---------------------------------------------------------------------------
+#  Load problem as agentic task
+# ---------------------------------------------------------------------------
+
+def load_agentic_task(
+    domain_dir: str | Path,
+    problem_path: str | Path,
+    *,
+    max_attempts: int = 8,
+    enable_numeric: bool = False,
+    enable_conditional: bool = False,
+) -> Tuple[AgenticPDDLEnv, dict]:
+    """
+    Load a PDDL problem as an agentic planning task.
+
+    Returns (AgenticPDDLEnv, task_meta).
+    """
+    domain_dir = Path(domain_dir)
+    problem_path = Path(problem_path)
+
+    dom, _meta, pddl_domain = load_pddl_domain(domain_dir)
+    problem = parse_problem_file(problem_path)
+
+    # Build initial world state
+    w = WorldState(dom)
+    for const_name, const_type in pddl_domain.constants:
+        w.add_object(const_name, const_type)
+    for obj_name, obj_type in problem.objects:
+        w.add_object(obj_name, obj_type)
+
+    # Separate static vs dynamic init facts
+    static_preds = {name for name, spec in dom.predicates.items() if spec.static}
+    static_facts: Set[Predicate] = set()
+    for pred, args in problem.init_facts:
+        if pred in static_preds:
+            static_facts.add((pred, args))
+        else:
+            w.facts.add((pred, args))
+
+    if problem.init_fluents:
+        for fname, fargs, fval in problem.init_fluents:
+            w.set_fluent(fname, fargs, fval)
+
+    # Read raw PDDL text
+    domain_pddl = dom.pddl_source or (domain_dir / "domain.pddl").read_text("utf-8")
+    problem_pddl = problem_path.read_text("utf-8")
+
+    agentic_env = AgenticPDDLEnv(
+        domain=dom,
+        init_world=w,
+        static_facts=static_facts,
+        goal_expr=problem.goal,
+        domain_pddl=domain_pddl,
+        problem_pddl=problem_pddl,
+        problem_name=problem.name or problem_path.stem,
+        enable_numeric=enable_numeric,
+        enable_conditional=enable_conditional,
+        max_attempts=max_attempts,
+    )
+
+    task_meta = {
+        "id": problem.name or problem_path.stem,
+        "name": problem.name or problem_path.stem,
+        "domain": dom.name,
+        "path": str(problem_path),
+    }
+
+    return agentic_env, task_meta
