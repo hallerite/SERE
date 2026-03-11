@@ -1,0 +1,25 @@
+predicates:
+  not-eq:
+    nl: "{x} is a different location from {y}"
+    static: true
+  at-ferry:
+    nl: "the ferry is at {l}"
+  at:
+    nl: "{c} is at {l}"
+  "on":
+    nl: "{c} is on the ferry"
+  empty-ferry:
+    nl: "the ferry is empty"
+
+actions:
+  sail:
+    nl: "sail the ferry from {from} to {to}"
+  board:
+    nl: "board {car} onto the ferry at {loc}"
+  debark:
+    nl: "debark {car} from the ferry at {loc}"
+
+meta:
+  max_steps: 60
+  step_penalty: -0.01
+  invalid_penalty: -0.1

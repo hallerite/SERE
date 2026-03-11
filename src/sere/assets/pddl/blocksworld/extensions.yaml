@@ -1,0 +1,26 @@
+predicates:
+  on:
+    nl: "{x} is on top of {y}"
+  ontable:
+    nl: "{x} is on the table"
+  clear:
+    nl: "{x} has nothing on top of it"
+  handempty:
+    nl: "the robot hand is empty"
+  holding:
+    nl: "the robot is holding {x}"
+
+actions:
+  pick-up:
+    nl: "pick up {x} from the table"
+  put-down:
+    nl: "put {x} down on the table"
+  stack:
+    nl: "stack {x} on top of {y}"
+  unstack:
+    nl: "unstack {x} from on top of {y}"
+
+meta:
+  max_steps: 40
+  step_penalty: -0.01
+  invalid_penalty: -0.1

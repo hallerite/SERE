@@ -1,0 +1,14 @@
+predicates:
+  in-line:
+    nl: positions {p1}, {p2}, and {p3} are in a line
+  occupied:
+    nl: position {p} has a peg on it
+  free:
+    nl: position {p} is empty
+actions:
+  jump:
+    nl: jump peg from {from} over {over} to {to}
+meta:
+  max_steps: 40
+  step_penalty: -0.01
+  invalid_penalty: -0.1

@@ -1,0 +1,51 @@
+predicates:
+  at_kitchen_bread:
+    nl: "bread portion {b} is in the kitchen"
+  at_kitchen_content:
+    nl: "content portion {c} is in the kitchen"
+  at_kitchen_sandwich:
+    nl: "sandwich {s} is in the kitchen"
+  no_gluten_bread:
+    nl: "bread portion {b} is gluten-free"
+    static: true
+  no_gluten_content:
+    nl: "content portion {c} is gluten-free"
+    static: true
+  ontray:
+    nl: "sandwich {s} is on tray {t}"
+  no_gluten_sandwich:
+    nl: "sandwich {s} is gluten-free"
+  allergic_gluten:
+    nl: "child {c} is allergic to gluten"
+    static: true
+  not_allergic_gluten:
+    nl: "child {c} is not allergic to gluten"
+    static: true
+  served:
+    nl: "child {c} has been served"
+  waiting:
+    nl: "child {c} is waiting at {p}"
+    static: true
+  at:
+    nl: "tray {t} is at {p}"
+  notexist:
+    nl: "sandwich {s} has not been made yet"
+
+actions:
+  make_sandwich_no_gluten:
+    nl: "make gluten-free sandwich {s} using bread {b} and content {c}"
+  make_sandwich:
+    nl: "make sandwich {s} using bread {b} and content {c}"
+  put_on_tray:
+    nl: "put sandwich {s} on tray {t}"
+  serve_sandwich_no_gluten:
+    nl: "serve gluten-free sandwich {s} to child {c} from tray {t} at {p}"
+  serve_sandwich:
+    nl: "serve sandwich {s} to child {c} from tray {t} at {p}"
+  move_tray:
+    nl: "move tray {t} from {p1} to {p2}"
+
+meta:
+  max_steps: 50
+  step_penalty: -0.01
+  invalid_penalty: -0.1

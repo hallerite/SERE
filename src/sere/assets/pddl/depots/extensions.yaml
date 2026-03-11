@@ -1,0 +1,28 @@
+predicates:
+  at:
+    nl: '{x} is at location {y}'
+  'on':
+    nl: crate {x} is on top of {y}
+  in:
+    nl: crate {x} is inside truck {y}
+  lifting:
+    nl: hoist {x} is lifting crate {y}
+  available:
+    nl: hoist {x} is available
+  clear:
+    nl: the top of {x} is clear
+actions:
+  drive:
+    nl: drive truck {x} from {y} to {z}
+  lift:
+    nl: use hoist {x} to lift crate {y} from {z} at place {p}
+  drop:
+    nl: use hoist {x} to drop crate {y} onto {z} at place {p}
+  load:
+    nl: use hoist {x} to load crate {y} into truck {z} at place {p}
+  unload:
+    nl: use hoist {x} to unload crate {y} from truck {z} at place {p}
+meta:
+  max_steps: 50
+  step_penalty: -0.01
+  invalid_penalty: -0.1

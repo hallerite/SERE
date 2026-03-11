@@ -1,0 +1,40 @@
+predicates:
+  at_tent:
+    nl: "tent {x1} is at {x2}"
+  at_person:
+    nl: "{x1} is at {x2}"
+  at_car:
+    nl: "car {x1} is at {x2}"
+  partners:
+    nl: "{x2} and {x3} are hiking partners in couple {x1}"
+    static: true
+  up:
+    nl: "tent {x1} is set up"
+  down:
+    nl: "tent {x1} is taken down"
+  walked:
+    nl: "couple {x1} has walked to {x2}"
+  next:
+    nl: "{x2} is the next place after {x1} on the trail"
+    static: true
+
+actions:
+  put_down:
+    nl: "{x1} takes down tent {x3} at {x2}"
+  put_up:
+    nl: "{x1} sets up tent {x3} at {x2}"
+  drive_passenger:
+    nl: "{x1} drives car {x4} with passenger {x5} from {x2} to {x3}"
+  drive:
+    nl: "{x1} drives car {x4} from {x2} to {x3}"
+  drive_tent:
+    nl: "{x1} drives car {x4} carrying tent {x5} from {x2} to {x3}"
+  drive_tent_passenger:
+    nl: "{x1} drives car {x4} carrying tent {x5} and passenger {x6} from {x2} to {x3}"
+  walk_together:
+    nl: "couple {x6} walks together from {x4} to {x2} where tent {x1} is set up"
+
+meta:
+  max_steps: 60
+  step_penalty: -0.01
+  invalid_penalty: -0.1

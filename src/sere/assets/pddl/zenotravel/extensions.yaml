@@ -1,0 +1,27 @@
+predicates:
+  at:
+    nl: "{x} is at {c}"
+  in:
+    nl: "{p} is aboard {a}"
+  fuel-level:
+    nl: "aircraft {a} has fuel level {l}"
+  next:
+    nl: "fuel level {l1} is one below {l2}"
+    static: true
+
+actions:
+  board:
+    nl: "board {p} onto aircraft {a} at {c}"
+  debark:
+    nl: "{p} debarks from aircraft {a} at {c}"
+  fly:
+    nl: "fly aircraft {a} from {c1} to {c2} using one unit of fuel"
+  zoom:
+    nl: "zoom aircraft {a} from {c1} to {c2} using two units of fuel"
+  refuel:
+    nl: "refuel aircraft {a} at {c} by one level"
+
+meta:
+  max_steps: 50
+  step_penalty: -0.01
+  invalid_penalty: -0.1

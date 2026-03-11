@@ -1,0 +1,75 @@
+predicates:
+  at:
+    nl: rover {x} is at waypoint {y}
+  at_lander:
+    nl: lander {x} is at waypoint {y}
+  can_traverse:
+    nl: rover {r} can drive from {x} to {y}
+  equipped_for_soil_analysis:
+    nl: rover {r} can perform soil analysis
+  equipped_for_rock_analysis:
+    nl: rover {r} can perform rock analysis
+  equipped_for_imaging:
+    nl: rover {r} can take images
+  empty:
+    nl: rover {r}'s store {s} is empty
+  have_rock_analysis:
+    nl: rover {r} has rock analysis of waypoint {w}
+  have_soil_analysis:
+    nl: rover {r} has soil analysis of waypoint {w}
+  full:
+    nl: rover {r}'s store {s} is full
+  calibrated:
+    nl: camera {c} aboard rover {r} is calibrated
+  supports:
+    nl: camera {c} supports mode {m}
+  available:
+    nl: rover {r} is available
+  visible:
+    nl: waypoint {w1} is visible from {w2}
+  have_image:
+    nl: rover {r} has an image of objective {o} in mode {m}
+  communicated_soil_data:
+    nl: soil data from {w} has been communicated
+  communicated_rock_data:
+    nl: rock data from {w} has been communicated
+  communicated_image_data:
+    nl: image of {o} in mode {m} has been communicated
+  at_soil_sample:
+    nl: there is a soil sample at waypoint {w}
+  at_rock_sample:
+    nl: there is a rock sample at waypoint {w}
+  visible_from:
+    nl: objective {o} is visible from waypoint {w}
+  store_of:
+    nl: store {s} belongs to rover {r}
+  calibration_target:
+    nl: camera {c} calibration target is objective {o}
+  on_board:
+    nl: camera {c} is on board rover {r}
+  channel_free:
+    nl: communication channel for lander {l} is free
+actions:
+  navigate:
+    nl: navigate rover {x} from waypoint {y} to waypoint {z}
+  sample_soil:
+    nl: rover {x} takes soil sample at {p} and stores in {s}
+  sample_rock:
+    nl: rover {x} takes rock sample at {p} and stores in {s}
+  drop:
+    nl: rover {x} drops contents of store {y}
+  calibrate:
+    nl: calibrate camera {c} on rover {r} at waypoint {w} using objective {t}
+  take_image:
+    nl: rover {r} takes image of {o} in mode {m} using camera {i} at {w}
+  communicate_soil_data:
+    nl: rover {r} communicates soil data of {p} from {x} to lander {l} at {y}
+  communicate_rock_data:
+    nl: rover {r} communicates rock data of {p} from {x} to lander {l} at {y}
+  communicate_image_data:
+    nl: rover {r} communicates image of {o} in mode {m} from {x} to lander {l} at
+      {y}
+meta:
+  max_steps: 50
+  step_penalty: -0.01
+  invalid_penalty: -0.1
