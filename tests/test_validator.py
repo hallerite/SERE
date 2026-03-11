@@ -1,4 +1,4 @@
-"""Tests for the pure plan validator and agentic environment."""
+"""Tests for the plan validator and miniSWE-style agentic environment."""
 
 import pytest
 from importlib.resources import files as pkg_files
@@ -22,7 +22,7 @@ def _blocksworld_env():
 
 
 def _blocksworld_parts():
-    """Load blocksworld domain + first problem into (domain, world, static_facts, goal)."""
+    """Load blocksworld domain + first problem."""
     bw = pkg_files("sere.assets.pddl") / "blocksworld"
     dom, _meta, pddl_domain = load_pddl_domain(str(bw))
     prob_path = sorted((bw / "problems").iterdir())[0]
@@ -43,6 +43,9 @@ def _blocksworld_parts():
             w.facts.add((pred, args))
 
     return dom, w, static_facts, problem.goal
+
+
+VALID_PLAN = "(pick-up B)\n(stack B A)\n(pick-up C)\n(stack C B)\n(pick-up D)\n(stack D C)"
 
 
 # ---------------------------------------------------------------------------
@@ -70,17 +73,14 @@ class TestValidateStep:
 
     def test_precondition_failure(self):
         dom, w, sf, _ = _blocksworld_parts()
-        # Can't unstack A B if (on A B) is not true
         r = validate_step(dom, w, sf, "unstack", ("A", "B"))
         assert not r.success
         assert r.failed_preconditions
 
     def test_successful_step(self):
         dom, w, sf, _ = _blocksworld_parts()
-        # All blocks on table, all clear, handempty
         r = validate_step(dom, w, sf, "pick-up", ("A",))
         assert r.success
-        # After pick-up: holding A, not handempty, not ontable A, not clear A
         assert ("holding", ("A",)) in w.facts
         assert ("handempty", ()) not in w.facts
 
@@ -92,14 +92,10 @@ class TestValidateStep:
 class TestValidatePlan:
     def test_valid_plan(self):
         dom, w, sf, goal = _blocksworld_parts()
-        # Goal: (ON D C) (ON C B) (ON B A), all on table
         plan = [
-            ("pick-up", ("B",)),
-            ("stack", ("B", "A")),
-            ("pick-up", ("C",)),
-            ("stack", ("C", "B")),
-            ("pick-up", ("D",)),
-            ("stack", ("D", "C")),
+            ("pick-up", ("B",)), ("stack", ("B", "A")),
+            ("pick-up", ("C",)), ("stack", ("C", "B")),
+            ("pick-up", ("D",)), ("stack", ("D", "C")),
         ]
         r = validate_plan(dom, w, sf, goal, plan)
         assert r.success
@@ -108,223 +104,245 @@ class TestValidatePlan:
 
     def test_plan_fails_midway(self):
         dom, w, sf, goal = _blocksworld_parts()
-        plan = [
-            ("pick-up", ("A",)),
-            ("pick-up", ("B",)),  # fails: not handempty
-        ]
+        plan = [("pick-up", ("A",)), ("pick-up", ("B",))]
         r = validate_plan(dom, w, sf, goal, plan)
         assert not r.success
         assert r.steps_executed == 1
-        assert r.failed_step is not None
         assert r.failed_step.action_name == "pick-up"
 
     def test_plan_valid_but_goal_not_reached(self):
         dom, w, sf, goal = _blocksworld_parts()
-        plan = [
-            ("pick-up", ("A",)),
-            ("put-down", ("A",)),
-        ]
+        plan = [("pick-up", ("A",)), ("put-down", ("A",))]
         r = validate_plan(dom, w, sf, goal, plan)
         assert not r.success
         assert not r.goal_reached
-        assert r.steps_executed == 2
         assert "goal not reached" in r.error
 
     def test_empty_plan(self):
         dom, w, sf, goal = _blocksworld_parts()
         r = validate_plan(dom, w, sf, goal, [])
-        assert not r.success  # goal not initially satisfied
+        assert not r.success
         assert r.steps_executed == 0
 
     def test_does_not_mutate_init_world(self):
         dom, w, sf, goal = _blocksworld_parts()
         init_facts = set(w.facts)
-        plan = [("pick-up", ("A",)), ("put-down", ("A",))]
-        validate_plan(dom, w, sf, goal, plan)
-        assert w.facts == init_facts  # init world unchanged
+        validate_plan(dom, w, sf, goal, [("pick-up", ("A",)), ("put-down", ("A",))])
+        assert w.facts == init_facts
 
 
 # ---------------------------------------------------------------------------
-# AgenticPDDLEnv tests
+# AgenticPDDLEnv — file tools
 # ---------------------------------------------------------------------------
 
-class TestAgenticPDDLEnv:
-    def test_system_prompt_contains_pddl(self):
+class TestReadFile:
+    def test_read_domain(self):
         env, _ = _blocksworld_env()
-        prompt = env.system_prompt()
-        assert "domain" in prompt.lower()
-        assert "problem" in prompt.lower()
-        assert "validate_plan" in prompt
-
-    def test_tool_schemas(self):
-        env, _ = _blocksworld_env()
-        schemas = env.tool_schemas()
-        names = {s["function"]["name"] for s in schemas}
-        assert names == {"validate_plan", "apply_prefix", "check_action"}
-
-    def test_tool_schema_legacy(self):
-        env, _ = _blocksworld_env()
-        schema = env.tool_schema()
-        assert schema["function"]["name"] == "validate_plan"
-
-    def test_validate_bad_parse(self):
-        env, _ = _blocksworld_env()
-        feedback, done = env.validate("not a valid plan")
-        assert "Failed to parse" in feedback
+        result, done = env.handle_tool_call("read_file", {"path": "domain.pddl"})
+        assert "define" in result.lower()
         assert not done
 
-    def test_validate_bad_plan(self):
+    def test_read_problem(self):
         env, _ = _blocksworld_env()
-        feedback, done = env.validate("(pick-up NONEXISTENT)")
-        assert "Unknown object" in feedback
+        result, done = env.handle_tool_call("read_file", {"path": "problem.pddl"})
+        assert ":goal" in result.lower()
+        assert not done
+
+    def test_read_empty_plan(self):
+        env, _ = _blocksworld_env()
+        result, done = env.handle_tool_call("read_file", {"path": "plan.pddl"})
+        assert "empty" in result.lower()
+        assert not done
+
+    def test_read_plan_after_write(self):
+        env, _ = _blocksworld_env()
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        result, _ = env.handle_tool_call("read_file", {"path": "plan.pddl"})
+        assert "(pick-up B)" in result
+
+    def test_read_unknown_file(self):
+        env, _ = _blocksworld_env()
+        result, _ = env.handle_tool_call("read_file", {"path": "foo.txt"})
+        assert "not found" in result.lower()
+
+
+class TestWriteFile:
+    def test_write_plan(self):
+        env, _ = _blocksworld_env()
+        result, done = env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        assert "6 actions" in result
+        assert not done
+
+    def test_write_empty_rejected(self):
+        env, _ = _blocksworld_env()
+        result, _ = env.handle_tool_call("write_file", {"content": ""})
+        assert "empty" in result.lower()
+
+    def test_write_bad_syntax_warns(self):
+        env, _ = _blocksworld_env()
+        result, _ = env.handle_tool_call("write_file", {"content": "not valid pddl"})
+        assert "warning" in result.lower()
+
+    def test_write_does_not_count_as_attempt(self):
+        env, _ = _blocksworld_env()
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        assert env.attempts == 0
+
+
+# ---------------------------------------------------------------------------
+# AgenticPDDLEnv — validate tool
+# ---------------------------------------------------------------------------
+
+class TestValidateTool:
+    def test_validate_no_plan(self):
+        env, _ = _blocksworld_env()
+        result, done = env.handle_tool_call("validate", {})
+        assert "empty" in result.lower()
         assert not done
 
     def test_validate_good_plan(self):
         env, _ = _blocksworld_env()
-        plan = "(pick-up B)\n(stack B A)\n(pick-up C)\n(stack C B)\n(pick-up D)\n(stack D C)"
-        feedback, done = env.validate(plan)
-        assert "Goal reached" in feedback
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        result, done = env.handle_tool_call("validate", {})
+        assert "Goal reached" in result
         assert done
         assert env.solved
+        assert env.attempts == 1
+
+    def test_validate_bad_plan(self):
+        env, _ = _blocksworld_env()
+        env.handle_tool_call("write_file", {"content": "(pick-up NONEXISTENT)"})
+        result, done = env.handle_tool_call("validate", {})
+        assert "Unknown object" in result
+        assert not done
+        assert env.attempts == 1
+
+    def test_validate_partial_does_not_count(self):
+        env, _ = _blocksworld_env()
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        result, done = env.handle_tool_call("validate", {"up_to_step": 2})
+        assert not done
+        assert env.attempts == 0  # partial doesn't count
+
+    def test_validate_partial_shows_subplan(self):
+        env, _ = _blocksworld_env()
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        result, done = env.handle_tool_call("validate", {"up_to_step": 2})
+        # First 2 steps are valid but don't reach goal
+        assert "goal not reached" in result.lower()
 
     def test_max_attempts_terminates(self):
         env, _ = _blocksworld_env()
         env.max_attempts = 2
-        env.validate("(pick-up NONEXISTENT)")
-        _, done = env.validate("(pick-up NONEXISTENT)")
+        env.handle_tool_call("write_file", {"content": "(pick-up NONEXISTENT)"})
+        env.handle_tool_call("validate", {})
+        _, done = env.handle_tool_call("validate", {})
         assert done
         assert not env.solved
 
-    def test_init_state_immutable_across_attempts(self):
-        """Guard: each validation attempt starts from the original init state."""
-        env, _ = _blocksworld_env()
-        # First attempt: partially valid (modifies state internally)
-        env.validate("(pick-up A)\n(put-down A)")
-        # Second attempt: same action should still work (state reset)
-        feedback, _ = env.validate("(pick-up A)\n(put-down A)")
-        assert "failed" not in feedback.lower() or "goal not reached" in feedback.lower()
-
-    def test_goal_cannot_be_changed(self):
-        """Guard: goal is set at construction and cannot be modified."""
-        env, _ = _blocksworld_env()
-        original_goal = env.goal_expr
-        # Attempt to modify (would require code change — structural guard)
-        assert env.goal_expr == original_goal
-        # Validate still uses the original goal
-        feedback, done = env.validate("(pick-up A)\n(put-down A)")
-        assert not done or not env.solved  # won't solve the real goal
-
 
 # ---------------------------------------------------------------------------
-# format_plan_feedback tests
+# AgenticPDDLEnv — simulate tool
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# apply_prefix / check_action tool tests
-# ---------------------------------------------------------------------------
-
-class TestApplyPrefix:
-    def test_valid_prefix_shows_state(self):
+class TestSimulateTool:
+    def test_simulate_full_plan(self):
         env, _ = _blocksworld_env()
-        result = env.apply_prefix("(pick-up A)")
-        assert "After 1 actions" in result
-        assert "(holding A)" in result
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        result, done = env.handle_tool_call("simulate", {})
+        assert "Goal satisfied: True" in result
+        assert not done  # simulate never ends episode
 
-    def test_prefix_failure_shows_error(self):
+    def test_simulate_partial(self):
         env, _ = _blocksworld_env()
-        result = env.apply_prefix("(pick-up A)\n(pick-up B)")
-        assert "failed" in result.lower() or "Step 2 failed" in result
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        result, _ = env.handle_tool_call("simulate", {"up_to_step": 1})
+        assert "(holding B)" in result.lower() or "(holding b)" in result.lower()
 
-    def test_prefix_does_not_count_as_attempt(self):
+    def test_simulate_no_plan(self):
         env, _ = _blocksworld_env()
-        env.apply_prefix("(pick-up A)")
-        assert env.attempts == 0
+        result, _ = env.handle_tool_call("simulate", {})
+        assert "empty" in result.lower()
 
-    def test_prefix_does_not_mutate_state(self):
+    def test_simulate_does_not_mutate_state(self):
         env, _ = _blocksworld_env()
         init_facts = set(env.init_world.facts)
-        env.apply_prefix("(pick-up A)\n(put-down A)")
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        env.handle_tool_call("simulate", {})
         assert env.init_world.facts == init_facts
 
-
-class TestCheckAction:
-    def test_valid_action(self):
+    def test_simulate_does_not_count_as_attempt(self):
         env, _ = _blocksworld_env()
-        result = env.check_action("(pick-up A)")
-        assert "valid" in result.lower()
-        assert "OK" in result
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        env.handle_tool_call("simulate", {})
+        assert env.attempts == 0
 
-    def test_invalid_action(self):
+
+# ---------------------------------------------------------------------------
+# Guards
+# ---------------------------------------------------------------------------
+
+class TestGuards:
+    def test_init_state_immutable_across_validates(self):
         env, _ = _blocksworld_env()
-        result = env.check_action("(unstack A B)")  # not (on A B)
-        assert "FAIL" in result
-        assert "not met" in result.lower()
+        env.handle_tool_call("write_file", {"content": "(pick-up A)\n(put-down A)"})
+        env.handle_tool_call("validate", {})
+        # Second attempt should still work (state reset)
+        env.handle_tool_call("write_file", {"content": "(pick-up A)\n(put-down A)"})
+        result, _ = env.handle_tool_call("validate", {})
+        assert "goal not reached" in result.lower()
 
-    def test_action_after_prefix(self):
+    def test_domain_file_immutable(self):
         env, _ = _blocksworld_env()
-        # pick-up A, then check if we can stack A on B
-        result = env.check_action("(stack A B)", after="(pick-up A)")
-        assert "valid" in result.lower()
+        original = env.domain_pddl
+        # Only write_file writes plan.pddl — no way to modify domain
+        env.handle_tool_call("write_file", {"content": "hacked domain"})
+        assert env.domain_pddl == original
 
-    def test_action_after_prefix_invalid(self):
+    def test_problem_file_immutable(self):
         env, _ = _blocksworld_env()
-        # without prefix, stack fails (not holding)
-        result = env.check_action("(stack A B)")
-        assert "FAIL" in result
+        original = env.problem_pddl
+        env.handle_tool_call("write_file", {"content": "hacked problem"})
+        assert env.problem_pddl == original
 
-    def test_unknown_action(self):
+    def test_goal_immutable(self):
         env, _ = _blocksworld_env()
-        result = env.check_action("(fly A B)")
-        assert "Unknown action" in result
+        original = env.goal_expr
+        env.handle_tool_call("write_file", {"content": VALID_PLAN})
+        env.handle_tool_call("validate", {})
+        assert env.goal_expr == original
 
 
-class TestHandleToolCall:
-    def test_dispatch_validate(self):
+# ---------------------------------------------------------------------------
+# Tool dispatch
+# ---------------------------------------------------------------------------
+
+class TestDispatch:
+    def test_unknown_tool(self):
         env, _ = _blocksworld_env()
-        plan = "(pick-up B)\n(stack B A)\n(pick-up C)\n(stack C B)\n(pick-up D)\n(stack D C)"
-        feedback, done = env.handle_tool_call("validate_plan", {"plan": plan})
-        assert "Goal reached" in feedback
-        assert done
-
-    def test_dispatch_apply_prefix(self):
-        env, _ = _blocksworld_env()
-        feedback, done = env.handle_tool_call("apply_prefix", {"actions": "(pick-up A)"})
-        assert "(holding A)" in feedback
-        assert not done  # apply_prefix never ends the episode
-
-    def test_dispatch_check_action(self):
-        env, _ = _blocksworld_env()
-        feedback, done = env.handle_tool_call("check_action", {"action": "(pick-up A)"})
-        assert "valid" in feedback.lower()
+        result, done = env.handle_tool_call("hack_the_planet", {})
+        assert "Unknown tool" in result
         assert not done
 
-    def test_dispatch_unknown_tool(self):
-        env, _ = _blocksworld_env()
-        feedback, done = env.handle_tool_call("unknown_tool", {})
-        assert "Unknown tool" in feedback
-        assert not done
 
+# ---------------------------------------------------------------------------
+# format_plan_feedback
+# ---------------------------------------------------------------------------
 
 class TestFormatPlanFeedback:
     def test_success_message(self):
         dom, w, sf, goal = _blocksworld_parts()
         plan = [
-            ("pick-up", ("B",)),
-            ("stack", ("B", "A")),
-            ("pick-up", ("C",)),
-            ("stack", ("C", "B")),
-            ("pick-up", ("D",)),
-            ("stack", ("D", "C")),
+            ("pick-up", ("B",)), ("stack", ("B", "A")),
+            ("pick-up", ("C",)), ("stack", ("C", "B")),
+            ("pick-up", ("D",)), ("stack", ("D", "C")),
         ]
-        r = validate_plan(dom, w, sf, goal, plan)
-        msg = format_plan_feedback(r)
+        msg = format_plan_feedback(validate_plan(dom, w, sf, goal, plan))
         assert "Goal reached" in msg
         assert "6 steps" in msg
 
     def test_failure_message(self):
         dom, w, sf, goal = _blocksworld_parts()
-        plan = [("unstack", ("A", "B"))]
-        r = validate_plan(dom, w, sf, goal, plan)
-        msg = format_plan_feedback(r)
+        msg = format_plan_feedback(validate_plan(dom, w, sf, goal, [("unstack", ("A", "B"))]))
         assert "failed at step 1" in msg.lower()
         assert "State after step" in msg

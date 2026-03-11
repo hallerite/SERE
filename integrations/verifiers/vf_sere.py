@@ -190,12 +190,9 @@ class AgenticSereEnv(vf.MultiTurnEnv):
     """
     miniSWE-style PDDL environment.
 
-    The LLM gets domain.pddl + problem.pddl and tools:
-      - validate_plan: submit a plan (only way to solve — counts as attempt)
-      - apply_prefix: apply actions, see resulting state (free, for debugging)
-      - check_action: check one action's preconditions (free, for debugging)
-
-    The agent drives its own workflow. Only validate_plan can end the episode.
+    Workspace: domain.pddl (ro), problem.pddl (ro), plan.pddl (rw).
+    Tools: read_file, write_file, validate, simulate.
+    Only full validate (no up_to_step) can end the episode.
     """
 
     def __init__(
@@ -222,7 +219,10 @@ class AgenticSereEnv(vf.MultiTurnEnv):
 
         prompt: list[dict[str, str]] = [
             {"role": "system", "content": agentic_env.system_prompt()},
-            {"role": "user", "content": "Write a plan that achieves the goal."},
+            {"role": "user", "content": (
+                "Solve this PDDL planning problem. "
+                "Read the domain and problem files, write a plan, and validate it."
+            )},
         ]
         state["prompt"] = prompt
         state["tools"] = agentic_env.tool_schemas()
@@ -241,15 +241,15 @@ class AgenticSereEnv(vf.MultiTurnEnv):
         if tool_call is None:
             # Model didn't call a tool — nudge it
             return [{"role": "user", "content": (
-                "Use the available tools to work on your plan. "
-                "Call validate_plan when ready to submit."
+                "Use the available tools. Start by reading the domain and "
+                "problem files, then write a plan and validate it."
             )}]
 
         tool_name, tool_args, tool_call_id = tool_call
         feedback, done = agentic_env.handle_tool_call(tool_name, tool_args)
 
-        # Record outcome on trajectory for validate_plan calls
-        if state["trajectory"] and tool_name == "validate_plan":
+        # Record outcome on trajectory for validate calls
+        if state["trajectory"] and tool_name == "validate":
             outcome = "success" if agentic_env.solved else "failed"
             state["trajectory"][-1]["reward"] = 1.0 if agentic_env.solved else 0.0
             state["trajectory"][-1]["extras"]["sere_info"] = {
