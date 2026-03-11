@@ -49,24 +49,12 @@ def _load_yaml_from_task(task_path: str) -> Dict[str, Any]:
 
 
 def _load_domain_yaml(dom_path: str) -> Dict[str, Any]:
-    """
-    Load a domain YAML from filesystem or from the packaged 'sere.assets.domain'.
-    """
+    """Load a domain YAML from the filesystem."""
     p = Path(dom_path)
     if p.exists():
         with open(p, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
-    # allow 'domain/...' or 'domains/...'
-    rel = Path(dom_path)
-    if rel.parts and rel.parts[0] in {"domain", "domains"}:
-        rel = Path(*rel.parts[1:])
-    cand = pkg_files("sere.assets.domain") / str(rel)
-    if not cand.is_file():
-        raise FileNotFoundError(
-            f"Domain file not found: {dom_path} (looked on disk and under sere.assets.domain/{rel})"
-        )
-    with cand.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    raise FileNotFoundError(f"Domain YAML not found: {dom_path}")
 
 
 # =========================
@@ -192,38 +180,47 @@ def _infer_domain_from_path(task_path: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
-def _resolve_domain_path(domain_hint: Optional[str], task_path: str, domain_path: Optional[str]) -> str:
-    # 1) explicit path wins
-    if domain_path:
-        return domain_path
-    # 2) meta.domain
-    if domain_hint:
-        sanitized = re.sub(r"[^a-z0-9_\-]", "", domain_hint.lower())
-        return f"domain/{sanitized}.yaml"
-    # 3) path heuristic fallback
-    inferred = _infer_domain_from_path(task_path)
-    if inferred:
-        return f"domain/{inferred}.yaml"
-    raise ValueError(
-        "Cannot determine domain. Set meta.domain in the task YAML or pass domain_path explicitly."
-    )
+def _resolve_domain(
+    domain_hint: Optional[str],
+    task_path: str,
+    domain_path: Optional[str],
+) -> Tuple[DomainSpec, str]:
+    """Resolve the domain for a task YAML. Returns (DomainSpec, domain_label).
 
-
-def _try_pddl_domain(domain_name: str):
-    """Try to load a PDDL domain from assets/pddl/{name}/. Returns (DomainSpec, meta) or None."""
-    try:
-        pddl_root = pkg_files("sere.assets.pddl")
-    except (ModuleNotFoundError, TypeError):
-        return None
-    domain_dir = pddl_root / domain_name
-    if not hasattr(domain_dir, "is_dir") or not domain_dir.is_dir():
-        return None
-    domain_pddl = domain_dir / "domain.pddl"
-    if not hasattr(domain_pddl, "is_file") or not domain_pddl.is_file():
-        return None
+    Resolution order (first match wins):
+      1. ``domain_path`` — explicit filesystem path to a .yaml domain file.
+      2. ``domain_hint`` (from ``meta.domain``) — looked up as a bundled PDDL
+         domain under ``sere.assets.pddl/{name}/``.
+      3. Inferred from ``task_path`` (e.g. ``assets/tasks/kitchen/…`` → "kitchen")
+         then treated as step 2.
+    """
     from sere.io.pddl_loader import load_pddl_domain
-    spec, meta, _raw = load_pddl_domain(str(domain_dir))
-    return spec, meta
+
+    # 1) Explicit filesystem path to a YAML domain file
+    if domain_path:
+        dom_yaml = _load_domain_yaml(domain_path)
+        return DomainSpec.from_dict(dom_yaml), domain_path
+
+    # 2) Named domain → bundled PDDL package
+    name = domain_hint
+    if not name:
+        name = _infer_domain_from_path(task_path)
+    if not name:
+        raise ValueError(
+            "Cannot determine domain. Set meta.domain in the task YAML "
+            "or pass domain_path explicitly."
+        )
+
+    sanitized = re.sub(r"[^a-z0-9_\-]", "", name.lower())
+    pddl_root = pkg_files("sere.assets.pddl")
+    domain_dir = pddl_root / sanitized
+    if not domain_dir.is_dir() or not (domain_dir / "domain.pddl").is_file():
+        raise FileNotFoundError(
+            f"Domain '{sanitized}' not found under sere.assets.pddl/. "
+            f"Available: {sorted(d.name for d in pddl_root.iterdir() if d.is_dir() and not d.name.startswith('_'))}"
+        )
+    spec, _meta, _raw = load_pddl_domain(str(domain_dir))
+    return spec, f"pddl/{sanitized}"
 
 
 # =========================
@@ -817,16 +814,7 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
         raise ValueError("Seed specified in both task meta and load_task; choose one source.")
     resolved_seed = seed_override if seed_override is not None else meta_seed
     domain_hint = (meta.get("domain") or "").strip().lower() or None
-
-    # Try PDDL domain first (assets/pddl/{name}/), fall back to YAML
-    _pddl_result = _try_pddl_domain(domain_hint) if domain_hint and not domain_path else None
-    if _pddl_result is not None:
-        dom, _pddl_meta = _pddl_result
-        dom_path = f"pddl/{domain_hint}"
-    else:
-        dom_path = _resolve_domain_path(domain_hint, task_path, domain_path)
-        dom_yaml = _load_domain_yaml(dom_path)
-        dom = DomainSpec.from_dict(dom_yaml)
+    dom, dom_path = _resolve_domain(domain_hint, task_path, domain_path)
 
     # ---- Plugins
     if plugins is None:
@@ -947,25 +935,30 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
 def _load_pddl_task_dispatch(
     domain_path: Optional[str], task_path: str, plugins=None, **env_kwargs
 ) -> Tuple[PDDLEnv, dict]:
-    """Route .pddl task files to the PDDL loader."""
+    """Route .pddl problem files to the PDDL loader.
+
+    Domain directory resolution:
+      1. ``domain_path`` if given (file → parent dir, dir → use directly).
+      2. Walk up from the problem file looking for ``domain.pddl``
+         (standard PDDL convention: problems/ sits under the domain dir).
+    """
     from sere.io.pddl_loader import load_pddl_task
 
     task_p = Path(task_path)
 
-    # Determine domain directory
     if domain_path is not None:
         domain_dir = Path(domain_path)
         if domain_dir.is_file():
             domain_dir = domain_dir.parent
     else:
-        # Heuristic: look for domain.pddl in same dir, parent, or parent/parent
         for candidate in [task_p.parent, task_p.parent.parent, task_p.parent.parent.parent]:
             if (candidate / "domain.pddl").exists():
                 domain_dir = candidate
                 break
         else:
             raise FileNotFoundError(
-                f"Cannot find domain.pddl relative to {task_path}. Pass domain_path explicitly."
+                f"No domain.pddl found near {task_path}. "
+                f"Pass domain_path to specify the domain directory."
             )
 
     return load_pddl_task(domain_dir, task_path, plugins=plugins, **env_kwargs)
