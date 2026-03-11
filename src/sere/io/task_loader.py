@@ -782,6 +782,10 @@ def _validate_expr_symbols_exist(
 # =========================
 
 def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kwargs) -> Tuple[PDDLEnv, dict]:
+    # Dispatch: .pddl files use the PDDL loader
+    if str(task_path).endswith(".pddl"):
+        return _load_pddl_task_dispatch(domain_path, task_path, plugins=plugins, **env_kwargs)
+
     y = _load_yaml_from_task(task_path)
 
     # ---- Domain hint BEFORE rename is fine
@@ -911,3 +915,34 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
     )
 
     return env, spec.to_task_meta(env)
+
+
+# =========================
+#  PDDL dispatch helper
+# =========================
+
+def _load_pddl_task_dispatch(
+    domain_path: Optional[str], task_path: str, plugins=None, **env_kwargs
+) -> Tuple[PDDLEnv, dict]:
+    """Route .pddl task files to the PDDL loader."""
+    from sere.io.pddl_loader import load_pddl_task
+
+    task_p = Path(task_path)
+
+    # Determine domain directory
+    if domain_path is not None:
+        domain_dir = Path(domain_path)
+        if domain_dir.is_file():
+            domain_dir = domain_dir.parent
+    else:
+        # Heuristic: look for domain.pddl in same dir, parent, or parent/parent
+        for candidate in [task_p.parent, task_p.parent.parent, task_p.parent.parent.parent]:
+            if (candidate / "domain.pddl").exists():
+                domain_dir = candidate
+                break
+        else:
+            raise FileNotFoundError(
+                f"Cannot find domain.pddl relative to {task_path}. Pass domain_path explicitly."
+            )
+
+    return load_pddl_task(domain_dir, task_path, plugins=plugins, **env_kwargs)
