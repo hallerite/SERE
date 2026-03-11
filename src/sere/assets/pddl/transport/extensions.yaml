@@ -1,24 +1,16 @@
 predicates:
   road:
-    nl: "there is a road from {l1} to {l2}"
     static: true
   at:
-    nl: "{x} is at {v}"
   in:
-    nl: "{x} is inside vehicle {v}"
   capacity:
-    nl: "vehicle {v} has capacity level {s1}"
   capacity-predecessor:
-    nl: "capacity level {s1} is one less than {s2}"
     static: true
 
 actions:
   drive:
-    nl: "drive {v} from {l1} to {l2}"
   pick-up:
-    nl: "pick up {p} with vehicle {v} at {l}"
   drop:
-    nl: "drop off {p} from vehicle {v} at {l}"
 
 meta:
   max_steps: 60

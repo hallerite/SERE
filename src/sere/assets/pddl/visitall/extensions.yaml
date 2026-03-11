@@ -1,15 +1,11 @@
 predicates:
   connected:
-    nl: "{x} is adjacent to {y}"
     static: true
   at-robot:
-    nl: "the robot is at {x}"
   visited:
-    nl: "{x} has been visited"
 
 actions:
   move:
-    nl: "move the robot from {curpos} to {nextpos}"
 
 meta:
   max_steps: 80

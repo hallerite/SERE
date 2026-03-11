@@ -1,31 +1,18 @@
 predicates:
   on_board:
-    nl: instrument {i} is on board satellite {s}
   supports:
-    nl: instrument {i} supports mode {m}
   pointing:
-    nl: satellite {s} is pointing at {d}
   power_avail:
-    nl: satellite {s} has power available
   power_on:
-    nl: instrument {i} is powered on
   calibrated:
-    nl: instrument {i} is calibrated
   have_image:
-    nl: we have an image of {d} in mode {m}
   calibration_target:
-    nl: instrument {i} can be calibrated by pointing at {d}
 actions:
   turn_to:
-    nl: turn satellite {s} from direction {d_prev} to direction {d_new}
   switch_on:
-    nl: switch on instrument {i} aboard satellite {s}
   switch_off:
-    nl: switch off instrument {i} aboard satellite {s}
   calibrate:
-    nl: calibrate instrument {i} aboard satellite {s} pointing at {d}
   take_image:
-    nl: take image of {d} with instrument {i} in mode {m} aboard satellite {s}
 meta:
   max_steps: 30
   step_penalty: -0.01

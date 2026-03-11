@@ -10,76 +10,46 @@ meta:
 
 predicates:
   co-located:
-    nl: ["{x} and {y} share a location", "{x} is at the same place as {y}", "{x} and {y} are co-located"]
   at:
-    nl: ["{r} is at {l}", "{r} stands in {l}", "{r} is located at {l}"]
   obj-at:
-    nl: ["{o} is at {l}", "{o} sits in {l}", "{o} is located at {l}"]
   holding:
-    nl: ["{r} is holding {o}", "{r} has {o} in hand", "{r} grips {o}"]
   clear-hand:
-    nl: ["{r} has a free hand", "{r}'s hand is free", "{r} is not holding anything"]
   in:
-    nl: ["{o} is in {c}", "{o} sits inside {c}", "{o} is contained in {c}"]
   open:
-    nl: ["{c} is open", "{c} stands open", "{c} is currently open"]
   powered:
-    nl: ["{a} is powered", "{a} has power", "{a} is turned on"]
   burner-on:
-    nl: ["{s}'s burner is on", "{s} is actively heating", "{s} is heating"]
   on-stove:
-    nl: ["{c} sits on {s}", "{c} is on the stove {s}", "{c} is placed on {s}"]
   hot-surface:
-    nl: ["{s} has a hot surface", "{s} is hot to the touch", "{s}'s surface is hot"]
   boiled:
-    nl: ["{a} has boiled water", "Water has boiled in {a}", "{a} finished boiling"]
   has-water:
-    nl: ["{c} contains water", "Water is present in {c}"]
   has-hot-water:
-    nl: ["{m} contains hot water", "Hot water is in {m}", "{m} has hot water"]
   tea-ready:
-    nl: ["Tea is ready in {m}", "{m} contains ready tea", "Tea in {m} is ready"]
   cooked:
-    nl: ["{f} is cooked", "{f} is fully cooked", "{f} is ready to eat"]
   spilled:
-    nl: ["There was a spill at {m}", "Liquid spilled at {m}", "{m} had a spill"]
   has-charger:
-    nl: ["{l} has a charging station", "A charger is available at {l}", "{l} provides charging"]
     static: true
   adjacent:
-    nl: ["{l1} is adjacent to {l2}", "{l1} neighbors {l2}", "{l1} is next to {l2}"]
     static: true
   openable:
-    nl: ["{c} can be opened/closed", "{c} is openable", "{c} supports open/close"]
     static: true
   is-sink:
-    nl: ["{s} is a sink/water source", "{s} can supply water"]
     static: true
   pour-out-needs-open:
-    nl: ["{c} must be open to pour out", "Pouring out of {c} requires opening"]
     static: true
   pour-out-needs-closed:
-    nl: ["{c} must be closed to pour out", "Pouring out of {c} requires it closed"]
     static: true
   pour-in-needs-open:
-    nl: ["{c} must be open to pour into", "Pouring into {c} requires opening"]
     static: true
 
 fluents:
   energy:
-    nl: ["Energy of {r}", "{r}'s energy level", "Battery level for {r}"]
   battery-cap:
-    nl: ["Battery capacity of {r}", "{r}'s maximum battery", "Max energy for {r}"]
   water-temp:
-    nl: ["Water temperature in {v}", "{v}'s water temperature", "Temperature of water in {v}"]
   surface-temp:
-    nl: ["Surface temperature of {s}", "{s}'s surface temperature", "Heat level of {s}"]
   food-temp:
-    nl: ["Temperature of {f}", "{f}'s temperature", "Heat of {f}"]
 
 actions:
   wait:
-    nl: ["Wait for {n} ticks", "Pause {n} ticks", "Idle for {n} ticks"]
     duration_var: "n"
     duration_unit: 1.0
     outcomes:
@@ -97,7 +67,6 @@ actions:
         messages: ["Nothing happened."]
 
   move:
-    nl: ["Move {r} from {from} to {to}", "Go from {from} to {to} with {r}", "{r} moves {from} → {to}"]
     duration: 1.0
     outcomes:
       - name: stuck
@@ -116,7 +85,6 @@ actions:
         messages: ["{r} moved from {from} to {to}. Energy is now (energy ?r)."]
 
   open:
-    nl: ["Open {c}", "{r} opens {c}", "Open the {c}"]
     duration: 0.5
     outcomes:
       - name: fumble
@@ -135,7 +103,6 @@ actions:
         messages: ["{c} is now open."]
 
   close:
-    nl: ["Close {c}", "{r} closes {c}", "Shut {c}"]
     duration: 0.5
     outcomes:
       - name: unlatch
@@ -154,7 +121,6 @@ actions:
         messages: ["{c} is now closed."]
 
   pick-up:
-    nl: ["Pick up {o}", "{r} picks up {o}", "Grab {o}"]
     duration: 0.5
     outcomes:
       - name: drop
@@ -173,7 +139,6 @@ actions:
         messages: ["Picked up {o}."]
 
   put-down:
-    nl: ["Put down {o}", "{r} puts down {o}", "Place {o} down"]
     duration: 0.5
     outcomes:
       - name: slip
@@ -192,7 +157,6 @@ actions:
         messages: ["Placed {o} down."]
 
   put-in:
-    nl: ["Put {o} into {c}", "{r} inserts {o} into {c}", "Place {o} in {c}"]
     duration: 0.5
     outcomes:
       - name: miss
@@ -211,7 +175,6 @@ actions:
         messages: ["{o} is now in {c}."]
 
   take-out:
-    nl: ["Take {o} out of {c}", "{r} removes {o} from {c}", "Retrieve {o} from {c}"]
     duration: 0.5
     outcomes:
       - name: fail_grip
@@ -230,7 +193,6 @@ actions:
         messages: ["Took {o} out of {c}."]
 
   power-on:
-    nl: ["Power on {a}", "{r} turns on {a}", "Switch on {a}"]
     duration: 0.5
     outcomes:
       - name: no_click
@@ -249,7 +211,6 @@ actions:
         messages: ["{a} is now powered."]
 
   power-off:
-    nl: ["Power off {a}", "{r} turns off {a}", "Switch off {a}"]
     duration: 0.5
     outcomes:
       - name: power_fail
@@ -268,7 +229,6 @@ actions:
         messages: ["{a} is now powered off."]
 
   place-on-stove:
-    nl: ["Place {c} on {s}", "{r} sets {c} on {s}", "Put {c} onto {s}"]
     duration: 0.5
     outcomes:
       - name: slip
@@ -287,7 +247,6 @@ actions:
         messages: ["{c} is now on {s}."]
 
   ignite-stove:
-    nl: ["Ignite {s}", "{r} ignites {s}", "Turn on the burner on {s}"]
     duration: 0.5
     outcomes:
       - name: no_ignite
@@ -306,7 +265,6 @@ actions:
         messages: ["{s} burner is now on."]
 
   extinguish-stove:
-    nl: ["Extinguish {s}", "{r} turns off the burner on {s}", "Shut down {s}"]
     duration: 0.5
     outcomes:
       - name: fail_to_extinguish
@@ -325,7 +283,6 @@ actions:
         messages: ["{s} burner is now off."]
 
   heat-stove:
-    nl: ["Heat {s} for {n} ticks (+40°C per tick)", "Run {s} for {n} ticks (+40°C per tick)", "Preheat {s} for {n} ticks"]
     duration_var: "n"
     duration_unit: 0.5
     outcomes:
@@ -345,7 +302,6 @@ actions:
         messages: ["{s} surface temperature is now (surface-temp ?s)°C."]
 
   cool-stove:
-    nl: ["Cool {s} for {n} ticks (-30°C per tick)", "Let {s} cool for {n} ticks", "Cool down {s}"]
     duration_var: "n"
     duration_unit: 0.5
     outcomes:
@@ -365,7 +321,6 @@ actions:
         messages: ["{s} surface temperature is now (surface-temp ?s)°C."]
 
   heat-on-stove:
-    nl: ["Heat {c} on {s} for {n} ticks (+20°C per tick)", "Warm {c} on {s} for {n} ticks", "Simmer {c} on {s}"]
     duration_var: "n"
     duration_unit: 0.5
     outcomes:
@@ -385,7 +340,6 @@ actions:
         messages: ["Water temperature in {c} is now (water-temp ?c)°C."]
 
   cook-on-stove:
-    nl: ["Cook {f} in {c} on {s} for {n} ticks", "Heat {f} on {s} for {n} ticks", "Cook {f} on {s}"]
     duration_var: "n"
     duration_unit: 0.5
     outcomes:
@@ -405,7 +359,6 @@ actions:
         messages: ["{f} temperature is now (food-temp ?f)°C."]
 
   fill-water:
-    nl: ["Fill {k} with water from {s}", "{r} fills {k} at {s}"]
     duration: 1.0
     outcomes:
       - name: sputter
@@ -424,7 +377,6 @@ actions:
         messages: ["{k} is now filled with water (20°C)."]
 
   heat-kettle:
-    nl: ["Heat {k} for {n} ticks (each tick increases water temp by 15°C)", "Run {k} for {n} ticks (+15°C per tick)", "Heat cycle on {k}: {n} ticks"]
     duration_var: "n"
     duration_unit: 0.5
     outcomes:
@@ -444,7 +396,6 @@ actions:
         messages: ["Heating {k}. Water temperature is now (water-temp ?k)°C."]
 
   pour:
-    nl: ["Pour from {k} into {m}", "{r} pours {k} into {m}", "Transfer water {k} → {m}"]
     duration: 1.0
     outcomes:
       - name: spill_closed_target
@@ -479,7 +430,6 @@ actions:
         messages: ["Water transferred to {m} (not hot)."]
 
   steep-tea:
-    nl: ["Steep tea in {m} (requires water ≥80°C)", "Steep {tb} in {m} (water ≥80°C)", "Brew tea in {m} (≥80°C)"]
     duration: 2.0
     outcomes:
       - name: steep_fail
@@ -498,7 +448,6 @@ actions:
         messages: ["Tea steeped. {m} is ready."]
 
   recharge:
-    nl: ["Recharge at {l}", "{r} recharges at {l}", "Use charger at {l}"]
     duration: 2.0
     outcomes:
       - name: recharge_fail

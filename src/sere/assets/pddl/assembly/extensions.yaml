@@ -10,61 +10,37 @@ meta:
 
 predicates:
   at:
-    nl: ["{r} is at {l}"]
   obj-at:
-    nl: ["{o} is at {l}"]
   co-located:
-    nl: ["{x} and {y} are at the same location"]
   adjacent:
-    nl: ["{l1} is adjacent to {l2}"]
     static: true
   holding:
-    nl: ["{r} is holding {o}"]
   clear-hand:
-    nl: ["{r} has a free hand"]
   in:
-    nl: ["{o} is in {c}"]
   open:
-    nl: ["{c} is open"]
   equipped:
-    nl: ["{r} has {t} equipped"]
   tool-for:
-    nl: ["{t} is suitable for {op}"]
     static: true
   aligned:
-    nl: ["{p} is aligned with {a}"]
   installed:
-    nl: ["{p} is installed on {a}"]
   fastened:
-    nl: ["{p} is fastened to {a}"]
   damaged:
-    nl: ["{o} is damaged"]
   has-charger:
-    nl: ["{l} has a charging station"]
     static: true
   has-fixture:
-    nl: ["{l} has a vise/fixture"]
     static: true
   powered:
-    nl: ["{m} is powered"]
   defective:
-    nl: ["{a} is defective"]
   needs-rework:
-    nl: ["{a} needs rework"]
 
 fluents:
   battery-cap:
-    nl: ["Battery capacity of {r}"]
   energy:
-    nl: ["Energy of {r}"]
   torque:
-    nl: ["Torque setting on {t}"]
   quality:
-    nl: ["Quality score of {a}"]
 
 actions:
   wait:
-    nl: ["Wait for {n} ticks"]
     duration_var: "n"
     duration_unit: 1.0
     outcomes:
@@ -82,7 +58,6 @@ actions:
         messages: ["Waited {n} ticks."]
 
   move:
-    nl: ["Move {r} from {from} to {to}"]
     duration: 1.0
     outcomes:
       - name: fail
@@ -101,7 +76,6 @@ actions:
         messages: ["{r} moved from {from} to {to}. Energy is now (energy ?r)."]
 
   open:
-    nl: ["Open {c}"]
     duration: 0.3
     outcomes:
       - name: fail
@@ -120,7 +94,6 @@ actions:
         messages: ["{c} is now open."]
 
   close:
-    nl: ["Close {c}"]
     duration: 0.3
     outcomes:
       - name: fail
@@ -139,7 +112,6 @@ actions:
         messages: ["{c} is now closed."]
 
   pick-up:
-    nl: ["Pick up {o}"]
     duration: 0.5
     outcomes:
       - name: fail
@@ -158,7 +130,6 @@ actions:
         messages: ["Picked up {o}."]
 
   put-down:
-    nl: ["Put down {o}"]
     duration: 0.5
     outcomes:
       - name: fail
@@ -177,7 +148,6 @@ actions:
         messages: ["Placed {o} down."]
 
   put-in:
-    nl: ["Put {o} into {c}"]
     duration: 0.5
     outcomes:
       - name: fail
@@ -196,7 +166,6 @@ actions:
         messages: ["{o} is now in {c}."]
 
   take-out:
-    nl: ["Take {o} out of {c}"]
     duration: 0.5
     outcomes:
       - name: fail
@@ -215,7 +184,6 @@ actions:
         messages: ["Took {o} out of {c}."]
 
   equip-tool:
-    nl: ["Equip {t}"]
     duration: 0.4
     outcomes:
       - name: fail
@@ -234,7 +202,6 @@ actions:
         messages: ["{t} equipped."]
 
   unequip-tool:
-    nl: ["Unequip {t}"]
     duration: 0.4
     outcomes:
       - name: fail
@@ -253,7 +220,6 @@ actions:
         messages: ["{t} unequipped."]
 
   align:
-    nl: ["Align {p} with {a}"]
     duration: 1.0
     outcomes:
       - name: fail
@@ -272,7 +238,6 @@ actions:
         messages: ["{p} aligned with {a}."]
 
   fasten:
-    nl: ["Fasten {p} to {a}"]
     duration: 2.0
     outcomes:
       - name: hard_defect
@@ -298,7 +263,6 @@ actions:
         messages: ["QC: {a} passed. Quality=good."]
 
   set-torque:
-    nl: ["Set torque on {t} to {lvl}"]
     duration: 0.2
     outcomes:
       - name: fail
@@ -317,7 +281,6 @@ actions:
         messages: ["Torque on {t} set to {lvl}."]
 
   unfasten:
-    nl: ["Unfasten {p} from {a}"]
     duration: 2.0
     outcomes:
       - name: fail
@@ -336,7 +299,6 @@ actions:
         messages: ["Unfastened {p} from {a}; now holding {p}."]
 
   place-on-bench:
-    nl: ["Place {o} on the bench"]
     duration: 0.5
     outcomes:
       - name: fail
@@ -355,7 +317,6 @@ actions:
         messages: ["Placed {o} on the bench."]
 
   power-on:
-    nl: ["Power on {m}"]
     duration: 0.5
     outcomes:
       - name: fail
@@ -374,7 +335,6 @@ actions:
         messages: ["{m} is now powered."]
 
   recharge:
-    nl: ["Recharge at {l}", "{r} recharges at {l}", "Use charger at {l}"]
     duration: 2.0
     outcomes:
       - name: fail
@@ -393,7 +353,6 @@ actions:
         messages: ["{r} recharged at {l}. Energy is now (energy ?r)."]
 
   qc-check:
-    nl: ["QC check for {a}"]
     duration: 0.2
     outcomes:
       - name: fail
@@ -412,7 +371,6 @@ actions:
         messages: ["QC Report for {a} — quality=(quality ?a), flags: (defective ?a) (needs-rework ?a)"]
 
   realign:
-    nl: ["Realign {p} with {a}"]
     duration: 0.5
     outcomes:
       - name: fail

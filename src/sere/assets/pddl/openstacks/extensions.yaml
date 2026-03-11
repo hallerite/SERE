@@ -10,27 +10,17 @@ meta:
 
 predicates:
   open:
-    nl: "{o} is open"
   shipped:
-    nl: "{o} is shipped"
   requires:
-    nl: "{o} requires {p}"
     static: true
   made:
-    nl: "{p} is made"
 
 actions:
   open-order:
-    nl: "open order {o}"
     outcomes:
       success:
-        nl: "order {o} is now open"
       fail:
-        nl: "failed to open order"
   make-product:
-    nl: "make product {p}"
     outcomes:
       success:
-        nl: "product {p} is now made"
       fail:
-        nl: "failed to make product"

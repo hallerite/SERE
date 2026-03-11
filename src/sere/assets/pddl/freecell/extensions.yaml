@@ -1,52 +1,31 @@
 predicates:
   "on":
-    nl: "card {c1} is on top of card {c2}"
   incell:
-    nl: "card {c} is in a free cell"
   clear:
-    nl: "card {c} is on top of its column"
   cellspace:
-    nl: "there are {n} free cells available"
   colspace:
-    nl: "there are {n} empty columns available"
   home:
-    nl: "card {c} is the top card on its home pile"
   bottomcol:
-    nl: "card {c} is at the bottom of a column"
   canstack:
-    nl: "card {c1} can be stacked on card {c2}"
     static: true
   suit:
-    nl: "card {c} has suit {s}"
     static: true
   value:
-    nl: "card {c} has value {v}"
     static: true
   successor:
-    nl: "value {n1} is one more than {n0}"
     static: true
 
 actions:
   move:
-    nl: "move {card} from on top of {oldcard} onto {newcard}"
   move-b:
-    nl: "move {card} from bottom of a column onto {newcard}"
   sendtofree:
-    nl: "send {card} from on top of {oldcard} to a free cell"
   sendtofree-b:
-    nl: "send {card} from bottom of a column to a free cell"
   sendtonewcol:
-    nl: "move {card} from on top of {oldcard} to an empty column"
   sendtohome:
-    nl: "send {card} from on top of {oldcard} to the home pile"
   sendtohome-b:
-    nl: "send {card} from bottom of a column to the home pile"
   homefromfreecell:
-    nl: "send {card} from a free cell to the home pile"
   colfromfreecell:
-    nl: "move {card} from a free cell onto {newcard}"
   newcolfromfreecell:
-    nl: "move {card} from a free cell to an empty column"
 
 meta:
   max_steps: 120

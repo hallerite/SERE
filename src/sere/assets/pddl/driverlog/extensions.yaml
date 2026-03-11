@@ -1,32 +1,20 @@
 predicates:
   at:
-    nl: "{obj} is at {loc}"
   in:
-    nl: "{obj1} is loaded in {obj}"
   driving:
-    nl: "{d} is driving {v}"
   link:
-    nl: "there is a road between {x} and {y}"
     static: true
   path:
-    nl: "there is a walking path between {x} and {y}"
     static: true
   empty:
-    nl: "truck {v} has no driver"
 
 actions:
   load-truck:
-    nl: "load {obj} onto {truck} at {loc}"
   unload-truck:
-    nl: "unload {obj} from {truck} at {loc}"
   board-truck:
-    nl: "{driver} boards {truck} at {loc}"
   disembark-truck:
-    nl: "{driver} disembarks from {truck} at {loc}"
   drive-truck:
-    nl: "drive {truck} from {loc-from} to {loc-to} with {driver}"
   walk:
-    nl: "{driver} walks from {loc-from} to {loc-to}"
 
 meta:
   max_steps: 60

@@ -1,24 +1,15 @@
 predicates:
   at-curb:
-    nl: "{car} is parked at a curb"
   at-curb-num:
-    nl: "{car} is parked at curb position {curb}"
   behind-car:
-    nl: "{car} is parked behind {front-car}"
   car-clear:
-    nl: "{car} has no car behind it"
   curb-clear:
-    nl: "curb position {curb} is empty"
 
 actions:
   move-curb-to-curb:
-    nl: "move {car} from curb {curbsrc} to curb {curbdest}"
   move-curb-to-car:
-    nl: "move {car} from curb {curbsrc} to behind {cardest}"
   move-car-to-curb:
-    nl: "move {car} from behind {carsrc} to curb {curbdest}"
   move-car-to-car:
-    nl: "move {car} from behind {carsrc} to behind {cardest}"
 
 meta:
   max_steps: 60

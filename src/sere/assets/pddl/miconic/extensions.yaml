@@ -1,33 +1,21 @@
 predicates:
   origin:
-    nl: "{person} wants to board at {floor}"
     static: true
   destin:
-    nl: "{person} wants to get off at {floor}"
     static: true
   above:
-    nl: "{floor2} is directly above {floor1}"
     static: true
   boarded:
-    nl: "{person} is inside the elevator"
   not-boarded:
-    nl: "{person} has not boarded the elevator yet"
   served:
-    nl: "{person} has been delivered to their destination"
   not-served:
-    nl: "{person} has not been delivered yet"
   lift-at:
-    nl: "the elevator is at {floor}"
 
 actions:
   board:
-    nl: "board {p} into the elevator at {f}"
   depart:
-    nl: "let {p} depart the elevator at {f}"
   up:
-    nl: "move the elevator up from {f1} to {f2}"
   down:
-    nl: "move the elevator down from {f1} to {f2}"
 
 meta:
   max_steps: 50

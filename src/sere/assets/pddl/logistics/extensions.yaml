@@ -1,25 +1,16 @@
 predicates:
   in-city:
-    nl: "{loc} is in {city}"
     static: true
   at:
-    nl: "{obj} is at {loc}"
   in:
-    nl: "{pkg} is inside {veh}"
 
 actions:
   load-truck:
-    nl: "load {pkg} onto {truck} at {loc}"
   load-airplane:
-    nl: "load {pkg} onto {airplane} at {loc}"
   unload-truck:
-    nl: "unload {pkg} from {truck} at {loc}"
   unload-airplane:
-    nl: "unload {pkg} from {airplane} at {loc}"
   drive-truck:
-    nl: "drive {truck} from {loc-from} to {loc-to} within {city}"
   fly-airplane:
-    nl: "fly {airplane} from {loc-from} to {loc-to}"
 
 meta:
   max_steps: 60

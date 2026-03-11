@@ -1,30 +1,19 @@
 predicates:
   loaded:
-    nl: "truck {t} has {l} units of {g} loaded"
   ready-to-load:
-    nl: "there are {l} units of {g} ready to load at market {m}"
   stored:
-    nl: "{l} units of {g} are stored at the depot"
   on-sale:
-    nl: "there are {l} units of {g} on sale at market {m}"
   next:
-    nl: "level {l2} is one more than level {l1}"
     static: true
   at:
-    nl: "truck {t} is at {p}"
   connected:
-    nl: "{p1} is connected to {p2}"
     static: true
 
 actions:
   drive:
-    nl: "drive truck {t} from {from} to {to}"
   load:
-    nl: "load one unit of {g} onto truck {t} at market {m}"
   unload:
-    nl: "unload one unit of {g} from truck {t} at depot {d}"
   buy:
-    nl: "buy one unit of {g} at market {m} with truck {t}"
 
 meta:
   max_steps: 60

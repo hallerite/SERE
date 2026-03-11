@@ -1,65 +1,38 @@
 predicates:
   ontable:
-    nl: "{c} is on the table"
   holding:
-    nl: "hand {h} is holding {c}"
   handempty:
-    nl: "hand {h} is free"
   empty:
-    nl: "{c} is empty"
   contains:
-    nl: "{c} contains {b}"
   clean:
-    nl: "{c} is clean"
   used:
-    nl: "{c} has been used for {b}"
   dispenses:
-    nl: "dispenser {d} provides ingredient {i}"
     static: true
   shaker-empty-level:
-    nl: "the empty level of shaker {s} is {l}"
     static: true
   shaker-level:
-    nl: "shaker {s} is filled to level {l}"
   next:
-    nl: "level {l2} is one more than level {l1}"
     static: true
   unshaked:
-    nl: "shaker {s} has not been shaken"
   shaked:
-    nl: "shaker {s} has been shaken"
   cocktail-part1:
-    nl: "the first ingredient of cocktail {c} is {i}"
     static: true
   cocktail-part2:
-    nl: "the second ingredient of cocktail {c} is {i}"
     static: true
 
 actions:
   grasp:
-    nl: "grasp {c} with {h}"
   leave:
-    nl: "put down {c} from {h} onto the table"
   fill-shot:
-    nl: "fill shot glass {s} with {i} from dispenser {d} using hands {h1} and {h2}"
   refill-shot:
-    nl: "refill shot glass {s} with {i} from dispenser {d} using hands {h1} and {h2}"
   empty-shot:
-    nl: "empty {b} from shot glass {p} using hand {h}"
   clean-shot:
-    nl: "clean shot glass {s} using hands {h1} and {h2}"
   pour-shot-to-clean-shaker:
-    nl: "pour {i} from shot glass {s} into clean shaker {d}"
   pour-shot-to-used-shaker:
-    nl: "pour {i} from shot glass {s} into shaker {d}"
   empty-shaker:
-    nl: "empty cocktail {b} from shaker {s} using hand {h}"
   clean-shaker:
-    nl: "clean shaker {s} using hands {h1} and {h2}"
   shake:
-    nl: "shake ingredients {d1} and {d2} in shaker {s} to make cocktail {b}"
   pour-shaker-to-shot:
-    nl: "pour {b} from shaker {s} into shot glass {d}"
 
 meta:
   max_steps: 80
