@@ -4,23 +4,19 @@ from __future__ import annotations
 
 from typing import List, Dict, Any
 from pathlib import Path
-from datasets import Dataset
 
 try:
     import verifiers as vf
-    from verifiers.envs.experimental.gym_env import (
-        GymEnv,
-        normalize_reset,
-        EpisodicSumRubric,
-    )
+    from verifiers.types import Messages, State
+    from datasets import Dataset
 except ImportError as e:
     raise ImportError(
         "Verifiers integration requires verifiers. "
         "Install with: uv sync --extra verifiers"
     ) from e
 
+from sere.io.task_loader import load_task
 from sere.core.pddl_env.run_mode import RunMode
-from integrations.verifiers.wrapper import SereGymWrapper
 from integrations.verifiers.parser import (
     parse_pddl_actions,
     format_multi_agent_prompt,
@@ -30,7 +26,7 @@ from integrations.verifiers.dataset import discover_tasks, get_available_domains
 
 __all__ = [
     "load_environment",
-    "SereGymWrapper",
+    "SereEnv",
     "parse_pddl_actions",
     "format_multi_agent_prompt",
     "discover_tasks",
@@ -38,69 +34,26 @@ __all__ = [
 ]
 
 
-class SereGymEnv(GymEnv):
-    """GymEnv with per-episode system prompts sourced from SERE task info."""
-
-    def __init__(self, *args, system_prompt: str | None = None, **kwargs):
-        self._system_prompt_override = system_prompt
-        super().__init__(*args, system_prompt=system_prompt, **kwargs)
-
-    def gym_to_hf(self) -> tuple[Dataset, Dataset | None]:
-        train_rows = []
-        eval_rows = []
-        total = self.num_train_episodes + self.num_eval_episodes
-        env = self.env_cls(**self.env_kwargs)
-
-        try:
-            for i in range(total):
-                obs, info = normalize_reset(env.reset(seed=self.seed + i))
-                question = self.obs_to_text(obs)
-                info = info or {}
-                sys_prompt = self._system_prompt_override or info.get("system_prompt")
-                task_id = info.get("task_id")
-                task_path = info.get("task_path")
-                task_stem = ""
-                if isinstance(task_path, str) and task_path:
-                    task_stem = Path(task_path).stem
-                domain = info.get("domain")
-
-                if self.message_type == "completion":
-                    row = {"prompt": question, "answer": str(self.seed + i)}
-                else:
-                    prompt = []
-                    if sys_prompt:
-                        prompt.append({"role": "system", "content": sys_prompt})
-                    prompt.append({"role": "user", "content": question})
-                    row = {"prompt": prompt, "answer": str(self.seed + i)}
-                if domain:
-                    row["task"] = str(domain)
-                if task_id:
-                    row["task_name"] = str(task_id)
-                elif task_stem:
-                    row["task_name"] = task_stem
-
-                if i < self.num_train_episodes:
-                    train_rows.append(row)
-                else:
-                    eval_rows.append(row)
-        finally:
-            close_fn = getattr(env, "close", None)
-            if close_fn is not None:
-                close_fn()
-
-        dataset = Dataset.from_list(train_rows)
-        eval_dataset = Dataset.from_list(eval_rows) if eval_rows else None
-        return dataset, eval_dataset
-
-
+# ---------------------------------------------------------------------------
+# Rubric helpers
+# ---------------------------------------------------------------------------
 
 def _extract_outcome(state: dict) -> str | None:
     for step in reversed(state.get("trajectory", [])):
         extras = step.get("extras") or {}
-        info = extras.get("gym_info")
+        info = extras.get("sere_info")
         if isinstance(info, dict) and info.get("outcome") is not None:
-            return str(info.get("outcome"))
+            return str(info["outcome"])
     return None
+
+
+def sum_step_rewards(state: dict, **kwargs) -> float:
+    return float(
+        sum(
+            float(step.get("reward", 0.0) or 0.0)
+            for step in state.get("trajectory", [])
+        )
+    )
 
 
 def task_success(state: dict, **kwargs) -> float:
@@ -130,6 +83,106 @@ def outcome_out_of_energy(state: dict, **kwargs) -> float:
 def outcome_failed(state: dict, **kwargs) -> float:
     return _outcome_is(state, "failed")
 
+
+# ---------------------------------------------------------------------------
+# Environment
+# ---------------------------------------------------------------------------
+
+class SereEnv(vf.MultiTurnEnv):
+    """Native MultiTurnEnv for SERE symbolic reasoning tasks."""
+
+    def __init__(
+        self,
+        sere_env_kwargs: Dict[str, Any],
+        run_mode: RunMode = RunMode.INTERACTIVE,
+        system_prompt_override: str | None = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.sere_env_kwargs = sere_env_kwargs
+        self.run_mode = run_mode
+        self.system_prompt_override = system_prompt_override
+
+    async def setup_state(self, state: State) -> State:
+        """Load SERE task and build the real prompt with system prompt + observation."""
+        task_path = state["info"]["task_path"]
+        seed = state["info"].get("seed", 0)
+
+        env, meta = load_task(
+            domain_path=None,
+            task_path=task_path,
+            run_mode=self.run_mode,
+            seed=seed,
+            **self.sere_env_kwargs,
+        )
+        obs, sere_info = env.reset(seed=seed)
+
+        state["sere_env"] = env
+        state["sere_done"] = False
+
+        # Build the real prompt (replacing placeholder)
+        sys_prompt = self.system_prompt_override or sere_info.get("system_prompt", "")
+        prompt: list[dict[str, str]] = []
+        if sys_prompt:
+            prompt.append({"role": "system", "content": sys_prompt})
+        prompt.append({"role": "user", "content": obs})
+        state["prompt"] = prompt
+
+        return state
+
+    async def env_response(
+        self, messages: Messages, state: State, **kwargs
+    ) -> Messages:
+        """Parse action from model output, step the SERE env, return observation."""
+        env = state["sere_env"]
+
+        # Extract the model's last message
+        raw_text = ""
+        if isinstance(messages, list) and messages:
+            for msg in reversed(messages):
+                if isinstance(msg, dict) and msg.get("role") == "assistant":
+                    raw_text = msg.get("content", "")
+                    break
+
+        # Extract PDDL action(s) — if parsing fails, pass raw text to env
+        # (the env's own error handling will produce an "Invalid" message)
+        try:
+            action = parse_pddl_actions(raw_text)
+            if isinstance(action, list):
+                action_text = "".join(action)
+            else:
+                action_text = action
+        except ValueError:
+            action_text = raw_text
+
+        obs, reward, done, info = env.step(action_text)
+
+        # Record reward + info on the last trajectory step
+        if state["trajectory"]:
+            state["trajectory"][-1]["reward"] = reward
+            state["trajectory"][-1]["extras"]["sere_info"] = info
+
+        state["sere_done"] = done
+
+        response: Messages = [{"role": "user", "content": obs}]
+
+        if done:
+            state["final_env_response"] = response
+
+        return response
+
+    @vf.stop
+    async def episode_done(self, state: State) -> bool:
+        return state.get("sere_done", False)
+
+    @vf.cleanup
+    async def cleanup_env(self, state: State) -> None:
+        state.pop("sere_env", None)
+
+
+# ---------------------------------------------------------------------------
+# load_environment
+# ---------------------------------------------------------------------------
 
 def load_environment(
     # Task selection
@@ -161,12 +214,12 @@ def load_environment(
     run_mode: RunMode = RunMode.INTERACTIVE,
     env_kwargs: Dict[str, Any] | None = None,
     **kwargs,
-) -> GymEnv:
+) -> SereEnv:
     """
     Load SERE environment for Verifiers RL training.
 
-    This function creates a GymEnv that wraps SERE's symbolic reasoning tasks,
-    making them compatible with the Verifiers training infrastructure.
+    Returns a native MultiTurnEnv — no gym wrapper, no upfront env resets.
+    Tasks are loaded lazily at rollout time.
 
     Args:
         task_paths: Explicit list of task paths — YAML (e.g., "kitchen/t01.yaml")
@@ -189,15 +242,11 @@ def load_environment(
         enable_stochastic: Enable stochastic action outcomes.
         step_penalty: Reward penalty per action (default: -0.01).
         invalid_penalty: Penalty for invalid actions (default: -0.1).
-        illegal_move_retries: Number of retries allowed per turn on invalid
-            actions before terminating (default: 100, effectively unlimited).
-            The agent sees an error message and can try again.
+        illegal_move_retries: Number of retries allowed on invalid actions
+            before terminating (default: 100, effectively unlimited).
         time_limit: Optional time limit for episodes (in time units).
         enable_reward_shaping: If True, allow task-defined reward shaping milestones.
-                               If False (default), task milestones are ignored unless
-                               reward_shaping is explicitly provided.
-        reward_shaping: Dict with shaping config: {"mode": "milestone"|"potential",
-                        "milestones": [...], "gamma": 1.0}.
+        reward_shaping: Dict with shaping config.
 
         display_nl: Show natural language descriptions alongside PDDL (default: True).
         show_affordances: Show available actions in observations (default: True).
@@ -205,43 +254,16 @@ def load_environment(
         system_prompt: Custom system prompt. If None, uses per-task SERE system prompt.
         run_mode: SERE run mode (default: INTERACTIVE).
         env_kwargs: Additional arguments passed to SERE's load_task().
-                    Advanced options not covered by other parameters.
-        **kwargs: Additional arguments passed to GymEnv.
+        **kwargs: Additional arguments passed to SereEnv / MultiTurnEnv.
 
     Returns:
-        GymEnv instance ready for training/evaluation
+        SereEnv instance ready for training/evaluation
 
     Examples:
-        >>> # Basic usage - all kitchen tasks
         >>> env = load_environment(domains=["kitchen"])
-
-        >>> # Disable natural language, only show PDDL
-        >>> env = load_environment(
-        ...     domains=["kitchen"],
-        ...     display_nl=False,
-        ...     show_affordances=False
-        ... )
-
-        >>> # Enable stochastic actions with custom penalties
-        >>> env = load_environment(
-        ...     domains=["kitchen"],
-        ...     enable_stochastic=True,
-        ...     step_penalty=-0.05,
-        ...     invalid_penalty=-0.5
-        ... )
-
-        >>> # Custom reward shaping
-        >>> env = load_environment(
-        ...     domains=["kitchen"],
-        ...     reward_shaping={
-        ...         "mode": "milestone",
-        ...         "milestones": [
-        ...             {"expr": "(has-hot-water ?c)", "reward": 0.5, "once": True}
-        ...         ]
-        ...     }
-        ... )
+        >>> env = load_environment(domains=["kitchen"], display_nl=False)
     """
-    # Discover tasks if not explicitly provided
+    # Discover tasks
     if task_paths is None:
         task_paths = discover_tasks(
             domains=domains,
@@ -255,18 +277,48 @@ def load_environment(
             f"include_multi_agent: {include_multi_agent}"
         )
 
-    # Calculate episode counts
-    num_tasks = len(task_paths)
-    num_train_episodes = num_tasks * episodes_per_task
-
+    # Build dataset: just metadata, no env resets
+    train_rows = []
+    eval_rows = []
     if eval_episodes_per_task is None:
         eval_episodes_per_task = episodes_per_task
-    num_eval_episodes = num_tasks * eval_episodes_per_task
+    num_tasks = len(task_paths)
+
+    for ep in range(episodes_per_task):
+        for i, task_path in enumerate(task_paths):
+            domain = _infer_domain(task_path)
+            row = {
+                "prompt": [{"role": "user", "content": "Loading task..."}],
+                "answer": task_path,
+                "task": domain,
+                "info": {
+                    "task_path": task_path,
+                    "domain": domain,
+                    "seed": seed + ep * num_tasks + i,
+                },
+            }
+            train_rows.append(row)
+
+    for ep in range(eval_episodes_per_task):
+        for i, task_path in enumerate(task_paths):
+            domain = _infer_domain(task_path)
+            row = {
+                "prompt": [{"role": "user", "content": "Loading task..."}],
+                "answer": task_path,
+                "task": domain,
+                "info": {
+                    "task_path": task_path,
+                    "domain": domain,
+                    "seed": seed + (episodes_per_task + ep) * num_tasks + i,
+                },
+            }
+            eval_rows.append(row)
+
+    dataset = Dataset.from_list(train_rows)
+    eval_dataset = Dataset.from_list(eval_rows) if eval_rows else None
 
     # Build SERE environment configuration
-    sere_env_kwargs = env_kwargs or {}
-
-    # Add environment behavior options
+    sere_env_kwargs = dict(env_kwargs or {})
     sere_env_kwargs.setdefault("enable_numeric", enable_numeric)
     sere_env_kwargs.setdefault("enable_conditional", enable_conditional)
     sere_env_kwargs.setdefault("enable_durations", enable_durations)
@@ -283,19 +335,22 @@ def load_environment(
     elif "reward_shaping" not in sere_env_kwargs and not enable_reward_shaping:
         sere_env_kwargs["reward_shaping"] = None
 
-    # Build observation formatter configuration
+    if max_episode_steps is not None:
+        sere_env_kwargs.setdefault("max_steps", max_episode_steps)
+
+    # Formatter config
     formatter_config = sere_env_kwargs.get("formatter_config", {})
     formatter_config.setdefault("display_nl", display_nl)
     formatter_config.setdefault("show_affordances", show_affordances)
-    # Always show goal, fluents, and messages - these should not be configurable
     formatter_config.setdefault("show_goal", True)
     formatter_config.setdefault("show_fluents", True)
     formatter_config.setdefault("show_messages", True)
     sere_env_kwargs["formatter_config"] = formatter_config
 
+    # Rubric
     rubric = kwargs.pop("rubric", None)
     if rubric is None:
-        rubric = EpisodicSumRubric()
+        rubric = vf.Rubric(funcs=[sum_step_rewards], weights=[1.0])
     if hasattr(rubric, "add_metric"):
         rubric.add_metric(task_success)
         rubric.add_metric(outcome_invalid_move)
@@ -303,27 +358,29 @@ def load_environment(
         rubric.add_metric(outcome_out_of_energy)
         rubric.add_metric(outcome_failed)
 
-    # Create GymEnv with SERE wrapper
-    env = SereGymEnv(
-        # SERE-specific
-        env_cls=SereGymWrapper,
-        env_kwargs={
-            "task_paths": task_paths,
-            "env_kwargs": sere_env_kwargs,
-            "run_mode": run_mode,
-        },
-        action_parser=parse_pddl_actions,
-        obs_to_text=lambda obs: obs,  # SERE obs is already a string
-        # Episode configuration
-        num_train_episodes=num_train_episodes,
-        num_eval_episodes=num_eval_episodes,
-        max_episode_steps=max_episode_steps,
-        seed=seed,
-        # Verifiers configuration
+    return SereEnv(
+        sere_env_kwargs=sere_env_kwargs,
+        run_mode=run_mode,
+        system_prompt_override=system_prompt,
+        dataset=dataset,
+        eval_dataset=eval_dataset,
+        max_turns=max_episode_steps or 30,
         rubric=rubric,
-        system_prompt=system_prompt,
         message_type="chat",
         **kwargs,
     )
 
-    return env
+
+def _infer_domain(task_path: str) -> str:
+    """Infer domain name from a task path."""
+    p = Path(task_path)
+    if task_path.endswith(".pddl"):
+        # e.g., .../pddl/blocksworld/problems/instance-1.pddl → blocksworld
+        for part in p.parts:
+            if part == "problems":
+                idx = p.parts.index(part)
+                if idx > 0:
+                    return p.parts[idx - 1]
+        return p.parent.name
+    # YAML: kitchen/t01.yaml → kitchen
+    return p.parts[0] if p.parts else "unknown"

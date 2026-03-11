@@ -7,7 +7,7 @@ try:
     import verifiers as vf
     from integrations.verifiers import (
         load_environment,
-        SereGymWrapper,
+        SereEnv,
         parse_pddl_actions,
         discover_tasks,
         get_available_domains,
@@ -39,20 +39,17 @@ def test_get_available_domains():
     """Test domain listing."""
     domains = get_available_domains()
     assert len(domains) > 0
-    assert "kitchen" in domains  # Should have at least kitchen domain
+    assert "kitchen" in domains
 
 
 def test_parse_pddl_actions_single():
     """Test PDDL action parsing for single action."""
-    # Raw action
     action = parse_pddl_actions("(move r1 kitchen pantry)")
     assert action == "(move r1 kitchen pantry)"
 
-    # With explanation
     action = parse_pddl_actions("I'll move to the pantry. (move r1 kitchen pantry)")
     assert action == "(move r1 kitchen pantry)"
 
-    # Invalid action should raise
     with pytest.raises(ValueError):
         parse_pddl_actions("no action here")
 
@@ -71,44 +68,19 @@ def test_parse_pddl_actions_multi():
     assert "(pick-up r2 leaf)" in actions
 
 
-def test_sere_gym_wrapper():
-    """Test SereGymWrapper basic functionality."""
-    wrapper = SereGymWrapper(
-        task_paths=["kitchen/t01_one_step_steep.yaml"],
-        env_kwargs={},
-    )
-
-    # Test reset
-    obs, info = wrapper.reset(seed=0)
-    assert isinstance(obs, str)
-    assert len(obs) > 0
-    assert "task_path" in info
-    assert info["task_path"] == "kitchen/t01_one_step_steep.yaml"
-
-    # Test step (use a valid action for the task)
-    # For one-step steep, we need to steep tea
-    obs, reward, done, info = wrapper.step("(steep-tea r1 leaf mug)")
-    assert isinstance(obs, str)
-    assert isinstance(reward, (int, float))
-    assert isinstance(done, bool)
-    assert isinstance(info, dict)
-
-    # Clean up
-    wrapper.close()
-
-
 def test_load_environment_basic():
-    """Test load_environment with minimal config."""
+    """Test load_environment creates a SereEnv with correct dataset."""
     env = load_environment(
         task_paths=["kitchen/t01_one_step_steep.yaml"],
         episodes_per_task=1,
         eval_episodes_per_task=1,
     )
 
-    assert env is not None
+    assert isinstance(env, SereEnv)
     assert hasattr(env, "dataset")
     assert hasattr(env, "eval_dataset")
-    assert len(env.dataset) >= 1
+    assert len(env.dataset) == 1
+    assert len(env.eval_dataset) == 1
 
 
 def test_load_environment_domains():
@@ -119,72 +91,66 @@ def test_load_environment_domains():
         episodes_per_task=1,
     )
 
-    assert env is not None
-    assert len(env.dataset) >= 2  # At least 2 tasks × 1 episode
+    assert isinstance(env, SereEnv)
+    assert len(env.dataset) >= 2
 
 
 def test_load_environment_multi_agent():
     """Test load_environment includes multi-agent tasks."""
-    # Include multi-agent
     env_with_multi = load_environment(
         domains=["kitchen"],
         include_multi_agent=True,
         episodes_per_task=1,
     )
-
-    # Exclude multi-agent
     env_without_multi = load_environment(
         domains=["kitchen"],
         include_multi_agent=False,
         episodes_per_task=1,
     )
-
-    # With multi-agent should have more or equal tasks
     assert len(env_with_multi.dataset) >= len(env_without_multi.dataset)
 
 
-def test_wrapper_multiple_episodes():
-    """Test wrapper handles multiple episodes per task."""
-    wrapper = SereGymWrapper(
+def test_load_environment_no_upfront_resets():
+    """Test that dataset construction is fast (no env resets)."""
+    import time
+    t0 = time.time()
+    env = load_environment(
+        domains=["kitchen", "assembly", "goldminer", "blocksworld", "logistics"],
+        num_tasks_per_domain=10,
+        episodes_per_task=1,
+        eval_episodes_per_task=0,
+    )
+    elapsed = time.time() - t0
+    assert elapsed < 2.0, f"Dataset construction took {elapsed:.1f}s (should be <2s)"
+    assert len(env.dataset) >= 30
+
+
+def test_load_environment_dataset_has_task_info():
+    """Test that dataset rows contain task metadata."""
+    env = load_environment(
         task_paths=["kitchen/t01_one_step_steep.yaml"],
-        env_kwargs={},
+        episodes_per_task=1,
+        eval_episodes_per_task=0,
     )
-
-    # Episode 1
-    obs1, info1 = wrapper.reset(seed=0)
-    assert info1["task_path"] == "kitchen/t01_one_step_steep.yaml"
-
-    # Episode 2 (same task, different seed)
-    obs2, info2 = wrapper.reset(seed=1)
-    assert info2["task_path"] == "kitchen/t01_one_step_steep.yaml"
-    # Observations might be same (deterministic init) or different (stochastic)
-
-    wrapper.close()
+    row = env.dataset[0]
+    assert "info" in row
+    info = row["info"]
+    assert info["task_path"] == "kitchen/t01_one_step_steep.yaml"
+    assert info["domain"] == "kitchen"
+    assert "seed" in info
 
 
-def test_wrapper_multiple_tasks():
-    """Test wrapper cycles through multiple tasks."""
-    wrapper = SereGymWrapper(
-        task_paths=[
-            "kitchen/t01_one_step_steep.yaml",
-            "kitchen/t02_pour_then_steep.yaml",
-        ],
-        env_kwargs={},
+def test_load_environment_multiple_episodes():
+    """Test episodes_per_task creates correct number of dataset rows."""
+    env = load_environment(
+        task_paths=["kitchen/t01_one_step_steep.yaml"],
+        episodes_per_task=3,
+        eval_episodes_per_task=0,
     )
-
-    # Seed 0 → task 0
-    obs1, info1 = wrapper.reset(seed=0)
-    assert info1["task_path"] == "kitchen/t01_one_step_steep.yaml"
-
-    # Seed 1 → task 1
-    obs2, info2 = wrapper.reset(seed=1)
-    assert info2["task_path"] == "kitchen/t02_pour_then_steep.yaml"
-
-    # Seed 2 → task 0 again (wraparound)
-    obs3, info3 = wrapper.reset(seed=2)
-    assert info3["task_path"] == "kitchen/t01_one_step_steep.yaml"
-
-    wrapper.close()
+    assert len(env.dataset) == 3
+    # Each episode should have a different seed
+    seeds = [env.dataset[i]["info"]["seed"] for i in range(3)]
+    assert len(set(seeds)) == 3
 
 
 if __name__ == "__main__":
