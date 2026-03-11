@@ -61,9 +61,6 @@ def load_pddl_domain(
         with open(ext_path, "r", encoding="utf-8") as f:
             extensions = yaml.safe_load(f) or {}
 
-    # Build NL overrides dict
-    nl_overrides = _build_nl_overrides(extensions)
-
     # Static overrides: combine inferred + explicit
     static_overrides = _compute_statics(pddl_domain, extensions)
 
@@ -72,7 +69,7 @@ def load_pddl_domain(
 
     spec = domain_to_spec(
         pddl_domain,
-        nl_overrides=nl_overrides,
+        extensions=extensions,
         static_overrides=static_overrides,
         outcome_overrides=outcome_overrides,
     )
@@ -80,16 +77,6 @@ def load_pddl_domain(
 
     meta = extensions.get("meta", {}) or {}
     return spec, meta, pddl_domain
-
-
-def _build_nl_overrides(extensions: Dict[str, Any]) -> Dict[str, Any]:
-    """Build the nl_overrides dict from extensions.yaml."""
-    return {
-        "predicates": extensions.get("predicates", {}),
-        "actions": extensions.get("actions", {}),
-        "fluents": extensions.get("fluents", {}),
-        "derived": extensions.get("derived", []),
-    }
 
 
 def _compute_statics(

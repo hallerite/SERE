@@ -26,7 +26,6 @@ from .domain_spec import (
     FluentSpec,
     OutcomeSpec,
     PredicateSpec,
-    _as_nl_list,
     _parse_derived as _parse_derived_rules,
     _validate_static_effects,
 )
@@ -599,36 +598,6 @@ def parse_problem_file(path: str | Path) -> PDDLProblem:
 
 
 # ---------------------------------------------------------------------------
-#  NL auto-generation
-# ---------------------------------------------------------------------------
-
-def _humanize(name: str) -> str:
-    """Convert snake/kebab case to space-separated: 'on_board' -> 'on board'."""
-    return name.replace("_", " ").replace("-", " ")
-
-
-def _auto_pred_nl(name: str, args: List[Tuple[str, str]]) -> str:
-    h = _humanize(name)
-    if not args:
-        return h
-    return h + " " + " ".join(f"{{{a[0]}}}" for a in args)
-
-
-def _auto_action_nl(name: str, params: List[Tuple[str, str]]) -> str:
-    h = _humanize(name)
-    if not params:
-        return h
-    return h + " " + " ".join(f"{{{p[0]}}}" for p in params)
-
-
-def _auto_fluent_nl(name: str, args: List[Tuple[str, str]]) -> str:
-    h = _humanize(name)
-    if not args:
-        return h
-    return h + " of " + " ".join(f"{{{a[0]}}}" for a in args)
-
-
-# ---------------------------------------------------------------------------
 #  Static predicate inference
 # ---------------------------------------------------------------------------
 
@@ -664,34 +633,35 @@ def infer_static_predicates(domain: PDDLDomain) -> Set[str]:
 def domain_to_spec(
     domain: PDDLDomain,
     *,
-    nl_overrides: Optional[Dict[str, Any]] = None,
+    extensions: Optional[Dict[str, Any]] = None,
     static_overrides: Optional[Set[str]] = None,
     outcome_overrides: Optional[Dict[str, list]] = None,
+    # Legacy alias
+    nl_overrides: Optional[Dict[str, Any]] = None,
 ) -> DomainSpec:
     """
     Convert a parsed PDDLDomain into a SERE DomainSpec.
 
     Parameters
     ----------
-    nl_overrides : dict, optional
-        Nested dict with keys 'predicates', 'actions', 'fluents' mapping
-        name -> {nl: ..., static: ...}.
+    extensions : dict, optional
+        Nested dict with keys 'predicates', 'actions', 'fluents', 'derived'
+        from extensions.yaml. Used for static overrides, outcomes, durations, etc.
     static_overrides : set, optional
         Predicate names to mark as static. If None, inferred automatically.
     outcome_overrides : dict, optional
         action_name -> list of outcome dicts.
     """
-    nl = nl_overrides or {}
-    nl_preds = nl.get("predicates", {})
-    nl_acts = nl.get("actions", {})
-    nl_fls = nl.get("fluents", {})
+    ext = extensions or nl_overrides or {}
+    ext_preds = ext.get("predicates", {})
+    ext_acts = ext.get("actions", {})
 
     # Determine static predicates
     if static_overrides is not None:
         statics = static_overrides
     else:
         inferred = infer_static_predicates(domain)
-        # Also scan outcome overrides for modified predicates
+        # Scan outcome overrides for modified predicates
         oc_overrides_tmp = outcome_overrides or {}
         for _aname, oc_list in oc_overrides_tmp.items():
             for oc in (oc_list or []):
@@ -702,8 +672,8 @@ def domain_to_spec(
                             inferred.discard(str(p[0]).lower())
                     except SExprError:
                         pass
-        # Also scan action-level outcomes from nl_overrides
-        for _aname, ainfo in nl_acts.items():
+        # Scan action-level outcomes from extensions
+        for _aname, ainfo in ext_acts.items():
             if isinstance(ainfo, dict):
                 for oc in (ainfo.get("outcomes", []) or []):
                     for eff in (oc.get("add", []) or []) + (oc.get("delete", oc.get("del", [])) or []):
@@ -713,9 +683,9 @@ def domain_to_spec(
                                 inferred.discard(str(p[0]).lower())
                         except SExprError:
                             pass
-        # Merge with explicit overrides from nl
+        # Merge with explicit overrides
         statics = set(inferred)
-        for pname, pinfo in nl_preds.items():
+        for pname, pinfo in ext_preds.items():
             if isinstance(pinfo, dict) and pinfo.get("static") is True:
                 statics.add(pname.lower())
             elif isinstance(pinfo, dict) and pinfo.get("static") is False:
@@ -727,37 +697,24 @@ def domain_to_spec(
     # Predicates
     predicates: Dict[str, PredicateSpec] = {}
     for pname, pargs in domain.predicates.items():
-        pinfo = nl_preds.get(pname, {})
-        if isinstance(pinfo, str):
-            pinfo = {"nl": pinfo}
-        raw_nl = pinfo.get("nl") if isinstance(pinfo, dict) else None
         predicates[pname] = PredicateSpec(
             name=pname,
             args=pargs,
-            nl=_as_nl_list(raw_nl, _auto_pred_nl(pname, pargs)),
             static=pname in statics,
         )
 
     # Fluents
     fluents: Dict[str, FluentSpec] = {}
     for fname, fargs in domain.functions.items():
-        finfo = nl_fls.get(fname, {})
-        if isinstance(finfo, str):
-            finfo = {"nl": finfo}
-        raw_nl = finfo.get("nl") if isinstance(finfo, dict) else None
-        fluents[fname] = FluentSpec(
-            name=fname,
-            args=fargs,
-            nl=_as_nl_list(raw_nl, _auto_fluent_nl(fname, fargs)),
-        )
+        fluents[fname] = FluentSpec(name=fname, args=fargs)
 
     # Actions
     actions: Dict[str, ActionSpec] = {}
     oc_overrides = outcome_overrides or {}
     for aname, pddl_act in domain.actions.items():
-        ainfo = nl_acts.get(aname, {})
+        ainfo = ext_acts.get(aname, {})
         if isinstance(ainfo, str):
-            ainfo = {"nl": ainfo}
+            ainfo = {}
 
         # Conditional blocks
         cond_blocks: List[ConditionalBlock] = []
@@ -773,7 +730,6 @@ def domain_to_spec(
         # Outcomes
         outcomes: List[OutcomeSpec] = []
         raw_ocs = oc_overrides.get(aname) or (ainfo.get("outcomes") if isinstance(ainfo, dict) else None)
-        # outcomes can be a list (stochastic definitions) or a dict (NL-only labels); skip dicts
         if raw_ocs and isinstance(raw_ocs, list):
             for oc in raw_ocs:
                 outcomes.append(OutcomeSpec(
@@ -787,15 +743,12 @@ def domain_to_spec(
                     messages=oc.get("messages", []) or [],
                 ))
 
-        raw_nl = ainfo.get("nl") if isinstance(ainfo, dict) else None
-
         actions[aname] = ActionSpec(
             name=aname,
             params=pddl_act.params,
             pre=pddl_act.pre,
             add=pddl_act.add,
             delete=pddl_act.delete,
-            nl=_as_nl_list(raw_nl, _auto_action_nl(aname, pddl_act.params)),
             num_eff=pddl_act.num_eff,
             cond=cond_blocks,
             duration=ainfo.get("duration") if isinstance(ainfo, dict) else None,
@@ -807,12 +760,11 @@ def domain_to_spec(
 
     _validate_static_effects(actions, predicates)
 
-    # Derived predicates - convert from PDDLDerived to the format _parse_derived_rules expects
+    # Derived predicates
     derived_items: List[Dict[str, Any]] = []
     for d in domain.derived:
         derived_items.append({"head": d.head, "when": d.body})
-    # Also merge any derived rules from extensions
-    ext_derived = nl.get("derived", [])
+    ext_derived = ext.get("derived", [])
     if ext_derived:
         derived_items.extend(ext_derived)
     derived = _parse_derived_rules(derived_items, predicates) if derived_items else {}

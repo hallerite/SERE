@@ -132,33 +132,13 @@ def test_outcome_probabilities_present_when_stochastic(dom_path):
         )
 
 
-def _has_nl(a) -> bool:
-    """
-    Accept either a single string or a list of strings for ActionSpec.nl.
-    """
-    nl = getattr(a, "nl", None)
-    if isinstance(nl, str):
-        return bool(nl.strip())
-    if isinstance(nl, list):
-        return any(isinstance(s, str) and s.strip() for s in nl)
-    return False
-
-
-@pytest.mark.parametrize("dom_path", ALL_EXTENDED_DOMAINS, ids=lambda x: x[0])
-def test_action_nl_present(dom_path):
-    """
-    Ergonomics: every action should have an NL description (string or list of strings).
-    """
-    dom = _load_domain(dom_path)
-    bad = [name for name, a in dom.actions.items() if not _has_nl(a)]
-    assert not bad, f"{dom_path[0]}: actions missing NL description: {bad}"
 
 
 def test_domain_load_rejects_static_effects():
     y = {
         "domain": "dummy",
         "predicates": [{"name": "p", "args": [], "static": True}],
-        "actions": [{"name": "a", "params": [], "pre": [], "add": ["(p)"], "delete": [], "nl": "a"}],
+        "actions": [{"name": "a", "params": [], "pre": [], "add": ["(p)"], "delete": []}],
     }
     with pytest.raises(ValueError, match="Static predicate effects"):
         DomainSpec.from_dict(y)

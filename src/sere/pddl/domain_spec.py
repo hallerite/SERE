@@ -6,18 +6,6 @@ import yaml
 from .sexpr import parse_one, SExprError
 Predicate = Tuple[str, Tuple[str, ...]]
 
-# ---------- helper: normalize nl -> List[str] ----------
-def _as_nl_list(v: Any, fallback: str) -> List[str]:
-    if v is None:
-        return [fallback]
-    if isinstance(v, str):
-        s = v.strip()
-        return [s] if s else [fallback]
-    if isinstance(v, (list, tuple)):
-        out = [str(x).strip() for x in v if str(x).strip()]
-        return out or [fallback]
-    return [fallback]
-
 @dataclass
 class OutcomeSpec:
     name: str
@@ -33,7 +21,6 @@ class OutcomeSpec:
 class FluentSpec:
     name: str
     args: List[Tuple[str, str]]  # (var, type)
-    nl: List[str]                # variants
 
 @dataclass
 class ConditionalBlock:
@@ -48,7 +35,6 @@ class ConditionalBlock:
 class PredicateSpec:
     name: str
     args: List[Tuple[str, str]]
-    nl: List[str]                # variants
     static: bool = False
 
 @dataclass
@@ -66,7 +52,6 @@ class ActionSpec:
     pre: List[str]                  # may include "(not ...)"
     add: List[str]
     delete: List[str]
-    nl: List[str]                   # variants
     num_eff: List[str] = field(default_factory=list)
     cond: List[ConditionalBlock] = field(default_factory=list)
     duration: Optional[float] = None
@@ -116,7 +101,7 @@ class DomainSpec:
                 name = str(raw).strip().lower()
                 types[name] = parent.strip().lower() if parent else ""
 
-        # predicates (nl -> List[str])
+        # predicates
         preds: Dict[str, PredicateSpec] = {}
         for p in y.get("predicates", []):
             pname = str(p["name"]).lower()
@@ -124,22 +109,17 @@ class DomainSpec:
             preds[pname] = PredicateSpec(
                 name=pname,
                 args=args,
-                nl=_as_nl_list(p.get("nl"), pname),
                 static=p.get("static", False),
             )
 
-        # fluents (nl -> List[str])
+        # fluents
         fls: Dict[str, FluentSpec] = {}
         for f in y.get("fluents", []):
             fname = str(f["name"]).lower()
             args = [(a["name"], str(a["type"]).lower()) for a in f.get("args", [])]
-            fls[fname] = FluentSpec(
-                name=fname,
-                args=args,
-                nl=_as_nl_list(f.get("nl"), fname),
-            )
+            fls[fname] = FluentSpec(name=fname, args=args)
 
-        # actions (nl already normalized)
+        # actions
         actions: Dict[str, ActionSpec] = {}
         for a in y["actions"]:
             aname = str(a["name"]).lower()
@@ -198,7 +178,6 @@ class DomainSpec:
                 pre=a.get("pre", []) or [],
                 add=a.get("add", []) or [],
                 delete=a.get("del", a.get("delete", [])) or [],
-                nl=_as_nl_list(a.get("nl"), aname),
                 num_eff=a.get("num_eff", []) or [],
                 cond=cond_blocks or [],
                 duration=a.get("duration", None),

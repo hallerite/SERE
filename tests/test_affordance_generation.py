@@ -9,11 +9,11 @@ from sere.core.world_state import WorldState
 def _mini_domain_for_filters() -> DomainSpec:
     # Predicates used in preconditions
     preds = {
-        "at":         PredicateSpec(name="at", args=[("r", "robot"), ("l", "loc")], nl=["{r} is at {l}"]),
-        "obj-at":     PredicateSpec(name="obj-at", args=[("o", "object"), ("l", "loc")], nl=["{o} is at {l}"]),
-        "adjacent":   PredicateSpec(name="adjacent", args=[("a", "loc"), ("b", "loc")], nl=["{a} is adjacent to {b}"]),
-        "clear-hand": PredicateSpec(name="clear-hand", args=[("r", "robot")], nl=["{r} has a free hand"]),
-        "holding":    PredicateSpec(name="holding", args=[("r", "robot"), ("o", "object")], nl=["{r} holds {o}"]),
+        "at":         PredicateSpec(name="at", args=[("r", "robot"), ("l", "loc")]),
+        "obj-at":     PredicateSpec(name="obj-at", args=[("o", "object"), ("l", "loc")]),
+        "adjacent":   PredicateSpec(name="adjacent", args=[("a", "loc"), ("b", "loc")]),
+        "clear-hand": PredicateSpec(name="clear-hand", args=[("r", "robot")]),
+        "holding":    PredicateSpec(name="holding", args=[("r", "robot"), ("o", "object")]),
     }
 
     # Actions:
@@ -24,7 +24,6 @@ def _mini_domain_for_filters() -> DomainSpec:
         pre=["(at ?r ?s)"],
         add=["(at ?r ?d)"],
         delete=["(at ?r ?s)"],
-        nl=["move {r} from {s} to {d}"],
     )
 
     # pick-up(r, o): same room + clear hand (robot must be at kitchen for this toy test)
@@ -34,7 +33,6 @@ def _mini_domain_for_filters() -> DomainSpec:
         pre=["(at ?r kitchen)", "(obj-at ?o kitchen)", "(clear-hand ?r)"],
         add=["(holding ?r ?o)"],
         delete=["(obj-at ?o kitchen)", "(clear-hand ?r)"],
-        nl=["pick up {o}"],
     )
 
     return DomainSpec(
@@ -143,7 +141,6 @@ def test_affordances_action_without_preconditions_lists_under_all():
         pre=[],
         add=[],
         delete=[],
-        nl=["do nothing"],
     )
     w = _mini_world_for_filters(d)
 
@@ -158,14 +155,13 @@ def test_affordances_action_without_preconditions_lists_under_all():
 def test_affordances_numeric_param_templated_placeholder_and_non_numeric_check():
     d = _mini_domain_for_filters()
     # add a simple predicate and an action with a numeric parameter
-    d.predicates["powered"] = PredicateSpec(name="powered", args=[("a", "object")], nl=["{a} is powered"])
+    d.predicates["powered"] = PredicateSpec(name="powered", args=[("a", "object")])
     d.actions["heat"] = ActionSpec(
         name="heat",
         params=[("r", "robot"), ("a", "object"), ("n", "number")],
         pre=["(powered ?a)"],  # non-numeric pre; numeric param present → show <n>
         add=[],
         delete=[],
-        nl=["heat {a} for {n} ticks"],
     )
 
     w = _mini_world_for_filters(d)
@@ -188,7 +184,6 @@ def test_affordances_numeric_precondition_skipped_for_template():
         pre=["(> (energy ?r) ?n)"],
         add=[],
         delete=[],
-        nl=["dose {r} by {n}"],
     )
     w = _mini_world_for_filters(d)
 
@@ -208,7 +203,6 @@ def test_room_scope_with_containment_chain_affords_object_in_room():
         pre=["(at ?r kitchen)"],
         add=[],
         delete=[],
-        nl=["inspect {o}"],
     )
     w = _mini_world_for_filters(d)
     # place leaf inside cup, and cup in the kitchen (so leaf resolves to kitchen)
@@ -233,7 +227,6 @@ def test_affordances_use_static_facts_in_preconditions():
         pre=["(at ?r ?s)", "(adjacent ?s ?d)"],
         add=["(at ?r ?d)"],
         delete=["(at ?r ?s)"],
-        nl=["move2 {r} from {s} to {d}"],
     )
 
     w = _mini_world_for_filters(d)
@@ -258,7 +251,6 @@ def test_type_pool_empty_yields_no_affordance():
         pre=[],
         add=[],
         delete=[],
-        nl=["open {c}"],
     )
     w = _mini_world_for_filters(d)
 
@@ -277,7 +269,6 @@ def test_multi_typed_object_appears_in_multiple_type_pools():
         pre=["(at ?r kitchen)"],
         add=[],
         delete=[],
-        nl=["use {a}"],
     )
     d.actions["store-in-container"] = ActionSpec(
         name="store-in-container",
@@ -285,7 +276,6 @@ def test_multi_typed_object_appears_in_multiple_type_pools():
         pre=["(at ?r kitchen)"],
         add=[],
         delete=[],
-        nl=["store in {c}"],
     )
 
     w = _mini_world_for_filters(d)
@@ -320,7 +310,6 @@ def test_room_scope_generation_blocks_actions_not_touching_current_room():
         pre=[],
         add=[],
         delete=[],
-        nl=["announce {l}"],
     )
     w = _mini_world_for_filters(d)
 
@@ -445,7 +434,6 @@ def test_room_scope_with_static_adjacency_does_not_leak_nonlocal_affordance():
         pre=["(at ?r ?s)", "(adjacent ?s ?d)"],
         add=["(at ?r ?d)"],
         delete=["(at ?r ?s)"],
-        nl=["move2 {r} from {s} to {d}"],
     )
 
     w = _mini_world_for_filters(d)

@@ -83,7 +83,7 @@ def test_retry_accumulation_and_penalties(make_env):
 
 
 def test_step_penalty_and_termination_rule(make_env):
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     # Use a static fact in the termination rule; evaluator treats plain literals as true if present.
     env = make_env(
         actions={"noop": a},
@@ -99,8 +99,8 @@ def test_step_penalty_and_termination_rule(make_env):
 
 
 def test_numeric_clamping(make_env):
-    fl = FluentSpec(name="energy", args=[("r", "robot")], nl=["energy"])
-    cap = FluentSpec(name="battery-cap", args=[("r", "robot")], nl=["battery cap"])
+    fl = FluentSpec(name="energy", args=[("r", "robot")])
+    cap = FluentSpec(name="battery-cap", args=[("r", "robot")])
     env = make_env(fluents={"energy": fl, "battery-cap": cap}, enable_numeric=True)
     env.reset()
     r = "r1"
@@ -119,7 +119,7 @@ def test_numeric_clamping(make_env):
 def test_stochastic_outcomes_respect_rng(make_env):
     oc1 = OutcomeSpec(name="success", p=1.0)
     oc2 = OutcomeSpec(name="fail", p=1.0)
-    a = ActionSpec(name="act", params=[], pre=[], add=[], delete=[], nl=["act"], outcomes=[oc1, oc2])
+    a = ActionSpec(name="act", params=[], pre=[], add=[], delete=[], outcomes=[oc1, oc2])
     env = make_env(actions={"act": a}, enable_stochastic=True, seed=42)
     env.reset()
 
@@ -134,7 +134,7 @@ def test_stochastic_outcomes_respect_rng(make_env):
 
 
 def test_conditional_effects(make_env):
-    a = ActionSpec(name="move", params=[("r", "robot"), ("l", "loc")], pre=[], add=[], delete=[], nl=["move"], cond=[])
+    a = ActionSpec(name="move", params=[("r", "robot"), ("l", "loc")], pre=[], add=[], delete=[], cond=[])
     a.cond = [ConditionalBlock(when=["(at r1 kitchen)"], add=["(happy)"], delete=[], num_eff=[], messages=[])]
     env = make_env(
         actions={"move": a},
@@ -151,8 +151,8 @@ def test_conditional_effects(make_env):
 
 
 def test_static_predicates_cannot_change(make_env):
-    adj = PredicateSpec(name="adjacent", args=[], nl=["adjacent"], static=True)
-    a = ActionSpec(name="bad", params=[], pre=[], add=["(adjacent)"], delete=[], nl=["bad"])
+    adj = PredicateSpec(name="adjacent", args=[], static=True)
+    a = ActionSpec(name="bad", params=[], pre=[], add=["(adjacent)"], delete=[])
     env = make_env(actions={"bad": a}, predicates={"adjacent": adj})
     env.reset()
 
@@ -162,14 +162,13 @@ def test_static_predicates_cannot_change(make_env):
 
 
 def test_joint_actions_simultaneous_swap(make_env):
-    at = PredicateSpec(name="at", args=[("r", "robot"), ("l", "loc")], nl=["{r} at {l}"])
+    at = PredicateSpec(name="at", args=[("r", "robot"), ("l", "loc")])
     move = ActionSpec(
         name="move",
         params=[("r", "robot"), ("from", "loc"), ("to", "loc")],
         pre=["(at ?r ?from)"],
         add=["(at ?r ?to)"],
         delete=["(at ?r ?from)"],
-        nl=["move"],
     )
     env = make_env(
         actions={"move": move},
@@ -198,7 +197,6 @@ def test_joint_actions_require_each_robot(make_env):
         pre=[],
         add=[],
         delete=[],
-        nl=["move"],
     )
     env = make_env(
         actions={"move": move},
@@ -217,7 +215,7 @@ def test_joint_actions_require_each_robot(make_env):
 
 
 def test_renderer_messages_ephemeral(make_env):
-    a = ActionSpec(name="say", params=[], pre=[], add=[], delete=[], nl=["say"], messages=["hello"])
+    a = ActionSpec(name="say", params=[], pre=[], add=[], delete=[], messages=["hello"])
     env = make_env(actions={"say": a})
     env.reset()
 
@@ -232,7 +230,7 @@ def test_renderer_messages_ephemeral(make_env):
 
 
 def test_invalid_report_contains_human_text(make_env):
-    a = ActionSpec(name="needs-fact", params=[], pre=["(missing-fact)"], add=[], delete=[], nl=["needs fact"])
+    a = ActionSpec(name="needs-fact", params=[], pre=["(missing-fact)"], add=[], delete=[])
     env = make_env(actions={"needs-fact": a})
     env.reset()
 
@@ -241,7 +239,7 @@ def test_invalid_report_contains_human_text(make_env):
 
 
 def test_open_loop_atomic_rolls_back(make_env):
-    a = ActionSpec(name="bad", params=[], pre=["(missing)"], add=[], delete=[], nl=["bad"])
+    a = ActionSpec(name="bad", params=[], pre=["(missing)"], add=[], delete=[])
     env = make_env(actions={"bad": a})
     env.reset()
 
@@ -255,7 +253,7 @@ def test_open_loop_atomic_rolls_back(make_env):
 
 def test_sysprompt_and_footer_interactive(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"noop": a}, run_mode=RunMode.INTERACTIVE)
     obs, info = env.reset()
     # System prompt should mention INTERACTIVE
@@ -266,7 +264,7 @@ def test_sysprompt_and_footer_interactive(make_env):
 
 def test_sysprompt_and_footer_batch(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"noop": a}, run_mode=RunMode.BATCH)
     obs, info = env.reset()
     assert "You are in BATCH mode." in info["system_prompt"]
@@ -276,7 +274,7 @@ def test_sysprompt_and_footer_batch(make_env):
 
 def test_sysprompt_and_footer_open_loop(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"noop": a}, run_mode=RunMode.OPEN_LOOP)
     obs, info = env.reset()
     assert "You are in OPEN-LOOP mode." in info["system_prompt"]
@@ -286,7 +284,7 @@ def test_sysprompt_and_footer_open_loop(make_env):
 
 def test_interactive_rejects_multi_action(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"noop": a}, run_mode=RunMode.INTERACTIVE, illegal_move_retries=0)
     env.reset()
 
@@ -299,7 +297,7 @@ def test_interactive_rejects_multi_action(make_env):
 
 def test_batch_all_valid_keeps_episode_open(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"noop": a}, run_mode=RunMode.BATCH)
     env.reset()
 
@@ -313,8 +311,8 @@ def test_batch_all_valid_keeps_episode_open(make_env):
 def test_batch_partial_abort_reports_reason_and_progress(make_env):
     from sere.core.pddl_env.env import RunMode
     # a1 is valid and adds a fact; a2 requires a missing fact -> invalid
-    a1 = ActionSpec(name="addx", params=[], pre=[], add=["(x)"], delete=[], nl=["addx"])
-    a2 = ActionSpec(name="needs-missing", params=[], pre=["(missing)"], add=[], delete=[], nl=["needs missing"])
+    a1 = ActionSpec(name="addx", params=[], pre=[], add=["(x)"], delete=[])
+    a2 = ActionSpec(name="needs-missing", params=[], pre=["(missing)"], add=[], delete=[])
     env = make_env(actions={"addx": a1, "needs-missing": a2}, run_mode=RunMode.BATCH, illegal_move_retries=0)
     env.reset()
 
@@ -330,7 +328,7 @@ def test_batch_partial_abort_reports_reason_and_progress(make_env):
 
 def test_open_loop_forces_terminal_even_without_rules(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"noop": a}, run_mode=RunMode.OPEN_LOOP)
     env.reset()
 
@@ -345,7 +343,7 @@ def test_open_loop_forces_terminal_even_without_rules(make_env):
 
 def test_open_loop_invalid_move_is_terminal_and_reports_abort(make_env):
     from sere.core.pddl_env.env import RunMode
-    bad = ActionSpec(name="bad", params=[], pre=["(missing)"], add=[], delete=[], nl=["bad"])
+    bad = ActionSpec(name="bad", params=[], pre=["(missing)"], add=[], delete=[])
     env = make_env(actions={"bad": bad}, run_mode=RunMode.OPEN_LOOP, illegal_move_retries=0)
     env.reset()
 
@@ -358,7 +356,7 @@ def test_open_loop_invalid_move_is_terminal_and_reports_abort(make_env):
 
 def test_mode_specific_affordance_footer_text(make_env):
     # This checks the observation footer message varies by mode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
 
     # INTERACTIVE
     env_i = make_env(actions={"noop": a})
@@ -379,7 +377,7 @@ def test_mode_specific_affordance_footer_text(make_env):
 
 def test_info_fields_present_in_batch(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"noop": a}, run_mode=RunMode.BATCH)
     env.reset()
     obs, r, done, info = env.step("(noop)(noop)")
@@ -392,7 +390,7 @@ def test_info_fields_present_in_batch(make_env):
 
 def test_interactive_single_action_executes_and_continues(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"noop": a}, run_mode=RunMode.INTERACTIVE)
     env.reset()
     obs, r, done, info = env.step("(noop)")
@@ -401,7 +399,7 @@ def test_interactive_single_action_executes_and_continues(make_env):
 
 def test_interactive_multi_action_does_not_mutate_state(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="addx", params=[], pre=[], add=[("x", ())], delete=[], nl=["addx"])
+    a = ActionSpec(name="addx", params=[], pre=[], add=[("x", ())], delete=[])
     env = make_env(actions={"addx": a}, run_mode=RunMode.INTERACTIVE, illegal_move_retries=0)
     env.reset()
     obs, r, done, info = env.step("(addx)(addx)")
@@ -411,9 +409,9 @@ def test_interactive_multi_action_does_not_mutate_state(make_env):
 
 def test_batch_partial_abort_does_not_apply_later_actions(make_env):
     from sere.core.pddl_env.env import RunMode
-    ok  = ActionSpec(name="ok",  params=[], pre=[], add=["(a)"], delete=[], nl=["ok"])
-    bad = ActionSpec(name="bad", params=[], pre=["(missing)"], add=["(b)"], delete=[], nl=["bad"])
-    ok2 = ActionSpec(name="ok2", params=[], pre=[], add=["(c)"], delete=[], nl=["ok2"])
+    ok  = ActionSpec(name="ok",  params=[], pre=[], add=["(a)"], delete=[])
+    bad = ActionSpec(name="bad", params=[], pre=["(missing)"], add=["(b)"], delete=[])
+    ok2 = ActionSpec(name="ok2", params=[], pre=[], add=["(c)"], delete=[])
     env = make_env(actions={"ok": ok, "bad": bad, "ok2": ok2}, run_mode=RunMode.BATCH, illegal_move_retries=0)
     env.reset()
     obs, r, done, info = env.step("(ok)(bad)(ok2)")
@@ -424,7 +422,7 @@ def test_batch_partial_abort_does_not_apply_later_actions(make_env):
 
 def test_open_loop_respects_success_rule_without_extra_reason(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
     env = make_env(
         actions={"noop": a},
         run_mode=RunMode.OPEN_LOOP,
@@ -440,7 +438,7 @@ def test_open_loop_respects_success_rule_without_extra_reason(make_env):
 
 def test_invalid_retries_accumulate_until_valid(make_env):
     from sere.core.pddl_env.env import RunMode
-    ok = ActionSpec(name="ok", params=[], pre=[], add=[], delete=[], nl=["ok"])
+    ok = ActionSpec(name="ok", params=[], pre=[], add=[], delete=[])
     env = make_env(actions={"ok": ok}, run_mode=RunMode.INTERACTIVE, illegal_move_retries=2, invalid_retry_penalty=-0.05)
     env.reset()
     # two invalids, then a valid
@@ -455,7 +453,7 @@ def test_invalid_retries_accumulate_until_valid(make_env):
 
 def test_obs_footer_changes_with_mode(make_env):
     from sere.core.pddl_env.env import RunMode
-    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[], nl=["noop"])
+    a = ActionSpec(name="noop", params=[], pre=[], add=[], delete=[])
 
     env_i = make_env(actions={"noop": a}, run_mode=RunMode.INTERACTIVE)
     obs_i, _ = env_i.reset()
