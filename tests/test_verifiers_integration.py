@@ -27,12 +27,12 @@ def test_discover_tasks():
     # Discover all tasks
     all_tasks = discover_tasks()
     assert len(all_tasks) > 0, "Should find at least one task"
-    assert all(t.endswith(('.yaml', '.yml')) for t in all_tasks)
+    assert all(t.endswith(('.yaml', '.yml', '.pddl')) for t in all_tasks)
 
     # Discover kitchen tasks only
     kitchen_tasks = discover_tasks(domains=["kitchen"])
     assert len(kitchen_tasks) > 0
-    assert all("kitchen/" in t for t in kitchen_tasks)
+    assert all("kitchen" in t for t in kitchen_tasks)
 
 
 def test_get_available_domains():

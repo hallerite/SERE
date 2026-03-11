@@ -168,7 +168,8 @@ def load_environment(
     making them compatible with the Verifiers training infrastructure.
 
     Args:
-        task_paths: Explicit list of task YAML paths (e.g., ["kitchen/t01.yaml"]).
+        task_paths: Explicit list of task paths — YAML (e.g., "kitchen/t01.yaml")
+                    or PDDL (e.g., absolute path to a .pddl problem file).
                     If provided, other discovery arguments are ignored.
         domains: List of domains to include (e.g., ["kitchen", "assembly"]).
                  If None, discovers all available domains.
