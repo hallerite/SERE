@@ -51,6 +51,7 @@ def load_pddl_domain(
     if not pddl_path.exists():
         raise FileNotFoundError(f"Domain file not found: {pddl_path}")
 
+    pddl_raw = pddl_path.read_text(encoding="utf-8")
     pddl_domain = parse_domain_file(pddl_path)
 
     # Load optional extensions
@@ -75,6 +76,7 @@ def load_pddl_domain(
         static_overrides=static_overrides,
         outcome_overrides=outcome_overrides,
     )
+    spec.pddl_source = pddl_raw
 
     meta = extensions.get("meta", {}) or {}
     return spec, meta, pddl_domain

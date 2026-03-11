@@ -83,6 +83,7 @@ class DomainSpec:
     actions: Dict[str, ActionSpec]
     fluents: Dict[str, FluentSpec]
     derived: Dict[str, List[DerivedRule]]
+    pddl_source: str = ""  # raw domain.pddl text (if loaded from file)
 
     @staticmethod
     def from_yaml(path: str | Path) -> "DomainSpec":

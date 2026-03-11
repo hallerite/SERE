@@ -39,6 +39,9 @@ class PromptFormatterConfig:
     show_messages: bool = True
     messages_inline: bool = True
 
+    # Domain PDDL in system prompt (instead of NL action catalog)
+    show_domain_pddl: bool = False  # True → include raw domain.pddl in system prompt
+
     # Fluents formatting
     fluents_precision: int = 2
     show_fluent_deltas: bool = True
@@ -335,15 +338,23 @@ class PromptFormatter:
 
         parts.append(" ".join(expl))
 
-        # -------- Action catalog (always included) --------
-        actions = self._format_action_catalog()
-        parts += [
-            f"You are controlling the robot in the '{self.domain.name}' domain.",
-            reply_hint,
-            "",
-            "Actions (signature — description  [costs]):",
-            actions or "(none)",
-        ]
+        # -------- Domain specification --------
+        parts.append(f"You are controlling the robot in the '{self.domain.name}' domain.")
+        parts.append(reply_hint)
+
+        if self.cfg.show_domain_pddl and getattr(self.domain, "pddl_source", ""):
+            parts += [
+                "",
+                "Domain definition (PDDL):",
+                self.domain.pddl_source.strip(),
+            ]
+        else:
+            actions = self._format_action_catalog()
+            parts += [
+                "",
+                "Actions (signature — description  [costs]):",
+                actions or "(none)",
+            ]
 
         # -------- Objects & Statics (respect visibility) --------
         scoped_world, scoped_static, _ = self._scoped_view(world, static_facts or set())
