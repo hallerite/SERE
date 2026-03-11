@@ -74,7 +74,7 @@ Use these to shape difficulty, horizon, and feedback:
 
 Observation control (partial observability):
 
-- `display_nl`: include natural-language glosses for facts/actions.
+- `show_domain_pddl`: include raw PDDL domain in system prompt (default: True).
 - `show_affordances`: list currently valid actions (disabled by default for PDDL domains to avoid expensive grounding).
 - `formatter_config`: set `visibility` (e.g., `room`) to restrict what the
   agent can see.
@@ -116,7 +116,6 @@ env = load_environment(
     enable_durations=True,
     time_limit=30.0,
     enable_stochastic=False,
-    display_nl=False,
     show_affordances=False,
 )
 ```
