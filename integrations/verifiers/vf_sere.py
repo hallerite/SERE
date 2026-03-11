@@ -188,10 +188,14 @@ class SereEnv(vf.MultiTurnEnv):
 
 class AgenticSereEnv(vf.MultiTurnEnv):
     """
-    Agentic PDDL environment: LLM writes plans, calls validate_plan tool.
+    miniSWE-style PDDL environment.
 
-    Each plan attempt is validated from scratch against the initial state.
-    The goal and init state are immutable — guards prevent modification.
+    The LLM gets domain.pddl + problem.pddl and tools:
+      - validate_plan: submit a plan (only way to solve — counts as attempt)
+      - apply_prefix: apply actions, see resulting state (free, for debugging)
+      - check_action: check one action's preconditions (free, for debugging)
+
+    The agent drives its own workflow. Only validate_plan can end the episode.
     """
 
     def __init__(
@@ -221,30 +225,31 @@ class AgenticSereEnv(vf.MultiTurnEnv):
             {"role": "user", "content": "Write a plan that achieves the goal."},
         ]
         state["prompt"] = prompt
-        state["tools"] = [agentic_env.tool_schema()]
+        state["tools"] = agentic_env.tool_schemas()
 
         return state
 
     async def env_response(
         self, messages: Messages, state: State, **kwargs
     ) -> Messages:
-        """Process tool call: validate the plan, return feedback."""
+        """Dispatch tool calls to the agentic env."""
         agentic_env = state["agentic_env"]
 
-        # Extract tool call from the model's last message
-        plan_text = _extract_tool_call_arg(messages, "validate_plan", "plan")
+        # Extract tool call(s) from the model's last message
+        tool_call = _extract_tool_call(messages)
 
-        if plan_text is None:
-            # Model didn't call the tool — prompt it to use the tool
+        if tool_call is None:
+            # Model didn't call a tool — nudge it
             return [{"role": "user", "content": (
-                "Please use the validate_plan tool to submit your plan. "
-                "Format your plan as a sequence of grounded PDDL actions."
+                "Use the available tools to work on your plan. "
+                "Call validate_plan when ready to submit."
             )}]
 
-        feedback, done = agentic_env.validate(plan_text)
+        tool_name, tool_args, tool_call_id = tool_call
+        feedback, done = agentic_env.handle_tool_call(tool_name, tool_args)
 
-        # Record outcome on trajectory
-        if state["trajectory"]:
+        # Record outcome on trajectory for validate_plan calls
+        if state["trajectory"] and tool_name == "validate_plan":
             outcome = "success" if agentic_env.solved else "failed"
             state["trajectory"][-1]["reward"] = 1.0 if agentic_env.solved else 0.0
             state["trajectory"][-1]["extras"]["sere_info"] = {
@@ -255,9 +260,8 @@ class AgenticSereEnv(vf.MultiTurnEnv):
 
         state["sere_done"] = done
 
-        # Return tool result as a message
         response: Messages = [
-            {"role": "tool", "content": feedback, "tool_call_id": "validate_plan"},
+            {"role": "tool", "content": feedback, "tool_call_id": tool_call_id or tool_name},
         ]
 
         if done:
@@ -274,10 +278,13 @@ class AgenticSereEnv(vf.MultiTurnEnv):
         state.pop("agentic_env", None)
 
 
-def _extract_tool_call_arg(
-    messages: Messages, tool_name: str, arg_name: str
-) -> str | None:
-    """Extract a tool call argument from the model's messages."""
+def _extract_tool_call(
+    messages: Messages,
+) -> tuple[str, dict, str | None] | None:
+    """
+    Extract the first tool call from the model's messages.
+    Returns (tool_name, arguments_dict, tool_call_id) or None.
+    """
     import json
 
     if not isinstance(messages, list):
@@ -286,21 +293,25 @@ def _extract_tool_call_arg(
     for msg in reversed(messages):
         if not isinstance(msg, dict):
             continue
-        # Check for tool_calls in assistant message
+
+        # Standard tool_calls format
         tool_calls = msg.get("tool_calls") or []
         for tc in tool_calls:
             fn = tc.get("function", {})
-            if fn.get("name") == tool_name:
+            name = fn.get("name")
+            if name:
                 try:
                     args = json.loads(fn.get("arguments", "{}"))
-                    return args.get(arg_name)
                 except (json.JSONDecodeError, TypeError):
-                    pass
-        # Also check content for raw plan text as fallback
+                    args = {}
+                tc_id = tc.get("id")
+                return name, args, tc_id
+
+        # Fallback: if assistant sent raw text with PDDL actions, treat as validate_plan
         if msg.get("role") == "assistant" and not tool_calls:
             content = msg.get("content", "")
             if content and "(" in content:
-                return content
+                return "validate_plan", {"plan": content}, None
 
     return None
 

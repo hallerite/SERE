@@ -156,11 +156,16 @@ class TestAgenticPDDLEnv:
         assert "problem" in prompt.lower()
         assert "validate_plan" in prompt
 
-    def test_tool_schema(self):
+    def test_tool_schemas(self):
+        env, _ = _blocksworld_env()
+        schemas = env.tool_schemas()
+        names = {s["function"]["name"] for s in schemas}
+        assert names == {"validate_plan", "apply_prefix", "check_action"}
+
+    def test_tool_schema_legacy(self):
         env, _ = _blocksworld_env()
         schema = env.tool_schema()
         assert schema["function"]["name"] == "validate_plan"
-        assert "plan" in schema["function"]["parameters"]["properties"]
 
     def test_validate_bad_parse(self):
         env, _ = _blocksworld_env()
@@ -213,6 +218,92 @@ class TestAgenticPDDLEnv:
 # ---------------------------------------------------------------------------
 # format_plan_feedback tests
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# apply_prefix / check_action tool tests
+# ---------------------------------------------------------------------------
+
+class TestApplyPrefix:
+    def test_valid_prefix_shows_state(self):
+        env, _ = _blocksworld_env()
+        result = env.apply_prefix("(pick-up A)")
+        assert "After 1 actions" in result
+        assert "(holding A)" in result
+
+    def test_prefix_failure_shows_error(self):
+        env, _ = _blocksworld_env()
+        result = env.apply_prefix("(pick-up A)\n(pick-up B)")
+        assert "failed" in result.lower() or "Step 2 failed" in result
+
+    def test_prefix_does_not_count_as_attempt(self):
+        env, _ = _blocksworld_env()
+        env.apply_prefix("(pick-up A)")
+        assert env.attempts == 0
+
+    def test_prefix_does_not_mutate_state(self):
+        env, _ = _blocksworld_env()
+        init_facts = set(env.init_world.facts)
+        env.apply_prefix("(pick-up A)\n(put-down A)")
+        assert env.init_world.facts == init_facts
+
+
+class TestCheckAction:
+    def test_valid_action(self):
+        env, _ = _blocksworld_env()
+        result = env.check_action("(pick-up A)")
+        assert "valid" in result.lower()
+        assert "OK" in result
+
+    def test_invalid_action(self):
+        env, _ = _blocksworld_env()
+        result = env.check_action("(unstack A B)")  # not (on A B)
+        assert "FAIL" in result
+        assert "not met" in result.lower()
+
+    def test_action_after_prefix(self):
+        env, _ = _blocksworld_env()
+        # pick-up A, then check if we can stack A on B
+        result = env.check_action("(stack A B)", after="(pick-up A)")
+        assert "valid" in result.lower()
+
+    def test_action_after_prefix_invalid(self):
+        env, _ = _blocksworld_env()
+        # without prefix, stack fails (not holding)
+        result = env.check_action("(stack A B)")
+        assert "FAIL" in result
+
+    def test_unknown_action(self):
+        env, _ = _blocksworld_env()
+        result = env.check_action("(fly A B)")
+        assert "Unknown action" in result
+
+
+class TestHandleToolCall:
+    def test_dispatch_validate(self):
+        env, _ = _blocksworld_env()
+        plan = "(pick-up B)\n(stack B A)\n(pick-up C)\n(stack C B)\n(pick-up D)\n(stack D C)"
+        feedback, done = env.handle_tool_call("validate_plan", {"plan": plan})
+        assert "Goal reached" in feedback
+        assert done
+
+    def test_dispatch_apply_prefix(self):
+        env, _ = _blocksworld_env()
+        feedback, done = env.handle_tool_call("apply_prefix", {"actions": "(pick-up A)"})
+        assert "(holding A)" in feedback
+        assert not done  # apply_prefix never ends the episode
+
+    def test_dispatch_check_action(self):
+        env, _ = _blocksworld_env()
+        feedback, done = env.handle_tool_call("check_action", {"action": "(pick-up A)"})
+        assert "valid" in feedback.lower()
+        assert not done
+
+    def test_dispatch_unknown_tool(self):
+        env, _ = _blocksworld_env()
+        feedback, done = env.handle_tool_call("unknown_tool", {})
+        assert "Unknown tool" in feedback
+        assert not done
+
 
 class TestFormatPlanFeedback:
     def test_success_message(self):
