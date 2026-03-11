@@ -149,6 +149,7 @@ def load_environment(
     enable_stochastic: bool = False,
     step_penalty: float = -0.01,
     invalid_penalty: float = -0.1,
+    illegal_move_retries: int = 100,
     time_limit: float | None = None,
     enable_reward_shaping: bool = False,
     reward_shaping: Dict[str, Any] | None = None,
@@ -188,6 +189,9 @@ def load_environment(
         enable_stochastic: Enable stochastic action outcomes.
         step_penalty: Reward penalty per action (default: -0.01).
         invalid_penalty: Penalty for invalid actions (default: -0.1).
+        illegal_move_retries: Number of retries allowed per turn on invalid
+            actions before terminating (default: 100, effectively unlimited).
+            The agent sees an error message and can try again.
         time_limit: Optional time limit for episodes (in time units).
         enable_reward_shaping: If True, allow task-defined reward shaping milestones.
                                If False (default), task milestones are ignored unless
@@ -269,6 +273,7 @@ def load_environment(
     sere_env_kwargs.setdefault("enable_stochastic", enable_stochastic)
     sere_env_kwargs.setdefault("step_penalty", step_penalty)
     sere_env_kwargs.setdefault("invalid_penalty", invalid_penalty)
+    sere_env_kwargs.setdefault("illegal_move_retries", illegal_move_retries)
 
     if time_limit is not None:
         sere_env_kwargs.setdefault("time_limit", time_limit)
