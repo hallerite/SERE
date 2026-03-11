@@ -90,7 +90,7 @@ def test_affordances_visibility_all():
     domain = _mini_domain_for_filters()
     world = _mini_world_for_filters(domain)
     fmt = PromptFormatter(domain, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=True,))
 
     obs = _generate_and_render(fmt, world)
 
@@ -107,7 +107,7 @@ def test_affordances_hidden_when_flag_off():
     domain = _mini_domain_for_filters()
     world = _mini_world_for_filters(domain)
     fmt = PromptFormatter(domain, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=False, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=False,))
 
     obs = _generate_and_render(fmt, world)
 
@@ -123,7 +123,7 @@ def test_affordances_visibility_room_scoped_generation():
 
     # ROOM scope → object pool is sliced to the current room (kitchen), so 'pantry' is not enumerated.
     fmt = PromptFormatter(domain, PromptFormatterConfig(
-        visibility=VisibilityScope.ROOM, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ROOM, show_affordances=True,))
 
     obs = _generate_and_render(fmt, world)
 
@@ -148,7 +148,7 @@ def test_affordances_action_without_preconditions_lists_under_all():
     w = _mini_world_for_filters(d)
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=True,))
     obs = _generate_and_render(fmt, w)
 
     assert "Valid moves:" in obs
@@ -173,7 +173,7 @@ def test_affordances_numeric_param_templated_placeholder_and_non_numeric_check()
     w.facts.add(("powered", ("heater",)))
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=True,))
     obs = _generate_and_render(fmt, w)
 
     assert "(heat r1 heater <n>)" in obs
@@ -193,7 +193,7 @@ def test_affordances_numeric_precondition_skipped_for_template():
     w = _mini_world_for_filters(d)
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=True,))
     affs = fmt.generate_affordances(w, static_facts=set(), enable_numeric=True)
 
     assert "(dose r1 <n>)" in affs
@@ -218,7 +218,7 @@ def test_room_scope_with_containment_chain_affords_object_in_room():
     w.facts.add(("obj-at", ("cup", "kitchen")))
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ROOM, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ROOM, show_affordances=True,))
     obs = _generate_and_render(fmt, w)
 
     assert "(inspect r1 leaf)" in obs
@@ -241,7 +241,7 @@ def test_affordances_use_static_facts_in_preconditions():
     w.facts.discard(("adjacent", ("pantry", "kitchen")))
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=True,))
     affs = fmt.generate_affordances(
         w,
         static_facts={("adjacent", ("kitchen", "pantry"))},
@@ -263,7 +263,7 @@ def test_type_pool_empty_yields_no_affordance():
     w = _mini_world_for_filters(d)
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=True,))
     affs = fmt.generate_affordances(w, static_facts=set(), enable_numeric=True)
 
     assert "(open" not in " ".join(affs)
@@ -292,23 +292,23 @@ def test_multi_typed_object_appears_in_multiple_type_pools():
     w.objects["heater"] = {"appliance", "container"}
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=True,))
     affs = fmt.generate_affordances(w, static_facts=set(), enable_numeric=True)
 
     assert "(use-appliance r1 heater)" in affs
     assert "(store-in-container r1 heater)" in affs
 
 
-def test_affordances_render_with_nl_when_enabled():
+def test_affordances_render_pddl_only():
     d = _mini_domain_for_filters()
     w = _mini_world_for_filters(d)
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=True))
+        visibility=VisibilityScope.ALL, show_affordances=True))
     obs = _generate_and_render(fmt, w)
 
     assert "Valid moves:" in obs
-    assert "move r1 from kitchen to pantry" in obs  # NL description appended
+    assert "(move r1 kitchen pantry)" in obs
 
 
 def test_room_scope_generation_blocks_actions_not_touching_current_room():
@@ -326,14 +326,14 @@ def test_room_scope_generation_blocks_actions_not_touching_current_room():
 
     # Under ALL, both locations are enumerated
     fmt_all = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ALL, show_affordances=True,))
     affs_all = fmt_all.generate_affordances(w, static_facts=set(), enable_numeric=True)
     assert "(announce kitchen)" in affs_all
     assert "(announce pantry)" in affs_all
 
     # Under ROOM, only 'kitchen' is visible → pantry is not enumerated at all
     fmt_room = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ROOM, show_affordances=True, display_nl=False))
+        visibility=VisibilityScope.ROOM, show_affordances=True,))
     affs_room = fmt_room.generate_affordances(w, static_facts=set(), enable_numeric=True)
     assert "(announce kitchen)" in affs_room
     assert "(announce pantry)" not in affs_room
@@ -346,8 +346,7 @@ def test_system_prompt_visibility_all_shows_all_objects_and_statics():
     w = _mini_world_for_filters(d)
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=False, display_nl=False,
-        show_objects_in_sysprompt=True, show_briefing=True
+        visibility=VisibilityScope.ALL, show_affordances=False,        show_objects_in_sysprompt=True, show_briefing=True
     ))
     
     sys = fmt.build_system_prompt(
@@ -373,8 +372,7 @@ def test_system_prompt_visibility_room_hides_nonlocal_objects_and_statics():
     w = _mini_world_for_filters(d)
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ROOM, show_affordances=False, display_nl=False,
-        show_objects_in_sysprompt=True, show_briefing=True
+        visibility=VisibilityScope.ROOM, show_affordances=False,        show_objects_in_sysprompt=True, show_briefing=True
     ))
     
     sys = fmt.build_system_prompt(
@@ -400,8 +398,7 @@ def test_state_room_visibility_hides_nonlocal_facts():
 
     # ROOM scope should hide non-local facts (leaf is in pantry)
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ROOM, show_affordances=False, display_nl=False
-    ))
+        visibility=VisibilityScope.ROOM, show_affordances=False    ))
     obs = _generate_and_render(fmt, w)
 
     assert "State:" in obs
@@ -427,8 +424,7 @@ def test_fluent_visibility_room_shows_robot_energy_hides_nonlocal_object_and_sho
     w.fluents[("temp", ("leaf",))] = 42.0
 
     fmt = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ROOM, show_affordances=False, display_nl=False
-    ))
+        visibility=VisibilityScope.ROOM, show_affordances=False    ))
     obs = _generate_and_render(fmt, w)
 
     # header shows energy even in ROOM scope
@@ -459,8 +455,7 @@ def test_room_scope_with_static_adjacency_does_not_leak_nonlocal_affordance():
 
     # Under ALL, the static should enable the affordance
     fmt_all = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ALL, show_affordances=True, display_nl=False
-    ))
+        visibility=VisibilityScope.ALL, show_affordances=True    ))
     affs_all = fmt_all.generate_affordances(
         w, static_facts={("adjacent", ("kitchen", "pantry"))}, enable_numeric=True
     )
@@ -468,8 +463,7 @@ def test_room_scope_with_static_adjacency_does_not_leak_nonlocal_affordance():
 
     # Under ROOM, pantry is out of scope → object pool sliced → affordance must not be enumerated
     fmt_room = PromptFormatter(d, PromptFormatterConfig(
-        visibility=VisibilityScope.ROOM, show_affordances=True, display_nl=False
-    ))
+        visibility=VisibilityScope.ROOM, show_affordances=True    ))
     affs_room = fmt_room.generate_affordances(
         w, static_facts={("adjacent", ("kitchen", "pantry"))}, enable_numeric=True
     )

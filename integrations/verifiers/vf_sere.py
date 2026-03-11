@@ -207,7 +207,6 @@ def load_environment(
     enable_reward_shaping: bool = False,
     reward_shaping: Dict[str, Any] | None = None,
     # Observation formatting
-    display_nl: bool = False,
     show_domain_pddl: bool = True,
     show_affordances: bool = True,
     # Advanced
@@ -249,7 +248,6 @@ def load_environment(
         enable_reward_shaping: If True, allow task-defined reward shaping milestones.
         reward_shaping: Dict with shaping config.
 
-        display_nl: Show natural language descriptions alongside PDDL (default: False).
         show_domain_pddl: Include raw PDDL domain in system prompt (default: True).
         show_affordances: Show available actions in observations (default: True).
 
@@ -263,7 +261,7 @@ def load_environment(
 
     Examples:
         >>> env = load_environment(domains=["kitchen"])
-        >>> env = load_environment(domains=["kitchen"], display_nl=False)
+        >>> env = load_environment(domains=["kitchen"], show_domain_pddl=True)
     """
     # Discover tasks
     if task_paths is None:
@@ -342,7 +340,6 @@ def load_environment(
 
     # Formatter config
     formatter_config = sere_env_kwargs.get("formatter_config", {})
-    formatter_config.setdefault("display_nl", display_nl)
     formatter_config.setdefault("show_domain_pddl", show_domain_pddl)
     formatter_config.setdefault("show_affordances", show_affordances)
     formatter_config.setdefault("show_goal", True)

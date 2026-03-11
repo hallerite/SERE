@@ -17,10 +17,9 @@ def main():
         None,
         args.task,
         max_steps=50,
-        enable_stochastic=True,     # let outcomes + NL vary
-        seed=seed,                  # pass the random seed
+        enable_stochastic=True,
+        seed=seed,
         formatter_config=dict(
-            display_nl=True,        # True => NL+PDDL everywhere; False => PDDL-only
             show_objects_in_sysprompt=True,
             show_affordances="All",
         ),

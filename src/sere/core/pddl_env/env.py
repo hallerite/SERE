@@ -58,15 +58,6 @@ class PDDLEnv:
                     else:
                         raise AttributeError(f"Unknown prompt config key: {k}")
 
-            # If caller didn't explicitly set NL stochasticity, mirror env's enable_stochastic
-            user_set_nl_stoch = bool(formatter_config and "nl_stochastic" in formatter_config)
-            if not user_set_nl_stoch:
-                cfg.nl_stochastic = bool(enable_stochastic)
-
-            # If caller didn't provide an NL RNG seed, reuse the env seed for reproducibility
-            if cfg.nl_rng_seed is None and seed is not None:
-                cfg.nl_rng_seed = int(seed)
-
             cfg.multi_agent = bool(multi_agent)
             self.formatter = PromptFormatter(self.domain, cfg)
 
@@ -383,21 +374,6 @@ class PDDLEnv:
                 self.world.set_fluent("energy", (r,), cap)
 
     def _format_invalid_report(self, act_name: str, args: Tuple[str, ...], failures: List[EvalNode]) -> str:
-        from sere.pddl.nl_mapper import NLMapper
-        nl = NLMapper(self.domain)
-
-        def _pred_nl(grounded: str) -> Optional[str]:
-            try:
-                from sere.pddl.grounding import parse_grounded
-                name, gargs = parse_grounded(grounded)
-                if name in self.domain.predicates:
-                    return nl.pred_to_text((name, gargs))
-            except (SExprError, ValueError, KeyError):
-                # Expected: malformed grounded predicate string
-                # Silent failure is OK here - we're just generating helpful NL descriptions
-                pass
-            return None
-
         def _fmt_node(n: EvalNode, indent: int = 0) -> List[str]:
             pad = "  " * indent
             lines: List[str] = []
@@ -420,9 +396,6 @@ class PDDLEnv:
                 if child and child.grounded:
                     ground = child.grounded
                     lines.append(f"{bullet}Required: (not {ground})")
-                    maybe = _pred_nl(ground)
-                    if maybe:
-                        lines.append(f"{pad}    NL: {maybe}")
                     lines.append(f"{pad}    Actually: true.")
                 else:
                     lines.append(f"{bullet}Required: {n.expr}")
@@ -434,8 +407,7 @@ class PDDLEnv:
                     lines.append(f"{pad}    • {g}  — {'OK' if c.satisfied else 'false'}")
             else:
                 g = n.grounded or n.expr
-                nl_line = _pred_nl(g)
-                lines.append(f"{bullet}Required: {g}" + (f" — \"{nl_line}\"" if nl_line else ""))
+                lines.append(f"{bullet}Required: {g}")
                 if n.satisfied:
                     lines.append(f"{pad}    Actually: OK.")
                 else:

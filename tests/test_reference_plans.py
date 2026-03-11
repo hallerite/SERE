@@ -23,7 +23,6 @@ FAST_FORMATTER = {
     "show_affordances": False,
     "show_footer": False,
     "show_messages": False,
-    "display_nl": False,
 }
 
 
