@@ -15,11 +15,17 @@ https://github.com/hallerite/SERE
 ```python
 from vf_sere import load_environment
 
-# All tasks across all domains
+# All tasks across all domains (YAML + PDDL)
 env = load_environment()
 
-# Or limit to specific domains
+# Only YAML domains
 env = load_environment(domains=["kitchen", "assembly"])
+
+# Only PDDL domains
+env = load_environment(domains=["blocksworld", "logistics", "sokoban"])
+
+# Mix both
+env = load_environment(domains=["kitchen", "blocksworld", "gripper"])
 ```
 
 Prime CLI (uses the env name, no imports needed):
@@ -28,11 +34,26 @@ Prime CLI (uses the env name, no imports needed):
 prime eval run vf-sere -m gpt-4o-mini -n 10
 ```
 
-Suggested default eval scope (first 5 kitchen + first 5 assembly tasks):
+## Available Domains
 
-```bash
-prime eval run vf-sere -m gpt-4o-mini -n 20 \
-  -a '{"domains":["kitchen","assembly"],"num_tasks_per_domain":5}'
+### PDDL domains (20)
+
+Standard IPC benchmarks loaded from native `.pddl` files with 5-20 problem
+instances each: `blocksworld`, `miconic`, `logistics`, `gripper`, `freecell`,
+`transport`, `depots`, `driverlog`, `zenotravel`, `sokoban`, `barman`,
+`parking`, `hiking`, `satellite`, `rovers`, `peg-solitaire`, `ferry`,
+`childsnack`, `tpp`, `visitall`.
+
+### YAML domains (2)
+
+Extended domains with stochastic outcomes, energy, and NL templates:
+`kitchen` (15 tasks), `assembly` (7 tasks).
+
+### Listing domains programmatically
+
+```python
+from vf_sere.dataset import get_available_domains
+print(get_available_domains())  # {'kitchen', 'assembly', 'blocksworld', ...}
 ```
 
 ## Key Knobs (Controllability)
@@ -54,7 +75,7 @@ Use these to shape difficulty, horizon, and feedback:
 Observation control (partial observability):
 
 - `display_nl`: include natural-language glosses for facts/actions.
-- `show_affordances`: list currently valid actions.
+- `show_affordances`: list currently valid actions (disabled by default for PDDL domains to avoid expensive grounding).
 - `formatter_config`: set `visibility` (e.g., `room`) to restrict what the
   agent can see.
 
@@ -62,20 +83,21 @@ Observation control (partial observability):
 
 ```python
 env = load_environment(
-    domains=["kitchen"],
+    domains=["kitchen", "blocksworld"],
     num_tasks_per_domain=5,
     include_multi_agent=True,
+    include_pddl=True,      # include PDDL domains (default: True)
     episodes_per_task=2,
 )
 ```
 
-Tasks are YAML-defined (domain + task). SERE ships multiple domains (e.g.,
-`kitchen`, `assembly`) with reference plans for solvability checks.
+Tasks are discovered automatically from both `sere.assets.tasks` (YAML) and
+`sere.assets.pddl` (PDDL problem files).
 
 ## Multi-Agent Tasks
 
-Multi-agent tasks require one action per robot per step. The parser supports
-multiple S-expressions in a single response:
+Multi-agent tasks (currently kitchen only) require one action per robot per step.
+The parser supports multiple S-expressions in a single response:
 
 ```
 (move r1 kitchen pantry)(idle r2)
@@ -104,3 +126,4 @@ env = load_environment(
 - Import error: install SERE with verifiers extra:
   `uv sync --extra verifiers`
 - No tasks found: check available domains via `get_available_domains()`.
+- PDDL domain timeout: ensure `show_affordances=False` (default for PDDL domains) to skip expensive action enumeration.
