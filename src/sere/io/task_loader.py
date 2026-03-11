@@ -209,6 +209,23 @@ def _resolve_domain_path(domain_hint: Optional[str], task_path: str, domain_path
     )
 
 
+def _try_pddl_domain(domain_name: str):
+    """Try to load a PDDL domain from assets/pddl/{name}/. Returns (DomainSpec, meta) or None."""
+    try:
+        pddl_root = pkg_files("sere.assets.pddl")
+    except (ModuleNotFoundError, TypeError):
+        return None
+    domain_dir = pddl_root / domain_name
+    if not hasattr(domain_dir, "is_dir") or not domain_dir.is_dir():
+        return None
+    domain_pddl = domain_dir / "domain.pddl"
+    if not hasattr(domain_pddl, "is_file") or not domain_pddl.is_file():
+        return None
+    from sere.io.pddl_loader import load_pddl_domain
+    spec, meta, _raw = load_pddl_domain(str(domain_dir))
+    return spec, meta
+
+
 # =========================
 #  Parsing primitives
 # =========================
@@ -800,14 +817,20 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
         raise ValueError("Seed specified in both task meta and load_task; choose one source.")
     resolved_seed = seed_override if seed_override is not None else meta_seed
     domain_hint = (meta.get("domain") or "").strip().lower() or None
-    dom_path = _resolve_domain_path(domain_hint, task_path, domain_path)
-    dom_yaml = _load_domain_yaml(dom_path)
-    dom = DomainSpec.from_dict(dom_yaml)
+
+    # Try PDDL domain first (assets/pddl/{name}/), fall back to YAML
+    _pddl_result = _try_pddl_domain(domain_hint) if domain_hint and not domain_path else None
+    if _pddl_result is not None:
+        dom, _pddl_meta = _pddl_result
+        dom_path = f"pddl/{domain_hint}"
+    else:
+        dom_path = _resolve_domain_path(domain_hint, task_path, domain_path)
+        dom_yaml = _load_domain_yaml(dom_path)
+        dom = DomainSpec.from_dict(dom_yaml)
 
     # ---- Plugins
     if plugins is None:
-        dom_stem = Path(dom_path).stem
-        dn = domain_hint or _infer_domain_from_path(task_path) or dom_stem
+        dn = domain_hint or _infer_domain_from_path(task_path) or Path(dom_path).stem
         plugins = _load_invariants_plugin(dn)
 
     # ---- RNG

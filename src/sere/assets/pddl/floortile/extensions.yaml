@@ -1,0 +1,87 @@
+meta:
+  name: floortile
+  description: "Robots paint floor tiles with specified colors while navigating a grid"
+  difficulty: medium
+  tags: [grid, painting, multi-agent]
+  max_steps: 60
+  step_penalty: -0.01
+  invalid_penalty: -0.1
+  enable_numeric: true
+
+predicates:
+  robot-at:
+    nl: "{r} is at {t}"
+  up:
+    nl: "{y} is above {x}"
+    static: true
+  down:
+    nl: "{y} is below {x}"
+    static: true
+  right:
+    nl: "{y} is right of {x}"
+    static: true
+  left:
+    nl: "{y} is left of {x}"
+    static: true
+  clear:
+    nl: "{t} is clear"
+  painted:
+    nl: "{t} is painted {c}"
+  robot-has:
+    nl: "{r} has color {c}"
+  available-color:
+    nl: "{c} is available"
+    static: true
+  free-color:
+    nl: "{r} has free color"
+
+actions:
+  change-color:
+    nl: "change {r} from {c} to {c2}"
+    outcomes:
+      success:
+        nl: "{r} now has color {c2}"
+      fail:
+        nl: "color change failed"
+  paint-up:
+    nl: "paint {y} from {x} with {c}"
+    outcomes:
+      success:
+        nl: "{y} is now painted {c}"
+      fail:
+        nl: "painting failed"
+  paint-down:
+    nl: "paint {y} from {x} with {c}"
+    outcomes:
+      success:
+        nl: "{y} is now painted {c}"
+      fail:
+        nl: "painting failed"
+  up:
+    nl: "move {r} up from {x} to {y}"
+    outcomes:
+      success:
+        nl: "{r} moved up to {y}"
+      fail:
+        nl: "move failed"
+  down:
+    nl: "move {r} down from {x} to {y}"
+    outcomes:
+      success:
+        nl: "{r} moved down to {y}"
+      fail:
+        nl: "move failed"
+  right:
+    nl: "move {r} right from {x} to {y}"
+    outcomes:
+      success:
+        nl: "{r} moved right to {y}"
+      fail:
+        nl: "move failed"
+  left:
+    nl: "move {r} left from {x} to {y}"
+    outcomes:
+      success:
+        nl: "{r} moved left to {y}"
+      fail:
+        nl: "move failed"

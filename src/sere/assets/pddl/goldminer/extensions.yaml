@@ -1,0 +1,86 @@
+meta:
+  name: goldminer
+  description: "A robot navigates a mine to collect gold, using bombs and lasers to clear rocks"
+  difficulty: medium
+  tags: [navigation, resource-management, mining]
+  max_steps: 50
+  step_penalty: -0.01
+  invalid_penalty: -0.1
+
+predicates:
+  robot-at:
+    nl: "robot is at {x}"
+  bomb-at:
+    nl: "bomb supply is at {x}"
+  laser-at:
+    nl: "laser is at {x}"
+  soft-rock-at:
+    nl: "soft rock is at {x}"
+  hard-rock-at:
+    nl: "hard rock is at {x}"
+  gold-at:
+    nl: "gold is at {x}"
+  arm-empty:
+    nl: "robot's arm is empty"
+  holds-bomb:
+    nl: "robot holds a bomb"
+  holds-laser:
+    nl: "robot holds the laser"
+  holds-gold:
+    nl: "robot holds gold"
+  clear:
+    nl: "{x} is clear"
+  connected:
+    nl: "{x} is connected to {y}"
+    static: true
+
+actions:
+  move:
+    nl: "move from {x} to {y}"
+    outcomes:
+      success:
+        nl: "robot moved to {y}"
+      fail:
+        nl: "move failed"
+  pickup-laser:
+    nl: "pick up the laser at {x}"
+    outcomes:
+      success:
+        nl: "robot picked up the laser"
+      fail:
+        nl: "pickup failed"
+  pickup-bomb:
+    nl: "pick up a bomb at {x}"
+    outcomes:
+      success:
+        nl: "robot picked up a bomb"
+      fail:
+        nl: "pickup failed"
+  putdown-laser:
+    nl: "put down the laser at {x}"
+    outcomes:
+      success:
+        nl: "robot put down the laser"
+      fail:
+        nl: "putdown failed"
+  detonate-bomb:
+    nl: "detonate a bomb from {x} to clear {y}"
+    outcomes:
+      success:
+        nl: "bomb cleared soft rock at {y}"
+      fail:
+        nl: "detonation failed"
+  fire-laser:
+    nl: "fire the laser from {x} to clear {y}"
+    outcomes:
+      success:
+        nl: "laser cleared {y}"
+      fail:
+        nl: "laser fire failed"
+  pick-gold:
+    nl: "pick up gold at {x}"
+    outcomes:
+      success:
+        nl: "robot picked up the gold"
+      fail:
+        nl: "gold pickup failed"

@@ -93,8 +93,29 @@ def _build_nl_overrides(extensions: Dict[str, Any]) -> Dict[str, Any]:
 def _compute_statics(
     pddl_domain: PDDLDomain, extensions: Dict[str, Any]
 ) -> Set[str]:
-    """Compute static predicates from inference + explicit overrides."""
+    """Compute static predicates from inference + explicit overrides + outcome scanning."""
+    from sere.pddl.sexpr import parse_one as _parse_one, SExprError as _SExprError
+
     statics = infer_static_predicates(pddl_domain)
+
+    # Also remove predicates modified by extension outcomes
+    for _aname, ainfo in extensions.get("actions", {}).items():
+        if not isinstance(ainfo, dict):
+            continue
+        raw_ocs = ainfo.get("outcomes", []) or []
+        # outcomes can be a list of dicts or a dict of name->info (NL-only format)
+        oc_list = raw_ocs if isinstance(raw_ocs, list) else []
+        for oc in oc_list:
+            if not isinstance(oc, dict):
+                continue
+            for eff in (oc.get("add", []) or []) + (oc.get("delete", oc.get("del", [])) or []):
+                try:
+                    p = _parse_one(eff)
+                    if isinstance(p, list) and p:
+                        statics.discard(str(p[0]).lower())
+                except _SExprError:
+                    pass
+
     # Apply explicit overrides
     for pname, pinfo in extensions.get("predicates", {}).items():
         if isinstance(pinfo, dict):

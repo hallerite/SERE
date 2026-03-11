@@ -227,6 +227,22 @@ def _parse_functions_section(section: list) -> Dict[str, List[Tuple[str, str]]]:
 #  Precondition decomposition
 # ---------------------------------------------------------------------------
 
+def _normalize_pre(node: SExpr) -> SExpr:
+    """Rewrite PDDL idioms into SERE-native forms.
+
+    Currently handled:
+      (not (= ?x ?y))  ->  (distinct ?x ?y)
+    """
+    if not isinstance(node, list) or len(node) < 2:
+        return node
+    head = str(node[0]).lower()
+    if head == "not" and len(node) == 2:
+        inner = node[1]
+        if isinstance(inner, list) and len(inner) >= 3 and str(inner[0]) == "=":
+            return ["distinct"] + inner[1:]
+    return node
+
+
 def _precondition_to_list(pre: Optional[SExpr]) -> List[str]:
     """Unwrap top-level (and ...) into a list of S-expression strings."""
     if pre is None:
@@ -236,8 +252,8 @@ def _precondition_to_list(pre: Optional[SExpr]) -> List[str]:
     if isinstance(pre, list) and pre:
         head = str(pre[0]).lower()
         if head == "and":
-            return [to_string(child) for child in pre[1:]]
-    return [to_string(pre)]
+            return [to_string(_normalize_pre(child)) for child in pre[1:]]
+    return [to_string(_normalize_pre(pre))]
 
 
 # ---------------------------------------------------------------------------
@@ -417,10 +433,33 @@ def _parse_action_section(section: list) -> PDDLAction:
 # ---------------------------------------------------------------------------
 
 def _parse_derived_section(section: list) -> PDDLDerived:
-    """Parse (:derived (head ?x) (body))."""
-    head = to_string(section[1])
-    body = to_string(section[2]) if len(section) > 2 else ""
+    """Parse (:derived (head ?x - type ...) (body)).
+
+    - Strips type annotations from head (SERE expects bare variables)
+    - Unwraps (exists (?vars) <inner>) since SERE treats free variables in
+      derived-rule bodies as implicitly existentially quantified.
+    """
+    raw_head = section[1]
+    # Strip type annotations from head: (pred ?x - T ?y - T2) -> (pred ?x ?y)
+    if isinstance(raw_head, list) and raw_head:
+        name = raw_head[0]
+        vars_only = [tok for tok in raw_head[1:] if isinstance(tok, str) and tok.startswith("?")]
+        head = to_string([name] + vars_only)
+    else:
+        head = to_string(raw_head)
+    body_raw = section[2] if len(section) > 2 else ""
+    body_raw = _unwrap_exists(body_raw)
+    body = to_string(body_raw) if not isinstance(body_raw, str) else body_raw
     return PDDLDerived(head=head, body=body)
+
+
+def _unwrap_exists(node) -> Any:
+    """Recursively strip (exists (?v - T ...) <inner>) wrappers."""
+    if not isinstance(node, list) or not node:
+        return node
+    if str(node[0]).lower() == "exists" and len(node) >= 3:
+        return _unwrap_exists(node[2])
+    return node
 
 
 # ---------------------------------------------------------------------------
@@ -652,6 +691,28 @@ def domain_to_spec(
         statics = static_overrides
     else:
         inferred = infer_static_predicates(domain)
+        # Also scan outcome overrides for modified predicates
+        oc_overrides_tmp = outcome_overrides or {}
+        for _aname, oc_list in oc_overrides_tmp.items():
+            for oc in (oc_list or []):
+                for eff in (oc.get("add", []) or []) + (oc.get("delete", oc.get("del", [])) or []):
+                    try:
+                        p = parse_one(eff)
+                        if isinstance(p, list) and p:
+                            inferred.discard(str(p[0]).lower())
+                    except SExprError:
+                        pass
+        # Also scan action-level outcomes from nl_overrides
+        for _aname, ainfo in nl_acts.items():
+            if isinstance(ainfo, dict):
+                for oc in (ainfo.get("outcomes", []) or []):
+                    for eff in (oc.get("add", []) or []) + (oc.get("delete", oc.get("del", [])) or []):
+                        try:
+                            p = parse_one(eff)
+                            if isinstance(p, list) and p:
+                                inferred.discard(str(p[0]).lower())
+                        except SExprError:
+                            pass
         # Merge with explicit overrides from nl
         statics = set(inferred)
         for pname, pinfo in nl_preds.items():
@@ -712,7 +773,8 @@ def domain_to_spec(
         # Outcomes
         outcomes: List[OutcomeSpec] = []
         raw_ocs = oc_overrides.get(aname) or (ainfo.get("outcomes") if isinstance(ainfo, dict) else None)
-        if raw_ocs:
+        # outcomes can be a list (stochastic definitions) or a dict (NL-only labels); skip dicts
+        if raw_ocs and isinstance(raw_ocs, list):
             for oc in raw_ocs:
                 outcomes.append(OutcomeSpec(
                     name=oc.get("name", "outcome"),
