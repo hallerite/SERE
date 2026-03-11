@@ -200,8 +200,8 @@ def load_environment(
     enable_conditional: bool = True,
     enable_durations: bool = True,
     enable_stochastic: bool = False,
-    step_penalty: float = -0.01,
-    invalid_penalty: float = -0.1,
+    step_penalty: float = 0.0,
+    invalid_penalty: float = 0.0,
     illegal_move_retries: int = 100,
     time_limit: float | None = None,
     enable_reward_shaping: bool = False,
@@ -240,8 +240,8 @@ def load_environment(
         enable_conditional: Enable conditional effects in actions.
         enable_durations: Enable time-based action durations.
         enable_stochastic: Enable stochastic action outcomes.
-        step_penalty: Reward penalty per action (default: -0.01).
-        invalid_penalty: Penalty for invalid actions (default: -0.1).
+        step_penalty: Reward penalty per action (default: 0, outcome-only).
+        invalid_penalty: Penalty for invalid actions (default: 0, outcome-only).
         illegal_move_retries: Number of retries allowed on invalid actions
             before terminating (default: 100, effectively unlimited).
         time_limit: Optional time limit for episodes (in time units).
@@ -350,9 +350,9 @@ def load_environment(
     # Rubric
     rubric = kwargs.pop("rubric", None)
     if rubric is None:
-        rubric = vf.Rubric(funcs=[sum_step_rewards], weights=[1.0])
+        rubric = vf.Rubric(funcs=[task_success], weights=[1.0])
     if hasattr(rubric, "add_metric"):
-        rubric.add_metric(task_success)
+        rubric.add_metric(sum_step_rewards)
         rubric.add_metric(outcome_invalid_move)
         rubric.add_metric(outcome_timeout)
         rubric.add_metric(outcome_out_of_energy)
