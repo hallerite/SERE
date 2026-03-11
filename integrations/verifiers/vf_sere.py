@@ -275,7 +275,9 @@ class AgenticSereEnv(vf.MultiTurnEnv):
 
     @vf.cleanup
     async def cleanup_env(self, state: State) -> None:
-        state.pop("agentic_env", None)
+        env = state.pop("agentic_env", None)
+        if env is not None:
+            env.cleanup()
 
 
 def _extract_tool_call(

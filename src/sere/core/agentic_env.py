@@ -1,21 +1,28 @@
 """
-miniSWE-style PDDL planning environment.
+miniSWE-style PDDL planning sandbox.
 
-The agent works in a virtual workspace with files:
-  - domain.pddl   (read-only)
-  - problem.pddl   (read-only)
-  - plan.pddl      (read-write — the agent's solution)
+The agent works in a real temp directory with files:
+  - domain.pddl   (read-only, restored if modified)
+  - problem.pddl   (read-only, restored if modified)
+  - plan.pddl      (the agent's solution)
 
-Tools mirror miniSWE: read_file, write_file + two PDDL-specific:
-  - validate: run plan.pddl against domain+problem, pass/fail + diagnostics
-  - simulate: run plan.pddl up to step N, return resulting world state
-
-Guards: domain.pddl and problem.pddl are immutable.
+Tools (same as a coding agent):
+  - bash(command)                  — run shell commands in the workspace
+  - read_file(path)                — read a file
+  - write_file(path, content)      — create/overwrite a file
+  - str_replace(path, old, new)    — targeted string replacement in a file
+  - validate(up_to_step?)          — validate plan.pddl against domain+problem
+  - simulate(up_to_step?)          — run plan.pddl up to step N, show world state
 """
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from sere.pddl.domain_spec import DomainSpec, Predicate
@@ -34,14 +41,31 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "bash",
+            "description": "Run a shell command in the workspace directory. Use for inspecting files, text manipulation, or any shell operation.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The shell command to execute",
+                    },
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "read_file",
-            "description": "Read a file from the workspace. Available files: domain.pddl, problem.pddl, plan.pddl",
+            "description": "Read a file from the workspace.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "File path to read (domain.pddl, problem.pddl, or plan.pddl)",
+                        "description": "File path relative to the workspace",
                     },
                 },
                 "required": ["path"],
@@ -52,20 +76,45 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": (
-                "Write content to plan.pddl. This is the only writable file. "
-                "The plan should be a sequence of grounded actions, one per line:\n"
-                "  (action-name arg1 arg2)\n  (action-name arg1 arg2)\n  ..."
-            ),
+            "description": "Create or overwrite a file in the workspace. domain.pddl and problem.pddl are read-only.",
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path relative to the workspace",
+                    },
                     "content": {
                         "type": "string",
-                        "description": "The plan content to write",
+                        "description": "The content to write",
                     },
                 },
-                "required": ["content"],
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "str_replace",
+            "description": "Replace a string in a file. The old_str must appear exactly once in the file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path relative to the workspace",
+                    },
+                    "old_str": {
+                        "type": "string",
+                        "description": "The exact string to find (must be unique in the file)",
+                    },
+                    "new_str": {
+                        "type": "string",
+                        "description": "The replacement string",
+                    },
+                },
+                "required": ["path", "old_str", "new_str"],
             },
         },
     },
@@ -75,15 +124,15 @@ TOOL_SCHEMAS = [
             "name": "validate",
             "description": (
                 "Validate plan.pddl against the domain and problem. "
-                "Returns success or the first failing step with diagnostics. "
-                "Optionally validate only up to a given step number."
+                "Returns pass/fail with diagnostics. "
+                "Optionally validate only the first N steps."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "up_to_step": {
                         "type": "integer",
-                        "description": "Only validate the first N steps of the plan. If omitted, validates the entire plan.",
+                        "description": "Only validate the first N steps. If omitted, validates the full plan (counts as a submission attempt).",
                     },
                 },
             },
@@ -93,16 +142,13 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "simulate",
-            "description": (
-                "Run plan.pddl up to a given step and return the resulting "
-                "world state. Use this to inspect intermediate states."
-            ),
+            "description": "Run plan.pddl up to a given step and show the resulting world state.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "up_to_step": {
                         "type": "integer",
-                        "description": "Run the first N steps and show the state. If omitted, runs the entire plan.",
+                        "description": "Run the first N steps. If omitted, runs the entire plan.",
                     },
                 },
             },
@@ -110,13 +156,13 @@ TOOL_SCHEMAS = [
     },
 ]
 
+READONLY_FILES = {"domain.pddl", "problem.pddl"}
+
 
 @dataclass
 class AgenticPDDLEnv:
     """
-    miniSWE-style PDDL planning environment.
-
-    Virtual workspace with domain.pddl (ro), problem.pddl (ro), plan.pddl (rw).
+    miniSWE-style PDDL sandbox with real filesystem workspace.
     """
 
     domain: DomainSpec
@@ -129,40 +175,56 @@ class AgenticPDDLEnv:
 
     enable_numeric: bool = False
     enable_conditional: bool = False
-
     max_attempts: int = 8
+    bash_timeout: int = 10
 
     # Mutable state
-    plan_pddl: str = ""
     attempts: int = 0
     solved: bool = False
+    _workspace: Optional[Path] = field(default=None, repr=False)
+
+    @property
+    def workspace(self) -> Path:
+        """Lazily create the workspace directory with domain + problem files."""
+        if self._workspace is None:
+            self._workspace = Path(tempfile.mkdtemp(prefix="sere_sandbox_"))
+            (self._workspace / "domain.pddl").write_text(self.domain_pddl)
+            (self._workspace / "problem.pddl").write_text(self.problem_pddl)
+        return self._workspace
+
+    def cleanup(self):
+        """Remove the workspace directory."""
+        if self._workspace and self._workspace.exists():
+            shutil.rmtree(self._workspace, ignore_errors=True)
+            self._workspace = None
 
     def system_prompt(self) -> str:
         return (
-            "You are a PDDL planning agent. Your workspace contains:\n"
-            "  - domain.pddl   (the planning domain — read-only)\n"
-            "  - problem.pddl  (the planning problem — read-only)\n"
-            "  - plan.pddl     (your solution — write your plan here)\n\n"
+            "You are a PDDL planning agent working in a sandbox environment.\n\n"
+            "Your workspace contains:\n"
+            "  domain.pddl   — the planning domain (read-only)\n"
+            "  problem.pddl  — the planning problem (read-only)\n"
+            "  plan.pddl     — write your solution here\n\n"
             "Tools:\n"
-            "  read_file(path)          — read any workspace file\n"
-            "  write_file(content)      — write plan.pddl\n"
-            "  validate(up_to_step?)    — validate plan.pddl, get pass/fail + diagnostics\n"
-            "  simulate(up_to_step?)    — run plan.pddl, see resulting world state\n\n"
-            "Workflow: read the domain and problem, write a plan, "
-            "use simulate to inspect intermediate states, "
-            "then validate to submit.\n\n"
-            "The plan file should contain grounded actions, one per line:\n"
+            "  bash(command)                 — run shell commands\n"
+            "  read_file(path)               — read a file\n"
+            "  write_file(path, content)     — create/overwrite a file\n"
+            "  str_replace(path, old, new)   — edit a file\n"
+            "  validate(up_to_step?)         — validate plan.pddl (full = submission)\n"
+            "  simulate(up_to_step?)         — run plan.pddl, show world state\n\n"
+            "Write your plan as grounded PDDL actions in plan.pddl:\n"
             "  (action-name arg1 arg2)\n"
             "  (action-name arg1 arg2)\n"
-            "  ..."
+            "  ...\n\n"
+            "Use bash, simulate, and partial validate to debug. "
+            "Call validate() (no arguments) to submit your final plan."
         )
 
     def tool_schemas(self) -> List[Dict[str, Any]]:
         return list(TOOL_SCHEMAS)
 
-    # legacy
     def tool_schema(self) -> Dict[str, Any]:
-        return TOOL_SCHEMAS[2]  # validate
+        return TOOL_SCHEMAS[4]  # validate
 
     def _fresh_world(self) -> WorldState:
         return WorldState(
@@ -172,70 +234,148 @@ class AgenticPDDLEnv:
             fluents=dict(self.init_world.fluents),
         )
 
+    def _read_plan(self) -> str:
+        plan_path = self.workspace / "plan.pddl"
+        if not plan_path.exists():
+            return ""
+        return plan_path.read_text()
+
     def _parse_plan(self) -> List[Tuple[str, Tuple[str, ...]]]:
-        """Parse the current plan.pddl content."""
-        if not self.plan_pddl.strip():
-            raise ValueError("plan.pddl is empty. Write a plan first.")
-        return parse_actions(self.plan_pddl)
+        text = self._read_plan()
+        if not text.strip():
+            raise ValueError("plan.pddl is empty. Write a plan first with write_file.")
+        return parse_actions(text)
+
+    def _enforce_readonly(self):
+        """Restore read-only files if they were modified."""
+        ws = self.workspace
+        domain_path = ws / "domain.pddl"
+        problem_path = ws / "problem.pddl"
+        if not domain_path.exists() or domain_path.read_text() != self.domain_pddl:
+            domain_path.write_text(self.domain_pddl)
+        if not problem_path.exists() or problem_path.read_text() != self.problem_pddl:
+            problem_path.write_text(self.problem_pddl)
 
     # -----------------------------------------------------------------
     #  Tool dispatch
     # -----------------------------------------------------------------
 
     def handle_tool_call(self, name: str, arguments: Dict[str, Any]) -> Tuple[str, bool]:
-        """
-        Dispatch a tool call. Returns (result_text, is_done).
-        Only validate (full plan, no up_to_step) can end the episode.
-        """
-        if name == "read_file":
+        if name == "bash":
+            result = self._bash(arguments.get("command", ""))
+            self._enforce_readonly()
+            return result, False
+        elif name == "read_file":
             return self._read_file(arguments.get("path", "")), False
         elif name == "write_file":
-            return self._write_file(arguments.get("content", "")), False
+            return self._write_file(
+                arguments.get("path", ""),
+                arguments.get("content", ""),
+            ), False
+        elif name == "str_replace":
+            return self._str_replace(
+                arguments.get("path", ""),
+                arguments.get("old_str", ""),
+                arguments.get("new_str", ""),
+            ), False
         elif name == "validate":
             return self._validate(arguments.get("up_to_step"))
         elif name == "simulate":
             return self._simulate(arguments.get("up_to_step")), False
         else:
-            return f"Unknown tool: {name}. Available: read_file, write_file, validate, simulate", False
+            return f"Unknown tool: {name}", False
 
     # -----------------------------------------------------------------
     #  Tool implementations
     # -----------------------------------------------------------------
 
+    def _bash(self, command: str) -> str:
+        if not command.strip():
+            return "Error: empty command"
+        try:
+            result = subprocess.run(
+                ["bash", "-c", command],
+                cwd=str(self.workspace),
+                capture_output=True,
+                text=True,
+                timeout=self.bash_timeout,
+            )
+            output = ""
+            if result.stdout:
+                output += result.stdout
+            if result.stderr:
+                if output:
+                    output += "\n"
+                output += result.stderr
+            if result.returncode != 0 and not output:
+                output = f"(exit code {result.returncode})"
+            return output or "(no output)"
+        except subprocess.TimeoutExpired:
+            return f"Command timed out after {self.bash_timeout}s"
+        except Exception as e:
+            return f"Error: {e}"
+
     def _read_file(self, path: str) -> str:
         path = path.strip().lstrip("/")
-        if path == "domain.pddl":
-            return self.domain_pddl
-        elif path == "problem.pddl":
-            return self.problem_pddl
-        elif path == "plan.pddl":
-            if not self.plan_pddl:
-                return "(empty — no plan written yet)"
-            return self.plan_pddl
-        else:
-            return f"File not found: {path}. Available: domain.pddl, problem.pddl, plan.pddl"
-
-    def _write_file(self, content: str) -> str:
-        if not content.strip():
-            return "Error: empty content. Write at least one action."
-        self.plan_pddl = content
-        # Count lines that look like actions
+        filepath = self.workspace / path
+        if not filepath.exists():
+            return f"File not found: {path}"
         try:
-            actions = parse_actions(content)
-            return f"Wrote plan.pddl ({len(actions)} actions)"
+            # Security: don't read outside workspace
+            filepath.resolve().relative_to(self.workspace.resolve())
         except ValueError:
-            self.plan_pddl = content
-            return "Wrote plan.pddl (warning: could not parse as actions — check syntax)"
+            return f"Access denied: {path}"
+        return filepath.read_text()
+
+    def _write_file(self, path: str, content: str) -> str:
+        path = path.strip().lstrip("/")
+        if path in READONLY_FILES:
+            return f"Error: {path} is read-only"
+        if not content and not content == "":
+            return "Error: no content provided"
+        filepath = self.workspace / path
+        try:
+            filepath.resolve().relative_to(self.workspace.resolve())
+        except ValueError:
+            return f"Access denied: {path}"
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.write_text(content)
+        if path == "plan.pddl":
+            try:
+                actions = parse_actions(content)
+                return f"Wrote {path} ({len(actions)} actions)"
+            except ValueError:
+                return f"Wrote {path} (warning: could not parse as PDDL actions)"
+        return f"Wrote {path}"
+
+    def _str_replace(self, path: str, old_str: str, new_str: str) -> str:
+        path = path.strip().lstrip("/")
+        if path in READONLY_FILES:
+            return f"Error: {path} is read-only"
+        filepath = self.workspace / path
+        if not filepath.exists():
+            return f"File not found: {path}"
+        try:
+            filepath.resolve().relative_to(self.workspace.resolve())
+        except ValueError:
+            return f"Access denied: {path}"
+        content = filepath.read_text()
+        count = content.count(old_str)
+        if count == 0:
+            return f"Error: old_str not found in {path}"
+        if count > 1:
+            return f"Error: old_str appears {count} times in {path} (must be unique)"
+        content = content.replace(old_str, new_str, 1)
+        filepath.write_text(content)
+        return f"Replaced in {path}"
 
     def _validate(self, up_to_step: int | None = None) -> Tuple[str, bool]:
-        """Validate plan.pddl. Full validation counts as an attempt."""
         try:
             plan = self._parse_plan()
         except ValueError as e:
             return str(e), False
 
         if up_to_step is not None:
-            # Partial validation — does NOT count as attempt, never ends episode
             plan = plan[:up_to_step]
             result = validate_plan(
                 self.domain, self.init_world, self.static_facts,
@@ -243,10 +383,8 @@ class AgenticPDDLEnv:
                 enable_numeric=self.enable_numeric,
                 enable_conditional=self.enable_conditional,
             )
-            feedback = format_plan_feedback(result)
-            return feedback, False
+            return format_plan_feedback(result), False
 
-        # Full validation — counts as attempt
         self.attempts += 1
         result = validate_plan(
             self.domain, self.init_world, self.static_facts,
@@ -264,7 +402,6 @@ class AgenticPDDLEnv:
         return feedback, done
 
     def _simulate(self, up_to_step: int | None = None) -> str:
-        """Run plan.pddl up to step N and show the world state."""
         try:
             plan = self._parse_plan()
         except ValueError as e:
