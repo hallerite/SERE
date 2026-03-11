@@ -130,7 +130,7 @@ class WorldState:
                 loc_map.setdefault(args[0], set()).add(args[1])
             elif pred == "in":
                 in_map.setdefault(args[0], set()).add(args[1])
-            elif pred == "holding":
+            elif pred == "holding" and len(args) >= 2:
                 # args = (r, o) → index 1 is the object
                 holding_map.setdefault(args[1], set()).add(args[0])
             elif pred == "at" and len(args) == 2:

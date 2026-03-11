@@ -5,9 +5,12 @@ def push_msg(env, s: str) -> None:
     env.messages.append(s)
 
 def obs(env) -> str:
-    aff = env.formatter.generate_affordances(
-        env.world, env.static_facts, enable_numeric=env.enable_numeric
-    )
+    if env.formatter.cfg.show_affordances:
+        aff = env.formatter.generate_affordances(
+            env.world, env.static_facts, enable_numeric=env.enable_numeric
+        )
+    else:
+        aff = []
     step_msgs: List[str] = env._step_messages[:]
     text = env.formatter.format_obs(
         world=env.world,
