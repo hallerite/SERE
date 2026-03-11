@@ -13,62 +13,69 @@ from sere.core.semantics import eval_clause
 # Utilities
 # -------------------------
 
-def _iter_domain_yaml_paths():
+def _iter_pddl_domain_dirs():
     """
-    Yield filesystem Paths to every domain YAML packaged under:
-      - sere.assets.domains/*
-      - sere.assets.domain/*
-    (We try plural then singular for compatibility.)
+    Yield (name, filesystem Path) for every PDDL domain directory packaged
+    under sere.assets.pddl that contains a domain.pddl file.
     """
-    pkgs = ["sere.assets.domains", "sere.assets.domain"]
-    seen = set()
-
-    for pkg in pkgs:
-        try:
-            base = pkg_files(pkg)
-        except Exception:
+    try:
+        base = pkg_files("sere.assets.pddl")
+    except Exception:
+        return
+    if not base.is_dir():
+        return
+    for p in sorted(base.iterdir()):
+        if not p.is_dir():
             continue
-        if not base.is_dir():
+        if p.name.startswith("_"):
             continue
-
-        for p in base.iterdir():
-            if not p.is_file():
-                continue
-            if not (p.name.endswith(".yaml") or p.name.endswith(".yml")):
-                continue
-            # dedupe across plural/singular packages if both exist
-            key = (p.name, pkg)
-            if key in seen:
-                continue
-            seen.add(key)
+        domain_pddl = p / "domain.pddl"
+        if domain_pddl.is_file():
             with as_file(p) as real:
-                yield Path(real)
+                yield (p.name, Path(real))
 
 
-ALL_DOMAIN_FILES = list(_iter_domain_yaml_paths())
+def _load_pddl_domain_spec(domain_dir: Path) -> DomainSpec:
+    from sere.io.pddl_loader import load_pddl_domain
+    spec, _meta, _raw = load_pddl_domain(str(domain_dir))
+    return spec
 
 
-def _load_domain(path: Path) -> DomainSpec:
-    return DomainSpec.from_yaml(str(path))
+ALL_PDDL_DOMAINS = list(_iter_pddl_domain_dirs())
+
+# Domains with extensions.yaml (NL, outcomes, etc.)
+ALL_EXTENDED_DOMAINS = [
+    (name, path) for name, path in ALL_PDDL_DOMAINS
+    if (path / "extensions.yaml").exists()
+]
+
+
+def _load_domain(name_and_path) -> DomainSpec:
+    _name, path = name_and_path
+    return _load_pddl_domain_spec(path)
 
 
 # -------------------------
 # Existing contract tests
 # -------------------------
 
-@pytest.mark.parametrize("dom_path", ALL_DOMAIN_FILES, ids=lambda p: p.name)
-def test_every_action_has_success_and_a_non_success_outcome(dom_path: Path):
+@pytest.mark.parametrize("dom_path", ALL_EXTENDED_DOMAINS, ids=lambda x: x[0])
+def test_every_action_has_success_and_a_non_success_outcome(dom_path):
     """
-    Contract: Each action in every domain must define outcome branches and
-    include BOTH:
+    Contract: Each action in every stochastic domain must define outcome branches
+    and include BOTH:
       - at least one branch with status 'success' (case-insensitive), and
       - at least one branch with a different status (e.g., 'fail', 'spill', etc.).
-    This supports deterministic runs (enable_stochastic=False) where we prefer
-    the 'success' branch if multiple are valid, but still have a non-success path.
+    Skips domains where no action defines outcomes (pure PDDL / deterministic).
     """
+    dom_name = dom_path[0]
     dom = _load_domain(dom_path)
 
-    assert dom.actions, f"{dom_path.name}: domain has no actions"
+    assert dom.actions, f"{dom_name}: domain has no actions"
+
+    # Skip deterministic domains with no outcomes defined
+    if not any(getattr(a, "outcomes", None) for a in dom.actions.values()):
+        pytest.skip(f"{dom_name}: no outcomes defined (deterministic domain)")
 
     offenders = []
     for aname, act in sorted(dom.actions.items()):
@@ -93,13 +100,13 @@ def test_every_action_has_success_and_a_non_success_outcome(dom_path: Path):
             )
 
     assert not offenders, (
-        f"{dom_path.name}: action outcome contract violations:\n  - " +
+        f"{dom_name}: action outcome contract violations:\n  - " +
         "\n  - ".join(offenders)
     )
 
 
-@pytest.mark.parametrize("dom_path", ALL_DOMAIN_FILES, ids=lambda p: p.name)
-def test_outcome_probabilities_present_when_stochastic(dom_path: Path):
+@pytest.mark.parametrize("dom_path", ALL_EXTENDED_DOMAINS, ids=lambda x: x[0])
+def test_outcome_probabilities_present_when_stochastic(dom_path):
     """
     Soft guard: if an action declares outcomes, every outcome should provide a 'p'
     field (even if tests later run with enable_stochastic=False). This prevents
@@ -121,7 +128,7 @@ def test_outcome_probabilities_present_when_stochastic(dom_path: Path):
 
     if missing:
         pytest.xfail(
-            f"{dom_path.name}: outcomes missing probability 'p': {', '.join(missing)}"
+            f"{dom_path[0]}: outcomes missing probability 'p': {', '.join(missing)}"
         )
 
 
@@ -137,14 +144,14 @@ def _has_nl(a) -> bool:
     return False
 
 
-@pytest.mark.parametrize("dom_path", ALL_DOMAIN_FILES, ids=lambda p: p.name)
-def test_action_nl_present(dom_path: Path):
+@pytest.mark.parametrize("dom_path", ALL_EXTENDED_DOMAINS, ids=lambda x: x[0])
+def test_action_nl_present(dom_path):
     """
     Ergonomics: every action should have an NL description (string or list of strings).
     """
     dom = _load_domain(dom_path)
     bad = [name for name, a in dom.actions.items() if not _has_nl(a)]
-    assert not bad, f"{dom_path.name}: actions missing NL description: {bad}"
+    assert not bad, f"{dom_path[0]}: actions missing NL description: {bad}"
 
 
 def test_domain_load_rejects_static_effects():
@@ -203,8 +210,8 @@ def _all_boolean_assignments(n: int):
         yield bits
 
 
-@pytest.mark.parametrize("dom_path", ALL_DOMAIN_FILES, ids=lambda p: p.name)
-def test_outcome_when_guards_are_mutually_exclusive(dom_path: Path):
+@pytest.mark.parametrize("dom_path", ALL_EXTENDED_DOMAINS, ids=lambda x: x[0])
+def test_outcome_when_guards_are_mutually_exclusive(dom_path):
     """
     For each action with >=2 outcomes, brute-force boolean truth assignments over the
     predicate atoms referenced in their `when` guards and assert that no state
@@ -218,7 +225,9 @@ def test_outcome_when_guards_are_mutually_exclusive(dom_path: Path):
           success: (or (not (needs-open ?m)) (open ?m))
     """
     dom = _load_domain(dom_path)
-    assert dom.actions, f"{dom_path.name}: domain has no actions"
+    dom_name = dom_path[0]
+    dom = _load_domain(dom_path)
+    assert dom.actions, f"{dom_name}: domain has no actions"
 
     violations = []
 
@@ -242,7 +251,7 @@ def test_outcome_when_guards_are_mutually_exclusive(dom_path: Path):
 
         MAX_ATOMS = 12
         if len(atoms) > MAX_ATOMS:
-            pytest.xfail(f"{dom_path.name}:{aname}: too many guard atoms ({len(atoms)}) for brute-force exclusivity check")
+            pytest.xfail(f"{dom_name}:{aname}: too many guard atoms ({len(atoms)}) for brute-force exclusivity check")
 
         for bits in _all_boolean_assignments(len(atoms)):
             # Install facts for this assignment
@@ -261,7 +270,7 @@ def test_outcome_when_guards_are_mutually_exclusive(dom_path: Path):
             if len(valid) > 1:
                 pretty_assign = {f"({p} {' '.join(a)})": b for (p, a), b in zip(atoms, bits)}
                 violations.append(
-                    f"{dom_path.name}:{aname} → overlapping outcome guards under {pretty_assign}: {valid}"
+                    f"{dom_name}:{aname} → overlapping outcome guards under {pretty_assign}: {valid}"
                 )
 
     assert not violations, (
