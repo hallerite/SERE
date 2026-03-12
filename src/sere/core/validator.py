@@ -7,9 +7,8 @@ No side effects, no env object, no reward/penalty system.
 
 from __future__ import annotations
 
-from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from sere.pddl.domain_spec import ActionSpec, DomainSpec, Predicate
 from sere.pddl.grounding import ground_literal, instantiate
