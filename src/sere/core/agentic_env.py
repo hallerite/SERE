@@ -371,27 +371,26 @@ class AgenticPDDLEnv:
 
     def _validate(self, up_to_step: int | None = None) -> Tuple[str, bool]:
         try:
-            plan = self._parse_plan()
+            full_plan = self._parse_plan()
         except ValueError as e:
             return str(e), False
 
-        if up_to_step is not None:
-            plan = plan[:up_to_step]
-            result = validate_plan(
-                self.domain, self.init_world, self.static_facts,
-                self.goal_expr, plan,
-                enable_numeric=self.enable_numeric,
-                enable_conditional=self.enable_conditional,
-            )
-            return format_plan_feedback(result), False
+        # Treat up_to_step >= total steps as a full submission
+        is_full = up_to_step is None or up_to_step >= len(full_plan)
+        plan = full_plan if is_full else full_plan[:up_to_step]
 
-        self.attempts += 1
         result = validate_plan(
             self.domain, self.init_world, self.static_facts,
             self.goal_expr, plan,
             enable_numeric=self.enable_numeric,
             enable_conditional=self.enable_conditional,
         )
+
+        if not is_full:
+            return format_plan_feedback(result), False
+
+        # Full submission
+        self.attempts += 1
         self.solved = result.success
         feedback = format_plan_feedback(result)
 

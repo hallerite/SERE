@@ -10,8 +10,9 @@ from openai import OpenAI
 from sere.io.pddl_loader import load_agentic_task
 
 API_KEY = os.environ.get("PRIME_API_KEY", "").strip()
+TEAM_ID = os.environ.get("PRIME_TEAM_ID", "").strip()
 BASE_URL = "https://api.pinference.ai/api/v1"
-MODEL = "openai/gpt-4.1"
+MODEL = "openai/gpt-4.1-mini"
 MAX_TURNS = 20
 
 
@@ -29,7 +30,10 @@ def run_one(domain_name: str, problem_idx: int = 0):
     print(f"Goal: {env.goal_expr}")
     print()
 
-    client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+    headers = {}
+    if TEAM_ID:
+        headers["X-Prime-Team-ID"] = TEAM_ID
+    client = OpenAI(api_key=API_KEY, base_url=BASE_URL, default_headers=headers)
 
     messages = [
         {"role": "system", "content": env.system_prompt()},
