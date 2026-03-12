@@ -191,7 +191,7 @@ class AgenticSereEnv(vf.MultiTurnEnv):
     miniSWE-style PDDL environment.
 
     Workspace: domain.pddl (ro), problem.pddl (ro), plan.pddl (rw).
-    Tools: read_file, write_file, validate, simulate.
+    Tools: bash, read_file, write_file, str_replace, validate, simulate.
     Only full validate (no up_to_step) can end the episode.
     """
 
@@ -630,7 +630,7 @@ def load_agentic_environment(
         agentic_kwargs=agentic_kwargs,
         dataset=dataset,
         eval_dataset=eval_dataset,
-        max_turns=max_attempts,
+        max_turns=kwargs.pop("max_turns", max_attempts * 5),
         rubric=rubric,
         message_type="chat",
         **kwargs,
