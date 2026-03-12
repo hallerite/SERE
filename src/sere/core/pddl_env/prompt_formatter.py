@@ -610,7 +610,7 @@ class PromptFormatter:
                     val = float(rhs)
                     if op == "increase": total += val
                     elif op == "decrease": total -= val
-                except Exception:
+                except (ValueError, TypeError):
                     symbolic.append((op, rhs))
             if symbolic and abs(total) < 1e-12:
                 op, rhs = symbolic[-1]

@@ -37,7 +37,7 @@ def eval_num_pre(world: WorldState, expr: str, bind: Dict[str, str]) -> bool:
     val = world.get_fluent(fname, args)
     try:
         rhsf = _eval_rhs_token(rhs.strip(), bind, world)
-    except Exception:
+    except (ValueError, KeyError, TypeError, AttributeError):
         rhsf = float(rhs)
     if op == "<":  return val < rhsf
     if op == "<=": return val <= rhsf
@@ -141,7 +141,7 @@ def eval_fast(
         current = world.get_fluent(fname, args)
         try:
             rhsf = _eval_rhs_token(rhs.strip(), bind, world)
-        except Exception:
+        except (ValueError, KeyError, TypeError, AttributeError):
             rhsf = float(rhs)
         if op == "<":
             return current < rhsf
@@ -409,7 +409,7 @@ def trace_clause(
         current = world.get_fluent(fname, args)
         try:
             rhsf = _eval_rhs_token(rhs.strip(), bind, world)
-        except Exception:
+        except (ValueError, KeyError, TypeError, AttributeError):
             rhsf = float(rhs)
         sat = False
         if op == "<":   sat = current < rhsf

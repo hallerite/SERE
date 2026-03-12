@@ -3,6 +3,10 @@ from typing import Any, Dict, Tuple, List, Optional
 from sere.pddl.domain_spec import ActionSpec, Predicate
 from sere.pddl.grounding import ground_literal
 from sere.core.semantics import apply_num_eff, eval_clause, eval_trace, _iter_quantifier_bindings
+from sere.core.validator import (
+    _expand_delete_patterns,
+    _iter_conditional_binds,
+)
 from sere.core.world_state import WorldState
 from . import rendering
 
@@ -380,7 +384,7 @@ def format_msg(env, template: str, bind: Dict[str, str]) -> str:
             else:
                 truth = eval_clause(env.world, env.static_facts, token, {}, enable_numeric=env.enable_numeric)
                 s = s.replace(token, "true" if truth else "false")
-        except Exception:
+        except (ValueError, KeyError, TypeError, AttributeError):
             pass
     return s
 
@@ -504,7 +508,7 @@ def _select_outcome(env, act: ActionSpec, bind: Dict[str, str], *,
         def _getp(o):
             try:
                 return float(getattr(o, "p", 1.0))
-            except Exception:
+            except (ValueError, TypeError):
                 return 1.0
         choice = max(valid, key=_getp)
 
@@ -514,7 +518,7 @@ def _is_number_token(tok: str) -> bool:
     try:
         float(tok)
         return True
-    except Exception:
+    except (ValueError, TypeError):
         return False
 
 def _candidates_of_type(env, typ: str) -> List[str]:
@@ -532,7 +536,7 @@ def _static_predicates(env) -> set[str]:
 def _effect_pred_name(effect: str) -> Optional[str]:
     try:
         _, litp = ground_literal(effect, {})
-    except Exception:
+    except (ValueError, KeyError):
         return None
     return litp[0]
 
@@ -593,7 +597,7 @@ def _validate_duration_multiplier(act: ActionSpec, bind: Dict[str, str]) -> Opti
     raw = bind.get(n_name)
     try:
         dur_multiplier = float(raw)
-    except Exception:
+    except (ValueError, TypeError):
         return f"Bad duration_var '{n_name}': {raw!r}"
     if dur_multiplier <= 0.0:
         return f"Duration multiplier '{n_name}' must be > 0."
@@ -702,39 +706,6 @@ def _collect_joint_calls(
 
     return calls, durations, None
 
-def _is_unbound(x: Any) -> bool:
-    return isinstance(x, str) and x.startswith("?")
-
-def _expand_delete_patterns(deletes: List[Predicate], facts: set) -> List[Predicate]:
-    expanded: List[Predicate] = []
-    for (pred, argtup) in deletes:
-        if any(_is_unbound(a) for a in argtup):
-            for (p, a) in list(facts):
-                if p != pred:
-                    continue
-                ok = True
-                for i, pat in enumerate(argtup):
-                    if _is_unbound(pat):
-                        continue
-                    if i >= len(a) or pat != a[i]:
-                        ok = False
-                        break
-                if ok:
-                    expanded.append((p, a))
-        else:
-            expanded.append((pred, argtup))
-    return expanded
-
-
-def _iter_conditional_binds(cond_world: WorldState, cb, base_bind: Dict[str, str]):
-    if getattr(cb, "forall", None):
-        for qb in _iter_quantifier_bindings(cond_world, cb.forall):
-            merged = dict(base_bind)
-            merged.update(qb)
-            yield merged
-    else:
-        yield base_bind
-
 def _robot_sym_from_params(act: ActionSpec, arg_tuple: tuple) -> Optional[str]:
     for i, (_, ty) in enumerate(act.params):
         if ty.lower() == "robot":
@@ -746,6 +717,9 @@ def _unique_robot_loc(world, r: Optional[str]) -> Optional[str]:
         return None
     locs = [a[1] for (pred, a) in world.facts if pred == "at" and len(a) == 2 and a[0] == r]
     return locs[0] if len(locs) == 1 else None
+
+def _is_unbound(x) -> bool:
+    return isinstance(x, str) and x.startswith("?")
 
 def _expand_add_patterns(adds: List[Predicate], world, act: ActionSpec, arg_tuple: tuple) -> List[Predicate]:
     expanded: List[Predicate] = []

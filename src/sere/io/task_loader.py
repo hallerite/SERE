@@ -691,7 +691,7 @@ def _load_invariants_plugin(domain_name: str) -> List[Any]:
     """Tries to load core.invariants.{DomainName}Invariants by naming convention."""
     try:
         from ..core import invariants as invmod
-    except Exception:
+    except ImportError:
         return []
     cname = f"{domain_name.capitalize()}Invariants"
     pl = getattr(invmod, cname, None)
@@ -913,7 +913,7 @@ def load_task(domain_path: Optional[str], task_path: str, plugins=None, **env_kw
     # --- Optional clutter injection ---
     try:
         _apply_clutter(spec.meta, w, static_facts, rng)
-    except Exception:
+    except (KeyError, ValueError, TypeError):
         pass
 
     env = PDDLEnv(

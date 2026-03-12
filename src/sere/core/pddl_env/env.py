@@ -171,7 +171,7 @@ class PDDLEnv:
             raise RuntimeError("Episode finished. Call reset().")
         try:
             plan = planning.parse_actions(text)
-        except Exception as e:
+        except (ValueError, SyntaxError) as e:
             return self._illegal(f"{e}", {})
 
         # Mode guard: INTERACTIVE must be exactly one action (or one per robot in multi-agent)
