@@ -235,34 +235,41 @@ class AgenticSereEnv(vf.MultiTurnEnv):
         """Dispatch tool calls to the agentic env."""
         agentic_env = state["agentic_env"]
 
-        # Extract tool call(s) from the model's last message
-        tool_call = _extract_tool_call(messages)
+        # Extract all tool calls from the model's last message
+        tool_calls = _extract_tool_calls(messages)
 
-        if tool_call is None:
+        if not tool_calls:
             # Model didn't call a tool — nudge it
             return [{"role": "user", "content": (
                 "Use the available tools. Start by reading the domain and "
                 "problem files, then write a plan and validate it."
             )}]
 
-        tool_name, tool_args, tool_call_id = tool_call
-        feedback, done = agentic_env.handle_tool_call(tool_name, tool_args)
+        response: Messages = []
+        done = False
 
-        # Record outcome on trajectory for validate calls
-        if state["trajectory"] and tool_name == "validate":
-            outcome = "success" if agentic_env.solved else "failed"
-            state["trajectory"][-1]["reward"] = 1.0 if agentic_env.solved else 0.0
-            state["trajectory"][-1]["extras"]["sere_info"] = {
-                "outcome": outcome if done else None,
-                "attempts": agentic_env.attempts,
-                "solved": agentic_env.solved,
-            }
+        for tool_name, tool_args, tool_call_id in tool_calls:
+            feedback, call_done = agentic_env.handle_tool_call(tool_name, tool_args)
+            done = done or call_done
+
+            # Record outcome on trajectory for validate calls
+            if state["trajectory"] and tool_name == "validate":
+                outcome = "success" if agentic_env.solved else "failed"
+                state["trajectory"][-1]["reward"] = 1.0 if agentic_env.solved else 0.0
+                state["trajectory"][-1]["extras"]["sere_info"] = {
+                    "outcome": outcome if done else None,
+                    "attempts": agentic_env.attempts,
+                    "solved": agentic_env.solved,
+                }
+
+            response.append(
+                {"role": "tool", "content": feedback, "tool_call_id": tool_call_id or tool_name},
+            )
+
+            if done:
+                break
 
         state["sere_done"] = done
-
-        response: Messages = [
-            {"role": "tool", "content": feedback, "tool_call_id": tool_call_id or tool_name},
-        ]
 
         if done:
             state["final_env_response"] = response
@@ -280,17 +287,17 @@ class AgenticSereEnv(vf.MultiTurnEnv):
             env.cleanup()
 
 
-def _extract_tool_call(
+def _extract_tool_calls(
     messages: Messages,
-) -> tuple[str, dict, str | None] | None:
+) -> list[tuple[str, dict, str | None]]:
     """
-    Extract the first tool call from the model's messages.
-    Returns (tool_name, arguments_dict, tool_call_id) or None.
+    Extract all tool calls from the model's last assistant message.
+    Returns list of (tool_name, arguments_dict, tool_call_id).
     """
     import json
 
     if not isinstance(messages, list):
-        return None
+        return []
 
     for msg in reversed(messages):
         if not isinstance(msg, dict):
@@ -298,6 +305,7 @@ def _extract_tool_call(
 
         # Standard tool_calls format
         tool_calls = msg.get("tool_calls") or []
+        results = []
         for tc in tool_calls:
             fn = tc.get("function", {})
             name = fn.get("name")
@@ -307,15 +315,11 @@ def _extract_tool_call(
                 except (json.JSONDecodeError, TypeError):
                     args = {}
                 tc_id = tc.get("id")
-                return name, args, tc_id
+                results.append((name, args, tc_id))
+        if results:
+            return results
 
-        # Fallback: if assistant sent raw text with PDDL actions, treat as validate_plan
-        if msg.get("role") == "assistant" and not tool_calls:
-            content = msg.get("content", "")
-            if content and "(" in content:
-                return "validate_plan", {"plan": content}, None
-
-    return None
+    return []
 
 
 # ---------------------------------------------------------------------------
