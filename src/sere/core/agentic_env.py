@@ -210,14 +210,18 @@ class AgenticPDDLEnv:
             "  read_file(path)               — read a file\n"
             "  write_file(path, content)     — create/overwrite a file\n"
             "  str_replace(path, old, new)   — edit a file\n"
-            "  validate(up_to_step?)         — validate plan.pddl (full = submission)\n"
+            "  validate(up_to_step?)         — validate plan.pddl against the domain and problem\n"
             "  simulate(up_to_step?)         — run plan.pddl, show world state\n\n"
-            "Write your plan as grounded PDDL actions in plan.pddl:\n"
+            "Write your plan as grounded PDDL actions in plan.pddl, one per line:\n"
             "  (action-name arg1 arg2)\n"
             "  (action-name arg1 arg2)\n"
             "  ...\n\n"
-            "Use bash, simulate, and partial validate to debug. "
-            "Call validate() (no arguments) to submit your final plan."
+            "Workflow:\n"
+            "1. Read domain.pddl and problem.pddl to understand the task.\n"
+            "2. Write your plan to plan.pddl.\n"
+            "3. Use validate(up_to_step=N) to check partial plans (free, no attempt used).\n"
+            "4. Call validate() to submit your final plan (counts as an attempt).\n\n"
+            f"You have {self.max_attempts} submission attempts."
         )
 
     def tool_schemas(self) -> List[Dict[str, Any]]:
