@@ -1,24 +1,22 @@
 # Symbolic Embodied Reasoning Environments (SERE)
 
-**SERE** is a lightweight framework for building **symbolic, embodied reasoning environments** — where agents must manipulate objects, respect spatial and causal constraints, and satisfy task goals expressed in PDDL-style logic.
-
-It's designed for **RL + LLM training**, giving you a **Gym-style API** but with symbolic state, grounded actions, stochasticity, and reward shaping built in.
+**SERE** is a lightweight framework for building **symbolic planning environments** for LLM training and evaluation. Agents solve PDDL planning problems using tool-based interaction in a sandboxed workspace.
 
 ---
 
 ## Features
 
-- **Native PDDL support** – load standard `.pddl` domain/problem files directly; 20 IPC benchmark domains included out of the box.
-- **YAML-defined domains** – for domains that need stochastic outcomes, NL glosses, or energy management beyond what PDDL expresses (kitchen, assembly).
-- **PDDL-style grounding** – parses `(pick-up r1 mug1)` into concrete state updates.
-- **World state engine** – maintains objects, facts, numeric fluents, and enforces invariants.
-- **Derived predicates** – author higher-level semantics without extra code.
-- **Numeric fluents, durations, energy** – model time, resources, and stochastic outcomes.
-- **Reward shaping & termination rules** – instant milestones, potential-based shaping, and structured `all/any` termination.
-- **Multi-agent joint actions** – require one action per robot and apply effects simultaneously.
-- **Invariant plugins** – register domain-specific constraints (e.g. "object can't be in two places").
-- **Human-readable rendering** – natural language + PDDL observations for LLM prompting, with optional affordance lists.
-- **Reference plans & regression tests** – validate domains and ensure backward compatibility.
+- **Native PDDL support** -- load standard `.pddl` domain/problem files directly; 20 IPC benchmark domains included out of the box.
+- **Agentic sandbox** -- miniSWE-style environment where an LLM agent uses coding tools (bash, read_file, write_file, str_replace) plus PDDL tools (validate, simulate) to solve planning problems.
+- **Pure plan validation** -- standalone validator with step-by-step diagnostics, partial validation, and world state simulation.
+- **Verifiers integration** -- native `MultiTurnEnv` for use with the [verifiers](https://github.com/primeintellect-ai/verifiers) framework and `prime eval`.
+- **YAML-defined domains** -- for domains needing stochastic outcomes, energy management, or features beyond what PDDL expresses (kitchen, assembly).
+- **World state engine** -- maintains objects, facts, numeric fluents, and enforces invariants.
+- **Derived predicates** -- author higher-level semantics without extra code.
+- **Numeric fluents, durations, energy** -- model time, resources, and stochastic outcomes.
+- **Reward shaping & termination rules** -- milestones, potential-based shaping, and structured termination.
+- **Multi-agent joint actions** -- one action per robot, applied simultaneously.
+- **Reference plans & regression tests** -- validate domains and ensure backward compatibility.
 
 ---
 
@@ -26,39 +24,43 @@ It's designed for **RL + LLM training**, giving you a **Gym-style API** but with
 
 ```
 src/sere/
-├── core/
-│   ├── world_state.py       # Facts, objects, fluents, invariants
-│   ├── semantics.py         # Clause + numeric evaluation, traces
-│   ├── invariants.py        # Generic + domain-specific plugins
-│   └── pddl_env/            # RL-style environment + prompting
-│       ├── env.py           # Env: reset/step/reward/done
-│       ├── engine.py        # Action application, stochastic outcomes
-│       ├── planning.py      # Parse/execute action blocks
-│       ├── rendering.py     # Messages + obs stitching
-│       ├── prompt_formatter.py # System prompt + observations + affordances
-│       └── run_mode.py      # interactive / batch / open_loop
-│
-├── pddl/
-│   ├── pddl_parser.py       # Native PDDL domain/problem parser
-│   ├── domain_spec.py       # DomainSpec, ActionSpec, PredicateSpec, …
-│   ├── grounding.py         # S-expression grounding engine
-│   └── sexpr.py             # S-expression tokenizer/parser
-│
-├── io/
-│   ├── task_loader.py       # Unified loader (YAML + PDDL dispatch)
-│   └── pddl_loader.py       # PDDL directory loader
-│
-├── cli/
-│   └── run_task.py
-│
-└── assets/
-    ├── domain/              # YAML domains (kitchen, assembly)
-    ├── tasks/               # Task YAMLs (per domain)
-    └── pddl/                # Native PDDL domains (20 IPC benchmarks)
-        ├── blocksworld/     #   domain.pddl + extensions.yaml + problems/
-        ├── logistics/
-        ├── sokoban/
-        └── …
++-- core/
+|   +-- world_state.py       # Facts, objects, fluents, invariants
+|   +-- semantics.py         # Clause + numeric evaluation, traces
+|   +-- invariants.py        # Generic + domain-specific plugins
+|   +-- validator.py         # Pure plan validation engine
+|   +-- agentic_env.py       # miniSWE-style sandbox (tools + workspace)
+|   +-- pddl_env/            # RL-style environment
+|       +-- env.py           # Env: reset/step/reward/done
+|       +-- engine.py        # Action application, stochastic outcomes
+|       +-- planning.py      # Parse/execute action blocks
+|       +-- rendering.py     # Messages + obs stitching
+|       +-- prompt_formatter.py
+|       +-- run_mode.py      # interactive / batch / open_loop
+|
++-- pddl/
+|   +-- pddl_parser.py       # Native PDDL domain/problem parser
+|   +-- domain_spec.py       # DomainSpec, ActionSpec, PredicateSpec
+|   +-- grounding.py         # S-expression grounding engine
+|   +-- sexpr.py             # S-expression tokenizer/parser
+|
++-- io/
+|   +-- task_loader.py       # Unified loader (YAML + PDDL dispatch)
+|   +-- pddl_loader.py       # PDDL directory loader + agentic task factory
+|
++-- assets/
+    +-- domain/              # YAML domains (kitchen, assembly)
+    +-- tasks/               # Task YAMLs (per domain)
+    +-- pddl/                # Native PDDL domains (20 IPC benchmarks)
+        +-- blocksworld/     #   domain.pddl + extensions.yaml + problems/
+        +-- logistics/
+        +-- sokoban/
+        +-- ...
+
+integrations/
++-- verifiers/               # Verifiers framework integration
+    +-- vf_sere.py           # SereEnv + AgenticSereEnv (MultiTurnEnv)
+    +-- dataset.py           # Task discovery and dataset building
 ```
 
 ---
@@ -94,12 +96,12 @@ Standard IPC benchmarks, loaded natively from `.pddl` files. Each has 5-20 grade
 
 ### YAML domains (2)
 
-Extended domains with stochastic outcomes, energy management, NL templates, and clutter generation.
+Extended domains with stochastic outcomes, energy management, and clutter generation.
 
 | Domain | Tasks | Features |
 |--------|-------|----------|
-| kitchen | 15 | Stochastic actions (5-10% failure), energy, numeric temps, derived predicates, multi-agent, clutter |
-| assembly | 7 | Stochastic fastening (40% defect rate), quality tracking, tool management, energy |
+| kitchen | 15 | Stochastic actions, energy, numeric temps, derived predicates, multi-agent |
+| assembly | 7 | Stochastic fastening, quality tracking, tool management, energy |
 
 ---
 
@@ -113,25 +115,114 @@ uv sync
 
 Requires **Python 3.11+**.
 
----
-
-## Running a Task
-
-YAML tasks (kitchen, assembly):
+For the verifiers integration:
 
 ```bash
-uv run python -m sere.cli.run_task kitchen/t01_one_step_steep.yaml
+uv sync --extra verifiers
 ```
 
-PDDL tasks can be loaded programmatically:
+---
+
+## Agentic Sandbox (Primary Mode)
+
+The agentic sandbox gives an LLM a real filesystem workspace with PDDL files and coding tools. The agent reads the domain/problem, writes a plan, and validates it -- just like a coding agent solving a programming task.
+
+### Workspace
+
+```
+workspace/
+  domain.pddl   -- the planning domain (read-only)
+  problem.pddl  -- the planning problem (read-only)
+  plan.pddl     -- the agent writes its solution here
+```
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `bash(command)` | Run shell commands in the workspace |
+| `read_file(path)` | Read a file |
+| `write_file(path, content)` | Create/overwrite a file |
+| `str_replace(path, old_str, new_str)` | Targeted string replacement |
+| `validate(up_to_step?)` | Validate plan.pddl (full plan = submission attempt) |
+| `simulate(up_to_step?)` | Run plan.pddl and show resulting world state |
+
+### Guards
+
+- `domain.pddl` and `problem.pddl` are **read-only** (restored if modified via bash)
+- Initial state is copied fresh for each validation (immutable)
+- Goal expression is immutable
+- Only full `validate()` counts as a submission attempt; partial validate and simulate are free
+
+### Usage
+
+```python
+from sere.io.pddl_loader import load_agentic_task
+
+env, meta = load_agentic_task("path/to/blocksworld", "path/to/instance-1.pddl")
+
+# Get system prompt and tool schemas for the LLM
+system_prompt = env.system_prompt()
+tools = env.tool_schemas()
+
+# Dispatch tool calls from the LLM
+feedback, done = env.handle_tool_call("read_file", {"path": "domain.pddl"})
+feedback, done = env.handle_tool_call("write_file", {
+    "path": "plan.pddl",
+    "content": "(pick-up A)\n(stack A B)\n",
+})
+feedback, done = env.handle_tool_call("validate", {})  # full submission
+
+print(env.solved)    # True/False
+print(env.attempts)  # number of full submissions
+env.cleanup()        # remove temp workspace
+```
+
+---
+
+## Verifiers Integration
+
+SERE provides two `MultiTurnEnv` implementations for the verifiers framework:
+
+- **`AgenticSereEnv`** -- agentic sandbox with tool use (recommended)
+- **`SereEnv`** -- pure PDDL prompting (single-turn plan generation)
+
+### With prime CLI
+
+```bash
+# Agentic (tool use)
+prime eval run integrations.verifiers.vf_sere:load_agentic_environment \
+  -m openai/gpt-4.1-mini -n 10 -r 1
+
+# Pure PDDL prompting
+prime eval run integrations.verifiers.vf_sere:load_environment \
+  -m openai/gpt-4.1-mini -n 10
+```
+
+### Programmatic
+
+```python
+from integrations.verifiers import load_agentic_environment
+
+env = load_agentic_environment(
+    domains=["blocksworld", "gripper", "ferry"],
+    num_tasks_per_domain=5,
+    episodes_per_task=1,
+    max_attempts=8,
+)
+```
+
+See [integrations/verifiers/README.md](integrations/verifiers/README.md) for full details.
+
+---
+
+## Gym-Style API
+
+For step-by-step RL-style interaction:
 
 ```python
 from sere.io.task_loader import load_task
 
-# YAML task
-env, meta = load_task(None, "kitchen/t01_one_step_steep.yaml")
-
-# PDDL task (pass path to .pddl problem file)
 env, meta = load_task(
     "src/sere/assets/pddl/blocksworld",
     "src/sere/assets/pddl/blocksworld/problems/instance-1.pddl",
@@ -139,6 +230,12 @@ env, meta = load_task(
 
 obs, info = env.reset()
 obs, reward, done, info = env.step("(pick-up A)")
+```
+
+YAML tasks (kitchen, assembly):
+
+```bash
+uv run python -m sere.cli.run_task kitchen/t01_one_step_steep.yaml
 ```
 
 ---
@@ -149,61 +246,20 @@ Each PDDL domain lives in `assets/pddl/<name>/`:
 
 ```
 blocksworld/
-├── domain.pddl         # Standard PDDL domain definition
-├── extensions.yaml     # Optional: NL templates, reward shaping, metadata
-└── problems/
-    ├── instance-1.pddl # Small (4 blocks)
-    ├── instance-2.pddl
-    └── …               # Graded by difficulty
-```
-
-The `extensions.yaml` overlay is optional and provides NL glosses, outcome descriptions, and reward shaping hints that standard PDDL can't express. If omitted, NL templates are auto-generated from predicate/action names.
-
-Affordance listing (enumerating all valid actions) is disabled by default for PDDL domains to avoid expensive grounding on large state spaces. The LLM must infer valid actions from the state and action schemas.
-
----
-
-## Ludic integration (multi-agent)
-
-SERE includes a Ludic wrapper that exposes each robot as a separate Ludic agent.
-Agent IDs are the sorted robot symbols (e.g. `r1`, `r2`). Actions are **raw PDDL
-S-expressions** with exactly one action per agent per step. Use `(idle r)` for no-op.
-
-```python
-from integrations.ludic import SereLudicEnv, pddl_action_parser
-from sere.core.pddl_env.run_mode import RunMode
-from sere.io.task_loader import load_task
-
-env, meta = load_task(
-    None,
-    "kitchen/t11_multi_agent_parallel_brew.yaml",
-    run_mode=RunMode.INTERACTIVE,
-)
-ludic_env = SereLudicEnv(env)
-
-parser = pddl_action_parser()
-# agent_map = {aid: Agent(..., parser=parser, ...) for aid in ludic_env.agent_ids}
-# protocol = MultiAgentProtocol(agent_map)
++-- domain.pddl         # Standard PDDL domain definition
++-- extensions.yaml     # Optional: reward shaping, metadata
++-- problems/
+    +-- instance-1.pddl # Small (4 blocks)
+    +-- instance-2.pddl
+    +-- ...             # Graded by difficulty
 ```
 
 ---
 
-## Authoring Domains & Tasks
+## Tests
 
-### PDDL domains (preferred for new domains)
+```bash
+uv run python -m pytest tests/ -q
+```
 
-Write a standard `domain.pddl` and problem files. Optionally add `extensions.yaml` for NL templates and reward shaping. See any domain in `assets/pddl/` for examples.
-
-### YAML domains (for stochastic/extended features)
-
-- **Domains** (`assets/domain/*.yaml`) define types, predicates, fluents, actions (with stochastic outcomes, conditional + numeric effects, durations), and derived predicates.
-
-- **Tasks** (`assets/tasks/**/*.yaml`) define objects, initial state, statics, termination rules, optional reward shaping, and reference plans.
-
-This separation makes it easy to randomize tasks or auto-generate curricula.
-
-## To Do
-- Migrate simple YAML domains (floortile, goldminer, openstacks, rovers, satellite) to native PDDL
-- Extend `extensions.yaml` schema to support stochastic outcomes, enabling kitchen/assembly migration
-- Add task/domain randomization hooks
-- Add more domain clusters and cross-domain skill tags
+438 tests, 0 failures.
